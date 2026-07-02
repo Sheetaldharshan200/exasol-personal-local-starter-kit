@@ -61,7 +61,13 @@ After temporary setup, copy or merge the generated config, then restart the clie
 
 ## 5. Ask your first question
 
-The installer offers to load the sample dataset for you. If you skipped it (or want to reload), the command is safe to run any time and idempotent:
+The installer offers a guided data loading menu after exapump is ready and before MCP setup. Open it any time for local files, remote files, database imports, Exapump help, or SQL scripts; the default option loads and verifies the bundled `data/` folder:
+
+```bash
+exakit data-load
+```
+
+If you only want the bundled sample dataset, this command is safe to run any time and idempotent:
 
 ```bash
 exakit load-data           # or: exakit load-data --force to reload

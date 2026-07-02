@@ -42,6 +42,16 @@ exapump sql -p starter-kit 'SELECT CURRENT_TIMESTAMP'
 
 A timestamp back means the full chain works.
 
+## Load Data
+
+The installer offers a guided data loading menu after exapump is ready. Open it again any time:
+
+```bash
+exakit data-load
+```
+
+Use `exakit load-data` when you only want the bundled sample dataset.
+
 ## Connect your AI assistant
 
 Your ready-made configs are at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.

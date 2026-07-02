@@ -1199,37 +1199,29 @@ exakit_maybe_offer_mcp_setup() {
     fi
 }
 
-# exakit_maybe_offer_data_load <kit_root> — interactively offer to load the
-# sample dataset during install. Mirrors exakit_maybe_offer_mcp_setup:
-# silently skips when already loaded, when there is no dataset to load, or
-# when running non-interactively (so piped/CI installs never block). The
-# actual load runs in a subshell so a die() inside the pipeline is contained
-# and never aborts the surrounding install.
+# exakit_maybe_offer_data_load <kit_root> — interactively offer the guided data
+# loading menu during install. Non-interactive installs print the follow-up
+# command and continue. The selected load runs in a subshell so a die() inside
+# the loading flow never aborts the surrounding install.
 exakit_maybe_offer_data_load() {
     _kit_root="$1"
-    command -v exakit_load_sample_data >/dev/null 2>&1 || return 0
-    [ "$(manifest_get data.loaded 2>/dev/null)" = "true" ] && return 0
-
-    _has_data=0
-    for _csv in "$_kit_root"/data/*.csv; do
-        [ -s "$_csv" ] && { _has_data=1; break; }
-    done
-    [ "$_has_data" -eq 1 ] || return 0
+    : "$_kit_root"
+    command -v exakit_data_load_menu >/dev/null 2>&1 || return 0
 
     [ -n "$(_exakit_prompt_tty)" ] || {
-        info "Sample data is available. Load it any time with: exakit load-data"
+        info "Data loading is ready. Open the guided menu any time with: exakit data-load"
         return 0
     }
 
-    info "A sample dataset (TPC-H, ~21 MB) can be loaded into the ${EXAKIT_SCHEMA:-STARTER_KIT} schema now."
-    if ! confirm "Load the sample dataset now?" y; then
-        info "Skipping sample data load. Run it any time with: exakit load-data"
+    info "The database is ready for data. Loading data now lets MCP validate against real tables."
+    if ! confirm "Load or verify data before MCP setup?" y; then
+        info "Skipping data loading. Run it any time with: exakit data-load"
         return 0
     fi
-    if ( exakit_load_sample_data "$_kit_root" ); then
+    if ( exakit_data_load_menu ); then
         :
     else
-        warn "Sample data load did not finish cleanly. Retry any time with: exakit load-data"
+        warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
     fi
 }
 

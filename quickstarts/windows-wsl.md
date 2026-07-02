@@ -41,6 +41,16 @@ exakit status
 exapump sql -p starter-kit 'SELECT CURRENT_TIMESTAMP'
 ```
 
+## Load Data
+
+Open the guided data loading menu any time:
+
+```bash
+exakit data-load
+```
+
+Use `exakit load-data` when you only want the bundled sample dataset.
+
 ## Connect your AI assistant
 
 Configs are generated in WSL at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.

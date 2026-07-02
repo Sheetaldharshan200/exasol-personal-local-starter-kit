@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # load-data.sh — load the sample dataset into the local database.
 #
-#   bash setup/load-data.sh            # runs schema + load + verify once
-#   bash setup/load-data.sh --force    # re-runs even if already loaded
+#   bash setup/load-data.sh            # runs bundled sample schema + load + verify once
+#   bash setup/load-data.sh --force    # re-runs bundled sample load even if already loaded
 #
 # Separate from the installer on purpose: the one-command install brings up
 # the components; this script fills the database, and can be re-run any time
 # (every run is fully logged — that is the repeatability story). The installer
-# also offers to run this interactively, and `exakit load-data` invokes the
-# same shared pipeline (exakit_load_sample_data in setup/lib/exapump.sh).
+# also offers a guided import menu, while `exakit load-data` invokes this same
+# sample pipeline (exakit_load_sample_data in setup/lib/exapump.sh).
 #
 # Consumes files delivered with the kit, referenced by path:
 #   sql/01_create_schema.sql   sql/02_load_data.sql   sql/03_verify_setup.sql

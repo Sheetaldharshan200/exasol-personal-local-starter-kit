@@ -104,7 +104,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 
-Prefer your own data? `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit` and ask about that instead.
+Prefer your own data? Run `exakit data-load` for a guided load-and-verify menu covering local CSV/text files, remote CSV/text URLs, import SQL from another database or Exasol, direct Exapump commands, and SQL scripts. By default it loads the bundled `data/` folder into `STARTER_KIT`; file loads verify row counts before returning.
 
 ### Day-to-day
 
@@ -113,6 +113,8 @@ exakit status
 exakit info
 exakit stop
 exakit start
+exakit data-load
+exakit load-data
 exakit mcp-status
 exakit mcp-validate
 ```

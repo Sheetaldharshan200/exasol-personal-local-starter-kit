@@ -221,6 +221,201 @@ exapump_record_manifest() {
     manifest_set components.exapump.path "$(exapump_cli)"
 }
 
+exakit_table_name_from_path() {
+    _base="$(basename "$1")"
+    _base="${_base%%\?*}"
+    _base="${_base%.*}"
+    _table="$(printf '%s' "$_base" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9_' '_')"
+    _table="$(printf '%s' "$_table" | sed 's/^_*//; s/_*$//; s/__*/_/g')"
+    printf '%s\n' "${_table:-MY_TABLE}"
+}
+
+exakit_normalize_path() {
+    case "$1" in
+        "~") printf '%s\n' "$HOME" ;;
+        "~/"*) printf '%s/%s\n' "$HOME" "${1#~/}" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+exakit_validate_table_target() {
+    case "$1" in
+        *.*) ;;
+        *) return 1 ;;
+    esac
+    _schema="${1%%.*}"
+    _table="${1#*.}"
+    case "$_schema" in ""|*[!A-Za-z0-9_]*) return 1 ;; esac
+    case "$_table" in ""|*[!A-Za-z0-9_]*) return 1 ;; esac
+    return 0
+}
+
+exakit_target_schema() {
+    printf '%s\n' "${1%%.*}" | tr '[:lower:]' '[:upper:]'
+}
+
+exakit_upper_table_target() {
+    _schema="${1%%.*}"
+    _table="${1#*.}"
+    printf '%s.%s\n' \
+        "$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')" \
+        "$(printf '%s' "$_table" | tr '[:lower:]' '[:upper:]')"
+}
+
+exakit_ensure_schema() {
+    _schema="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    [ -n "$_schema" ] || return 1
+    if "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$_schema') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" \
+        2>> "${EXAKIT_LOG_FILE:-/dev/null}" | grep -q "EXAKIT_SCHEMA_PRESENT"; then
+        return 0
+    fi
+    info "Creating schema $_schema"
+    run_logged "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" "CREATE SCHEMA $_schema" || \
+        die "Could not create schema $_schema"
+}
+
+exakit_verify_loaded_table() {
+    _target="$1"
+    _rows="$(exapump_count "$_target")"
+    [ -n "$_rows" ] || die "Could not verify row count for $_target."
+    if [ "$_rows" = "0" ]; then
+        warn "Verified $_target, but it currently has 0 rows."
+    else
+        ok "Verified $_target ($_rows rows)"
+    fi
+    manifest_set data.last_load.verified_table "$_target"
+    manifest_set data.last_load.verified_rows "$_rows"
+}
+
+exakit_prompt_optional_verification() {
+    _default="${1:-}"
+    _target="$(prompt_text "Verify table after script/import (SCHEMA.TABLE, blank to skip)" "$_default")"
+    [ -n "$_target" ] || {
+        info "Skipping table verification for this script/import."
+        return 0
+    }
+    exakit_validate_table_target "$_target" || die "Verification table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    exakit_verify_loaded_table "$(exakit_upper_table_target "$_target")"
+}
+
+exakit_load_local_file() {
+    _raw_path="$(prompt_text "Local CSV/text file path")"
+    _path="$(exakit_normalize_path "$_raw_path")"
+    [ -s "$_path" ] || die "File not found or empty: $_path"
+    _default_table="${EXAKIT_SCHEMA:-STARTER_KIT}.$(exakit_table_name_from_path "$_path")"
+    _target="$(prompt_text "Target table (SCHEMA.TABLE)" "$_default_table")"
+    exakit_validate_table_target "$_target" || die "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    _target="$(exakit_upper_table_target "$_target")"
+    exakit_ensure_schema "$(exakit_target_schema "$_target")"
+    exapump_upload "$_path" "$_target"
+    manifest_set data.last_load.type "local_file"
+    manifest_set data.last_load.target "$_target"
+    manifest_set data.last_load.source "$_path"
+    exakit_verify_loaded_table "$_target"
+    ok "Loaded $_path into $_target"
+}
+
+exakit_load_remote_file() {
+    _url="$(prompt_text "Remote CSV/text URL")"
+    [ -n "$_url" ] || die "Remote URL is required."
+    _name="$(basename "${_url%%\?*}")"
+    [ -n "$_name" ] || _name="remote-data.csv"
+    _tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/exakit-remote-data.XXXXXX")" || die "Could not create a temporary download directory."
+    _tmp_file="$_tmp_dir/$_name"
+    info "Downloading remote data file"
+    fetch "$_url" "$_tmp_file"
+    _default_table="${EXAKIT_SCHEMA:-STARTER_KIT}.$(exakit_table_name_from_path "$_name")"
+    _target="$(prompt_text "Target table (SCHEMA.TABLE)" "$_default_table")"
+    exakit_validate_table_target "$_target" || die "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    _target="$(exakit_upper_table_target "$_target")"
+    exakit_ensure_schema "$(exakit_target_schema "$_target")"
+    exapump_upload "$_tmp_file" "$_target"
+    rm -rf "$_tmp_dir"
+    manifest_set data.last_load.type "remote_file"
+    manifest_set data.last_load.target "$_target"
+    manifest_set data.last_load.source "$_url"
+    exakit_verify_loaded_table "$_target"
+    ok "Loaded $_url into $_target"
+}
+
+exakit_run_sql_script() {
+    _raw_path="$(prompt_text "SQL script path")"
+    _path="$(exakit_normalize_path "$_raw_path")"
+    [ -s "$_path" ] || die "SQL script not found or empty: $_path"
+    exapump_run_sql_file "$_path" "SQL script ($(basename "$_path"))"
+    manifest_set data.last_load.type "sql_script"
+    manifest_set data.last_load.source "$_path"
+    exakit_prompt_optional_verification ""
+    ok "SQL script completed"
+}
+
+exakit_show_database_import_guidance() {
+    _kind="$1"
+    printf '\n'
+    printf '  %s\n' "$_kind"
+    printf '  Use this option when your source is another database and you already\n'
+    printf '  have an Exasol IMPORT statement or a script that creates the needed\n'
+    printf '  connection object. The kit will run that SQL through the starter-kit\n'
+    printf '  exapump profile and log the result.\n'
+    printf '\n'
+    printf '  Typical flow:\n'
+    printf '  1. Put your IMPORT statements in a .sql file.\n'
+    printf '  2. Run this option and provide that file path.\n'
+    printf '  3. Verify the target table with exapump sql -p starter-kit.\n'
+    printf '\n'
+    if confirm "Run an import SQL script now?" y; then
+        exakit_run_sql_script
+    else
+        info "Skipping import execution. Run it any time with: exakit data-load"
+    fi
+}
+
+exakit_show_exapump_guidance() {
+    printf '\n'
+    printf '  Exapump is installed and connected.\n'
+    printf '  Profile: starter-kit\n'
+    printf '  Binary:  %s\n' "$(exapump_cli)"
+    printf '\n'
+    printf '  Useful commands:\n'
+    printf '    exapump sql -p starter-kit '\''SELECT CURRENT_TIMESTAMP'\''\n'
+    printf '    exapump upload ./data.csv --table STARTER_KIT.MY_TABLE -p starter-kit\n'
+    printf '    exapump sql -p starter-kit < ./script.sql\n'
+    printf '\n'
+}
+
+exakit_data_load_menu() {
+    [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
+        die "No exapump connection profile is recorded — re-run the installer, then retry."
+
+    info "Choose a data loading option"
+    printf '    1. Local CSV/Text File\n'
+    printf '    2. Remote CSV/Text File\n'
+    printf '    3. Import from Another Database\n'
+    printf '    4. Import from Another Exasol\n'
+    printf '    5. Exapump\n'
+    printf '    6. SQL Script\n'
+    printf '    7. Default: load bundled data/ folder (TPC-H sample)\n'
+    printf '    8. Skip for now\n'
+    _default_choice="7"
+    [ -n "$(_exakit_prompt_tty)" ] || _default_choice="8"
+    _choice="$(prompt_text "Choose data option" "$_default_choice")"
+    case "$_choice" in
+        1) exakit_load_local_file ;;
+        2) exakit_load_remote_file ;;
+        3) exakit_show_database_import_guidance "Import from Another Database" ;;
+        4) exakit_show_database_import_guidance "Import from Another Exasol" ;;
+        5) exakit_show_exapump_guidance ;;
+        6) exakit_run_sql_script ;;
+        7)
+            _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
+            exakit_load_sample_data "$_kit_root"
+            ;;
+        8|"") info "Skipping data load. Run it any time with: exakit data-load" ;;
+        *) die "Unknown data loading option: $_choice" ;;
+    esac
+}
+
 # exakit_load_sample_data <kit_root> [--force] — the full sample-data pipeline:
 # create the schema, bulk-load every data/*.csv, run any transform, verify,
 # then record the result in the manifest. One implementation, shared by
