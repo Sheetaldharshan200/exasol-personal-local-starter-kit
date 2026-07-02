@@ -633,12 +633,12 @@ _exakit_assert_mcp_readonly_posture() {
 
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")' AND PRIVILEGE = 'SELECT') THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
         "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
 
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
-        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")' AND PRIVILEGE <> 'SELECT'" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")')))" \
         "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on schema $_schema_uc."
 
     if _exakit_run_exapump_sql \
