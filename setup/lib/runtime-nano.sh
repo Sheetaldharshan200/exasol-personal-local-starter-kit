@@ -25,7 +25,24 @@ nano_engine() {
     echo "$EXAKIT_NANO_ENGINE"
 }
 
+# nano_resolve_names — lifecycle commands must act on the names the install
+# actually used (recorded in the manifest), not on this shell's defaults.
+# An explicit environment override still wins.
+nano_resolve_names() {
+    if [ "$EXAKIT_NANO_CONTAINER" = "exasol-nano" ]; then
+        _mc="$(manifest_get runtime.container 2>/dev/null)"
+        [ -n "$_mc" ] && EXAKIT_NANO_CONTAINER="$_mc"
+    fi
+    if [ "$EXAKIT_NANO_VOLUME" = "exasol-nano-data" ]; then
+        _mv="$(manifest_get runtime.volume 2>/dev/null)"
+        [ -n "$_mv" ] && EXAKIT_NANO_VOLUME="$_mv"
+    fi
+}
+
 nano_check_requirements() {
+    [ "$(detect_arch)" != "unsupported" ] || \
+        die "Unsupported CPU architecture: $(uname -m). Exasol Nano images exist for x86_64 and arm64 only."
+
     _engine="$(detect_container_runtime_detail)"
     case "$_engine" in
         docker|podman)
@@ -69,8 +86,14 @@ nano_container_running() {
     [ "$("$(nano_engine)" container inspect -f '{{.State.Running}}' "$EXAKIT_NANO_CONTAINER" 2>/dev/null)" = "true" ]
 }
 
+# nano_ready_in_logs — ready marker from the CURRENT boot only. Container
+# logs survive stop/start, so scanning the full history would match a stale
+# line from a previous boot; scoping to StartedAt also keeps each poll cheap.
 nano_ready_in_logs() {
-    "$(nano_engine)" logs "$EXAKIT_NANO_CONTAINER" 2>&1 | grep -q "Database is now up and running!"
+    _engine="$(nano_engine)"
+    _started="$("$_engine" container inspect -f '{{.State.StartedAt}}' "$EXAKIT_NANO_CONTAINER" 2>/dev/null)"
+    "$_engine" logs --since "${_started:-1970-01-01T00:00:00Z}" "$EXAKIT_NANO_CONTAINER" 2>&1 | \
+        grep -q "Database is now up and running!"
 }
 
 # nano_install — pull the pinned image and start the container (first run
@@ -134,8 +157,11 @@ nano_install() {
             -v "$_secret_mount" \
             "$_image" init sys_password_file=/run/secrets/sys_password || \
             die "Container failed to start (see log)"
-        push_rollback "$_engine rm -f $EXAKIT_NANO_CONTAINER"
+        # run_rollback executes in reverse order: the container must be
+        # removed BEFORE its volume, or the engine refuses ("volume in use")
+        # and a half-initialized volume is orphaned for the next install.
         push_rollback "$_engine volume rm $EXAKIT_NANO_VOLUME"
+        push_rollback "$_engine rm -f $EXAKIT_NANO_CONTAINER"
     fi
 
     nano_wait_ready
@@ -187,6 +213,7 @@ nano_record_manifest() {
 
 # --- lifecycle (used by exakit) ---------------------------------------------
 nano_status() {
+    nano_resolve_names
     if ! nano_container_exists; then
         echo "not installed"
     elif ! nano_container_running; then
@@ -199,6 +226,7 @@ nano_status() {
 }
 
 nano_start() {
+    nano_resolve_names
     nano_container_exists || die "No Nano container found. Run the installer first."
     if nano_container_running; then
         ok "Nano container is already running"
@@ -210,6 +238,7 @@ nano_start() {
 }
 
 nano_stop() {
+    nano_resolve_names
     nano_container_running || { ok "Nano container is not running"; return 0; }
     info "Stopping Nano container (waiting up to 60s for a clean shutdown)"
     run_logged "$(nano_engine)" stop -t 60 "$EXAKIT_NANO_CONTAINER" || die "Failed to stop container"
@@ -220,10 +249,13 @@ nano_stop() {
 # nano_teardown [--data] — remove the container; --data also removes the
 # persistent volume (all database content).
 nano_teardown() {
+    nano_resolve_names
     _engine="$(nano_engine)"
     if nano_container_exists; then
         info "Removing Nano container"
         run_logged "$_engine" rm -f "$EXAKIT_NANO_CONTAINER" || warn "Container removal failed"
+    else
+        warn "No container named '$EXAKIT_NANO_CONTAINER' found — nothing to remove (was it created under a different name?)"
     fi
     if [ "${1:-}" = "--data" ]; then
         if "$_engine" volume inspect "$EXAKIT_NANO_VOLUME" >/dev/null 2>&1; then

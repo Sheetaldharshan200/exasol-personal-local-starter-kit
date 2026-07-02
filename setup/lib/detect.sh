@@ -80,11 +80,6 @@ detect_container_runtime_detail() {
     echo "none"
 }
 
-# podman_is_rootless — succeeds when podman runs rootless (affects ports/volumes)
-podman_is_rootless() {
-    [ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = "true" ]
-}
-
 # port_in_use <port> — succeeds when something already listens on the port.
 port_in_use() {
     (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; }
