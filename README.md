@@ -85,7 +85,7 @@ Run:
 exakit mcp-setup
 ```
 
-Choose `temporary` to generate ready-made config files in `~/.exasol-starter-kit/mcp/`, or `permanent` to write directly into the supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, and ends by telling the user to restart the selected client.
+Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
 
 ### The workflow this kit teaches
 

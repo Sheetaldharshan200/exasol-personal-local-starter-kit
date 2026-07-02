@@ -53,7 +53,9 @@ Run the guided MCP setup:
 exakit mcp-setup
 ```
 
-Choose `temporary` to generate ready-made config files in `~/.exasol-starter-kit/mcp/`, or `permanent` to write directly into the supported client config files for Claude Desktop, Cursor, or Codex. When it finishes, restart the selected client and the `exasol` server will be ready to use.
+Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex.
+
+After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
 ## 5. Ask your first question
 
@@ -65,7 +67,7 @@ bash ~/.exasol-starter-kit/kit/setup/load-data.sh
 
 Then ask your assistant something like:
 
-> *"What schemas and tables exist in my Exasol database?"*
+> *"Use the exasol MCP server connected to my local Exasol database. List the available schemas and tables first. Then answer my questions with read-only SQL only, show me the SQL before you run it, and do not create, update, or delete anything."*
 > *"Show me total revenue by product category — and show me the SQL before you run it."*
 
 The MCP server is **read-only by design**: the assistant can discover schema and run SELECT queries, nothing else. Ask it to show the SQL first — inspect, then approve. That's the workflow this kit exists to prove.

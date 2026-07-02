@@ -860,6 +860,10 @@ clients = ", ".join(LABELS.get(item, item) for item in doc.get("selected_clients
 print("")
 print("  MCP setup summary")
 print(f"  Mode:     {doc.get('mode', 'unknown')}")
+if doc.get("mode") == "temporary":
+    print("  Meaning:  Generated config files only; no AI client config was changed.")
+elif doc.get("mode") == "permanent":
+    print("  Meaning:  Wrote managed MCP entries into the selected client config files.")
 print(f"  Clients:  {clients or 'none'}")
 print(f"  Status:   {doc.get('status', 'unknown')}")
 if doc.get("mode") == "temporary":
@@ -882,6 +886,41 @@ if actions:
     for action in actions:
         print(f"  - {action.get('message', '')}")
 PY
+}
+
+exakit_print_mcp_ready_panel() {
+    _mode="${1:-}"
+    _dsn="$(manifest_get runtime.dsn 2>/dev/null || true)"
+    _mcp_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _mcp_package="$(manifest_get components.mcp_server.package 2>/dev/null || printf '%s' "$EXAKIT_MCP_PACKAGE")"
+    _mcp_version="$(manifest_get components.mcp_server.version 2>/dev/null || printf '%s' "$EXAKIT_MCP_VERSION")"
+
+    printf '\n'
+    printf '  MCP is ready\n'
+    printf '  Server name:   exasol\n'
+    printf '  How it runs:   your AI client starts it on demand over stdio\n'
+    printf '  Command:       uvx %s@%s\n' "$_mcp_package" "$_mcp_version"
+    printf '  Database:      %s\n' "${_dsn:-unknown}"
+    printf '  DB user:       %s (read-only)\n' "${_mcp_user:-mcp_readonly}"
+    printf '  Config bundle: %s\n' "$EXAKIT_MCP_DIR"
+    printf '\n'
+    if [ "$_mode" = "temporary" ]; then
+        printf '  Temporary mode did not change your AI client config.\n'
+        printf '  Next steps:\n'
+        printf '  1. Open the generated config file for your client from the bundle above.\n'
+        printf '  2. Copy or merge it into that AI client MCP config.\n'
+        printf '  3. Restart the client.\n'
+    else
+        printf '  Permanent mode updated the selected client config files.\n'
+        printf '  Next step: restart the selected client now.\n'
+    fi
+    printf '  After setup/restart, look for an MCP server named: exasol\n'
+    printf '\n'
+    printf '  First prompt to try in your AI client:\n'
+    printf '  "Use the exasol MCP server connected to my local Exasol database. List\n'
+    printf '  the available schemas and tables first. Then answer my questions with\n'
+    printf '  read-only SQL only, show me the SQL before you run it, and do not create,\n'
+    printf '  update, or delete anything."\n'
 }
 
 exakit_print_mcp_operation_summary() {
@@ -971,10 +1010,19 @@ exakit_parse_mcp_client_selection() {
 
 exakit_mcp_setup() {
     info "Choose how you want MCP set up in your AI clients"
-    printf '    1. Default (temporary) - create ready-made config files only\n'
-    printf '    2. Permanent - write directly into the selected client config files\n'
+    printf '    1. Temporary setup (copy/paste instructions only)\n'
+    printf '       The kit does NOT edit Claude, Cursor, or Codex.\n'
+    printf '       It creates ready-made config files in %s.\n' "$EXAKIT_MCP_DIR"
+    printf '       You copy or merge the file yourself when you are ready.\n'
+    printf '    2. Permanent setup (edit selected clients now)\n'
+    printf '       The kit backs up and updates the selected client config files.\n'
+    printf '       Restart the selected client afterwards.\n'
+    printf '\n'
+    printf '    Quick guide:\n'
+    printf '       Choose 1 if you only want files and copy/paste steps.\n'
+    printf '       Choose 2 if you want the kit to configure the apps for you.\n'
     while :; do
-        _mode_choice="$(prompt_text "Choose setup mode" "1")"
+        _mode_choice="$(prompt_text "Choose setup mode (1 temporary, 2 permanent)" "1")"
         case "$_mode_choice" in
             1|temporary|Temporary|default|Default) _mode="temporary"; break ;;
             2|permanent|Permanent) _mode="permanent"; break ;;
@@ -1009,7 +1057,8 @@ exakit_mcp_setup() {
     if [ "$_setup_status" -ne 0 ]; then
         return "$_setup_status"
     fi
-    ok "Restart the selected client(s) and use Exasol MCP."
+    exakit_print_mcp_ready_panel "$_mode"
+    ok "MCP setup guidance is ready."
     return 0
 }
 
