@@ -89,6 +89,38 @@ grep -q 'setup_script="setup/setup-wsl.sh"' "$ROOT/install.sh" && \
     check "dispatch(linux/wsl)" "setup-wsl.sh" "setup-wsl.sh" || \
     check "dispatch(linux/wsl)" "setup-wsl.sh" "missing"
 
+echo "mcp credential fallback:"
+_mcp_test_dir="$(mktemp -d)"
+EXAKIT_CREDS_DIR="$_mcp_test_dir/credentials"
+mkdir -p "$_mcp_test_dir/credentials"
+printf 'readonly-secret\n' > "$_mcp_test_dir/credentials/mcp_readonly_password"
+manifest_get() {
+    case "$1" in
+        components.mcp_server.connection.user)
+            return 1
+            ;;
+        components.mcp_server.connection.password_file)
+            return 1
+            ;;
+        components.mcp_server.user)
+            printf '%s\n' "legacy-marker"
+            ;;
+        runtime.user)
+            printf '%s\n' "sys"
+            ;;
+        runtime.password_file)
+            printf '%s\n' "$_mcp_test_dir/credentials/db_password"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+. "$ROOT/setup/lib/mcp.sh"
+_mcp_user="$(mcp_credentials | awk -F '\t' '{print $1}')"
+check "mcp_credentials(legacy fallback)" "mcp_readonly" "$_mcp_user"
+rm -rf "$_mcp_test_dir"
+
 echo
 echo "passed: $PASS, failed: $FAIL"
 [ "$FAIL" -eq 0 ]
