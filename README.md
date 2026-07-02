@@ -97,6 +97,15 @@ ASK -> INSPECT -> RUN -> VALIDATE -> RERUN
 
 Ask your assistant: *"Which product category generated the most revenue? Show me the SQL before you run it."* Then check the result yourself with `exapump`. That is the point of the kit: AI speed, **your** verification.
 
+### Sample data included
+
+So you're not staring at an empty database, the kit ships with a small sample dataset in [`data/`](data/) — standard **TPC-H** (a wholesale/retail model: customers, orders, line items, parts, suppliers) at ~21 MB. `setup/load-data.sh` loads it into the `STARTER_KIT` schema.
+
+- **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
+- **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
+
+Prefer your own data? `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit` and ask about that instead.
+
 ### Day-to-day
 
 ```bash
@@ -151,14 +160,15 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 
 | Question | Answer |
 |---|---|
-| Do I need Python preinstalled? | No. The kit uses system `python3` if available, otherwise installs and uses a managed runtime through `uv`. |
-| Do I need admin rights for `uv`? | No. It installs into the user's home directory. |
-| Does it cost anything? | Exasol Personal is free for personal use. |
-| What if Docker is installed but not running? | Start Docker Desktop or Podman, then rerun the install command. |
-| What if port `8563` is already in use? | On Linux/Windows container paths, rerun with `EXAKIT_DB_PORT=8564`. macOS local deployment needs `8563`. |
-| Where is the guided MCP flow? | Run `exakit mcp-setup`, then use `exakit mcp-status`, `exakit mcp-validate`, `exakit mcp-repair`, `exakit mcp-remove`, or `exakit mcp-restore` as needed. |
-| Where's the OS-specific help? | [macOS](quickstarts/macos.md) · [Windows + WSL](quickstarts/windows-wsl.md) · [Windows + Docker](quickstarts/windows-docker.md) |
-| How do I remove everything? | `exakit teardown --data`, then remove `~/.exasol-starter-kit` if you also want logs and managed state gone. |
+| Do I need Rust / Python / Homebrew / git? | **No.** The installer brings everything it needs |
+| Does it cost anything? | No — Exasol Personal is free for personal use |
+| What sample data is included? | A ~21 MB TPC-H dataset in [`data/`](data/) — see the [data dictionary](data/data-dictionary.md) |
+| "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
+| Port 8563 already taken? | `EXAKIT_DB_PORT=8564` before the install command *(Linux/Windows container path)* |
+| Behind a corporate proxy? | `export HTTPS_PROXY=...` and re-run |
+| Where's the deep-dive for my OS? | [macOS](quickstarts/macos.md) · [Windows + WSL](quickstarts/windows-wsl.md) · [Windows + Docker](quickstarts/windows-docker.md) |
+| Step-by-step to the first AI query? | [QUICKSTART](QUICKSTART.md) → [First workflow](demo/first-revenue-analysis.md) |
+| How do I remove everything? | `exakit teardown --data`, then `rm -rf ~/.exasol-starter-kit` |
 
 ---
 
