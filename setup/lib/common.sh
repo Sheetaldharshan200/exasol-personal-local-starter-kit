@@ -664,7 +664,7 @@ _exakit_validate_identifier() {
 
 _exakit_validate_sql_password_token() {
     case "$1" in
-        [A-Za-z][A-Za-z0-9_]*)
+        [A-Z][A-Z0-9_]*)
             return 0
             ;;
         *)
@@ -674,7 +674,7 @@ _exakit_validate_sql_password_token() {
 }
 
 _exakit_generate_sql_password_token() {
-    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Za-z0-9_' < /dev/urandom | head -c 23)"
+    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9_' < /dev/urandom | head -c 23)"
 }
 
 exakit_configure_mcp_readonly_access() {
