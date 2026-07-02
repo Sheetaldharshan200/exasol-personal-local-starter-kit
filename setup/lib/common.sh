@@ -748,7 +748,7 @@ exakit_configure_mcp_readonly_access() {
     info "Validating dedicated MCP read-only login"
     _exakit_exapump_sql_has_token \
         "$_temp_config" "mcp_readonly" \
-        "SELECT CURRENT_USER AS CURRENT_USER" \
+        "SELECT CURRENT_USER AS EXAKIT_CURRENT_USER" \
         "$_identifier_user" || die "The MCP read-only user could not log in with the generated credentials."
     _exakit_exapump_sql_has_token \
         "$_temp_config" "mcp_readonly" \
