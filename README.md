@@ -5,7 +5,7 @@
   <img src="static/Exasol_Logo_2025_Dark.svg" alt="Exasol Logo" width="300">
 </picture>
 
-# Personal Local Starter Kit
+# Exasol Personal Local Starter Kit
 
 ### Your own analytics database. Your own machine. Your AI assistant connected to it.
 
