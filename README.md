@@ -96,6 +96,15 @@ Your configs are generated and waiting in `~/.exasol-starter-kit/mcp/`:
 
 Ask your assistant: *"Which product category generated the most revenue? **Show me the SQL before you run it.**"* — then check its answer yourself with one terminal command. That's the whole idea: AI speed, **your** verification. The [first workflow guide](demo/first-revenue-analysis.md) walks you through it step by step.
 
+### Sample data included
+
+So you're not staring at an empty database, the kit ships with a small sample dataset in [`data/`](data/) — standard **TPC-H** (a wholesale/retail model: customers, orders, line items, parts, suppliers) at ~21 MB. `setup/load-data.sh` loads it into the `STARTER_KIT` schema.
+
+- **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
+- **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
+
+Prefer your own data? `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit` and ask about that instead.
+
 ### Day-to-day
 
 ```bash
@@ -142,6 +151,7 @@ Built for people who read installers before piping them to a shell:
 |---|---|
 | Do I need Rust / Python / Homebrew / git? | **No.** The installer brings everything it needs |
 | Does it cost anything? | No — Exasol Personal is free for personal use |
+| What sample data is included? | A ~21 MB TPC-H dataset in [`data/`](data/) — see the [data dictionary](data/data-dictionary.md) |
 | "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
 | Port 8563 already taken? | `EXAKIT_DB_PORT=8564` before the install command *(Linux/Windows container path)* |
 | Behind a corporate proxy? | `export HTTPS_PROXY=...` and re-run |
