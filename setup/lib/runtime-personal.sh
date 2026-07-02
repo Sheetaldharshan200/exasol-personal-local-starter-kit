@@ -195,7 +195,13 @@ personal_status() {
     if ! command -v exasol >/dev/null 2>&1 && [ ! -x "$EXAKIT_PERSONAL_BIN" ]; then
         echo "not installed"
     elif personal_deployment_exists; then
-        echo "running"
+        # `exasol info` answers even when the cluster is stopped — the SQL
+        # port tells the truth about whether the database is actually up.
+        if port_in_use "$EXAKIT_PERSONAL_PORT"; then
+            echo "running"
+        else
+            echo "stopped"
+        fi
     else
         echo "not deployed"
     fi

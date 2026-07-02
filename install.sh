@@ -75,11 +75,15 @@ main() {
     mkdir -p "$kit_dir"
     if [ -n "${EXAKIT_LOCAL_KIT:-}" ]; then
         [ -f "$EXAKIT_LOCAL_KIT/install.sh" ] || fail "EXAKIT_LOCAL_KIT does not look like a kit checkout: $EXAKIT_LOCAL_KIT"
+        EXAKIT_KIT_SOURCE="local:$EXAKIT_LOCAL_KIT"
+        export EXAKIT_KIT_SOURCE
         say "Using local kit checkout: $EXAKIT_LOCAL_KIT"
         find "$kit_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
         cp -R "$EXAKIT_LOCAL_KIT"/. "$kit_dir/"
         rm -rf "$kit_dir/.git"
     else
+        EXAKIT_KIT_SOURCE="$EXAKIT_REPO@$EXAKIT_REF"
+        export EXAKIT_KIT_SOURCE
         say "Downloading the starter kit ($EXAKIT_REPO@$EXAKIT_REF)"
         tmp_tar="$(mktemp "${TMPDIR:-/tmp}/exakit-src.XXXXXX")"
         auth_header=""
