@@ -5,6 +5,7 @@
 #
 #   preflight           check this machine's requirements, install nothing
 #   status              show what is installed and whether it is healthy
+#   version             kit source, install date, component versions
 #   info                print the connection details panel
 #   start               start the local database
 #   stop                stop the local database
@@ -93,6 +94,18 @@ cmd_teardown() {
     info "Remove them with: rm -rf $EXAKIT_HOME"
 }
 
+cmd_version() {
+    [ -f "$EXAKIT_MANIFEST" ] || { echo "Not installed (no manifest at $EXAKIT_MANIFEST)"; exit 0; }
+    printf 'Kit level:      %s\n' "$(manifest_get kit_level 2>/dev/null)"
+    printf 'Kit source:     %s\n' "$(manifest_get kit.source 2>/dev/null)"
+    printf 'Installed at:   %s\n' "$(manifest_get installed_at 2>/dev/null)"
+    printf 'Runtime:        %s %s\n' "$(manifest_get runtime.type 2>/dev/null)" \
+        "$(manifest_get runtime.version 2>/dev/null || manifest_get runtime.image 2>/dev/null)"
+    printf 'exapump:        %s\n' "$(manifest_get components.exapump.version 2>/dev/null)"
+    printf 'MCP server:     %s %s\n' "$(manifest_get components.mcp_server.package 2>/dev/null)" \
+        "$(manifest_get components.mcp_server.version 2>/dev/null)"
+}
+
 cmd_logs() {
     _latest="$(ls -t "$EXAKIT_LOG_DIR"/*.log 2>/dev/null | head -1)"
     if [ -n "$_latest" ]; then
@@ -104,12 +117,13 @@ cmd_logs() {
 }
 
 usage() {
-    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 case "${1:-help}" in
     preflight) preflight_report ;;
     status)   cmd_status ;;
+    version)  cmd_version ;;
     info)     connection_panel ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;
