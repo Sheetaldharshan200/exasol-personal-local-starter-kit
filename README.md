@@ -1,140 +1,151 @@
+<div align="center">
+
 # Exasol Personal Local Starter Kit
 
-**Local-first, AI-assisted data workflows you can inspect, validate, and rerun.**
+### Your own analytics database. Your own machine. Your AI assistant connected to it.
 
-One command installs a local Exasol database, [exapump](https://github.com/exasol-labs/exapump) for data loading, and the [Exasol MCP server](https://github.com/exasol/mcp-server) as the AI agent bridge — connects them, and prints your connection details. No cloud account, no admin rights, no license key.
+**One command. No cloud account. No license key. No admin rights.**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
-In a few minutes you can point Claude Desktop, Cursor, or any MCP client at your own local database and ask it questions — with every query inspectable and every step rerunnable.
+</div>
 
 ---
 
-## Requirements
+## What is this?
 
-The list is short by design — no Rust, no Python packages, no Homebrew, no git, no sudo, no Exasol account:
+You already use AI. The hard part is trusting it with your data. This kit gives you a complete, private AI-ready analytics setup that runs **entirely on your machine** — so you can let an AI assistant query real data, **see every SQL statement before it runs**, verify every answer yourself, and rerun the whole thing tomorrow.
 
-| Platform | You need | The installer brings |
+**One command installs three things and connects them:**
+
+| | Component | What it does for you |
 |---|---|---|
-| **macOS** | 8 GB+ RAM, ~20 GB free disk | Exasol Personal (local), exapump, uv, MCP server |
-| **Linux / WSL** | Docker or Podman — installed *and running* — 4 GB+ RAM | Exasol Nano container, exapump, uv, MCP server |
-| **Windows** | Docker Desktop (running), 4 GB+ RAM | Exasol Nano container |
+| 🗄️ | **Exasol database** | A full in-memory analytics database, running locally |
+| ⚡ | **exapump** | Load CSV/Parquet files and run SQL from your terminal |
+| 🤖 | **MCP server** | Lets Claude Desktop, Cursor, or any MCP client query your database — *read-only* |
 
-Not sure your machine qualifies? Check everything without installing anything:
+At the end you get your connection details on screen and ready-made AI-client configs on disk. Time to first AI-assisted query: **about 15 minutes**.
+
+---
+
+## 🚀 Kit 1 — Local Agent-Ready Starter
+
+*The default first experience: install, connect an AI assistant, ask your first question.*
+
+### Will it run on my machine?
+
+| Your machine | You need | That's all |
+|---|---|---|
+| 🍎 **macOS** | 8 GB+ RAM, ~20 GB disk | The database runs natively — nothing else to install |
+| 🐧 **Linux / WSL** | Docker *or* Podman (running), 4 GB+ RAM | — |
+| 🪟 **Windows** | Docker Desktop (running), 4 GB+ RAM | — |
+
+Not sure? This checks everything and installs **nothing**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
-Each failed check is reported with its remedy. The same check is available after installation as `exakit preflight`.
+Every ✗ tells you exactly what to fix.
 
-## Install
+### Install
 
-**macOS, Linux, WSL:**
-
+**macOS / Linux / WSL**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
-**Windows (PowerShell):**
-
+**Windows (PowerShell)**
 ```powershell
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware and routes to the right database:
+The installer detects your OS and hardware, shows you the plan, then does the rest. On macOS the first database deployment takes 10–20 minutes (one-time, unattended) — grab a coffee. Containers are up in a few minutes.
 
-- **macOS** → Exasol Personal, deployed locally (first deploy takes 10–20 minutes — one-time)
-- **Linux / WSL / Windows** → Exasol Nano container — Docker preferred, Podman fallback
+> **Native Windows note:** the PowerShell path currently sets up the database container; for exapump and the AI-assistant connection follow the [Windows quickstart](quickstarts/windows-docker.md) — or run the install inside WSL to get everything in one go.
 
-It then installs exapump and the MCP server on every path, wires them to the database, and finishes with a connection-details panel.
+> **Prefer to read before you run?** We built this for you. Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` where you can read every script, and nothing installs until you say so.
 
-### Trust properties
+### Connect your AI assistant (2 minutes)
 
-Built for people who read installers before running them:
+Your configs are generated and waiting in `~/.exasol-starter-kit/mcp/`:
 
-- **Inspect before (or after) you run** — the kit is copied to `~/.exasol-starter-kit/kit`; every script that executes is on your disk in plain text. `EXAKIT_DRY_RUN=1` fetches, shows the plan, and stops.
-- **Verified artifacts** — release binaries are pinned to known-good versions and SHA-256 checked before use.
-- **Safe to re-run, always** — completed steps skip, failed steps retry, nothing is ever half-reinstalled. A failed run tells you which step failed, where the full log is, and offers to undo its changes.
-- **No surprises in scope** — everything lands in `~/.local/bin` and `~/.exasol-starter-kit`; no sudo, no shell-profile edits, no system files touched. Credentials are stored `0600`, never logged, never echoed.
-- **Local only** — the database listens on `127.0.0.1`, TLS enabled, and the MCP bridge is read-only by design.
+- **Claude Desktop** → Settings → Developer → Edit Config → merge in `claude-config.json` → restart
+- **Cursor** → add `cursor-config.json` to your MCP settings
+- **Anything else** → `generic-config.json` has the server definition
 
-## After the install
+### The workflow this kit teaches
 
-```bash
-exakit status        # what is installed, and is it healthy
-exakit info          # connection details panel (DSN, user, config paths)
-exakit preflight     # re-check machine requirements any time
-exakit start         # start the local database
-exakit stop          # stop it (state is kept)
-exakit teardown      # remove the runtime; --data also deletes database content
-exakit logs          # path of the latest setup log
+```
+   ASK  ──►  INSPECT  ──►  RUN  ──►  VALIDATE  ──►  RERUN
+  a real     the SQL,    read-only   reproduce it   same answer,
+ question   before it     access      yourself,     any day, any
+            executes                 outside the AI    time
 ```
 
-**Connect an AI assistant** — ready-made configs are generated under `~/.exasol-starter-kit/mcp/`:
+Ask your assistant: *"Which product category generated the most revenue? **Show me the SQL before you run it.**"* — then check its answer yourself with one terminal command. That's the whole idea: AI speed, **your** verification. The [first workflow guide](demo/first-revenue-analysis.md) walks you through it step by step.
 
-- `claude-config.json` — Claude Desktop (Settings → Developer → Edit Config)
-- `cursor-config.json` — Cursor
-- `generic-config.json` — any other MCP client
-
-**Load the sample dataset** (activates once the kit's SQL and data files are delivered):
+### Day-to-day
 
 ```bash
-bash ~/.exasol-starter-kit/kit/setup/load-data.sh          # fully logged, rerunnable
+exakit status      # is everything healthy?
+exakit info        # my connection details
+exakit stop        # pause the database (keeps your data)
+exakit start       # bring it back
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for the end-to-end walkthrough to a first AI-assisted query.
+Something failed mid-install? **Just run the install command again** — finished steps are skipped, the failed one retries. Every error message tells you its fix.
 
-## Kit 2: Trusted AI Workflow Add-on
+---
 
-Builds on Kit 1 **additively** — no reinstall of the database, exapump, MCP, or data. Adds the trust layer: semantic model, audit/run log, saved workflow examples.
+## 🔐 Kit 2 — Trusted AI Workflow Add-on
+
+*When "it works" needs to become "it's governed": add the trust layer.*
+
+Kit 2 builds **on top of** Kit 1 — nothing is reinstalled, your data stays put. One command adds:
+
+- **Semantic model** — "revenue" and "margin" get defined *once*, so the AI stops guessing your business logic
+- **Audit / run log** — every question, its SQL, timestamp and status, recorded in the database
+- **Saved workflows** — turn a good one-off analysis into an asset you rerun and share
 
 ```bash
-bash ~/.exasol-starter-kit/kit/upgrade/upgrade-kit2.sh     # detects Kit 1 via the manifest, adds only what's missing
-bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh    # removes exactly what the upgrade added — Kit 1 untouched
+bash ~/.exasol-starter-kit/kit/upgrade/upgrade-kit2.sh      # upgrade  (additive, minutes)
+bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh     # changed your mind? clean revert to Kit 1
 ```
 
-## Configuration
+---
 
-Component versions are pinned to known-good releases; everything is overridable via environment variables (flags don't travel through a pipe):
+## Is it safe?
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `EXAKIT_PERSONAL_VERSION` | `2.0.0-rc4` | Exasol Personal release (macOS) |
-| `EXAKIT_NANO_TAG` | `2026.2.0-nano.2` | Exasol Nano image tag |
-| `EXAKIT_EXAPUMP_VERSION` | `0.11.2` | exapump release |
-| `EXAKIT_MCP_VERSION` | `1.10.1` | MCP server package version |
-| `EXAKIT_DB_PORT` | `8563` | local SQL port |
-| `EXAKIT_HOME` | `~/.exasol-starter-kit` | state, logs, credentials, kit copy |
-| `EXAKIT_DRY_RUN` | — | `1` = fetch + show plan, install nothing |
-| `EXAKIT_PREFLIGHT` | — | `1` = requirements report, install nothing |
-| `EXAKIT_LOCAL_KIT` | — | install from a local checkout (development) |
-| `EXAKIT_FORCE` | — | `1` = override disk/RAM soft gates |
+Built for people who read installers before piping them to a shell:
 
-## Troubleshooting
+- ✅ **Everything is inspectable** — all executed scripts live on your disk, before and after
+- ✅ **Every download is verified** — pinned versions, SHA-256 checked
+- ✅ **Local only** — the database listens on `127.0.0.1`, TLS on; the AI bridge is **read-only by design**
+- ✅ **No sudo, ever** — everything lives in `~/.local/bin` and `~/.exasol-starter-kit`; credentials stored `0600`, never logged
+- ✅ **Reversible** — `exakit teardown` removes it cleanly
 
-Every failure ends in one of three states: a **clear requirement message** ("install Docker, then re-run"), a **hard stop with the reason and numbers** ("8 GB RAM required, 4 detected"), or a **safe retry** (re-run resumes from the failed step). The most common cases:
+## Quick answers
 
-| Symptom | Fix |
+| Question | Answer |
 |---|---|
-| "Docker is installed but not running" | Start Docker Desktop (or `podman machine start`), re-run the installer |
-| "Port 8563 is already in use" | Stop the other application, or `EXAKIT_DB_PORT=8564` and re-run |
-| "python3 is required" | macOS: `xcode-select --install` · Linux: `sudo apt install python3` |
-| Download failures behind a proxy | `export HTTPS_PROXY=...` (curl honors it), re-run |
-| Setup failed mid-way | Just re-run the same command — completed steps skip, the failed one retries. Full log: `exakit logs` |
-| Wipe and start over | `exakit teardown --data`, then `rm -rf ~/.exasol-starter-kit`, then install again |
+| Do I need Rust / Python / Homebrew / git? | **No.** The installer brings everything it needs |
+| Does it cost anything? | No — Exasol Personal is free for personal use |
+| "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
+| Port 8563 already taken? | `EXAKIT_DB_PORT=8564` before the install command *(Linux/Windows container path)* |
+| Behind a corporate proxy? | `export HTTPS_PROXY=...` and re-run |
+| Where's the deep-dive for my OS? | [macOS](quickstarts/macos.md) · [Windows + WSL](quickstarts/windows-wsl.md) · [Windows + Docker](quickstarts/windows-docker.md) |
+| Step-by-step to the first AI query? | [QUICKSTART](QUICKSTART.md) → [First workflow](demo/first-revenue-analysis.md) |
+| How do I remove everything? | `exakit teardown --data`, then `rm -rf ~/.exasol-starter-kit` |
 
-## Development
+---
 
-```bash
-bash tests/dry-run-matrix.sh     # detection/routing logic across simulated environments (no installs)
-bash tests/smoke-test.sh         # pipe-entry dry run; EXAKIT_SMOKE_FULL=1 for a real end-to-end install
-```
+<div align="center">
 
-**Layering:** `install.sh` / `install.ps1` (thin pipe entries) → `setup/setup-<os>` (orchestrators) → `setup/lib/` (modules: detection, runtimes, exapump, MCP, shared plumbing). Each layer runs standalone.
+**Start locally. Connect AI safely. Inspect the SQL. Validate the output. Rerun the workflow.**
 
-**State:** everything generated at runtime — install manifest, logs, credentials, MCP configs — lives in `~/.exasol-starter-kit/`, never in the repo. The manifest (`manifest.json`) records every component, version, and the kit level; it is the contract that makes re-runs idempotent, the Kit 2 upgrade additive, and the teardown precise.
+*Questions or issues → open an issue in this repository.*
 
-**Team assets:** files under `sql/`, `data/`, `mcp/`, `demo/`, `skills/`, and `advanced/` are delivered by their owners. Setup scripts consume them by path and report missing ones as *pending*, never as errors — so the kit installs cleanly at every stage of the project.
+</div>
