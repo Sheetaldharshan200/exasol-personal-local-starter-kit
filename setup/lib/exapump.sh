@@ -45,7 +45,7 @@ exapump_release_digest_from_api() {
     require_python3
     curl -fsSL --retry 3 --connect-timeout 15 \
         "https://api.github.com/repos/${EXAKIT_EXAPUMP_REPO}/releases/tags/v${EXAKIT_EXAPUMP_VERSION}" \
-        2>/dev/null | python3 -c '
+        2>/dev/null | run_python -c '
 import json, sys
 name = sys.argv[1]
 doc = json.load(sys.stdin)
@@ -135,7 +135,7 @@ exapump_create_profile() {
 
     require_python3
     mkdir -p "$(dirname "$EXAPUMP_CONFIG")"
-    python3 - "$EXAPUMP_CONFIG" "$EXAKIT_EXAPUMP_PROFILE" "$_host" "$_port" "$_user" "$_password" <<'PY' || die "Could not write the exapump profile"
+    run_python - "$EXAPUMP_CONFIG" "$EXAKIT_EXAPUMP_PROFILE" "$_host" "$_port" "$_user" "$_password" <<'PY' || die "Could not write the exapump profile"
 import os, re, sys
 path, profile, host, port, user, password = sys.argv[1:7]
 try:

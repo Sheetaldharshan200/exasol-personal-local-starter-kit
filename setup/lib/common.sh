@@ -614,12 +614,16 @@ _exakit_exapump_sql_has_token() {
     printf '%s\n' "$_output" | grep -Fq "$_token"
 }
 
+# _exakit_assert_mcp_readonly_posture <config> <user> <comma-or-space-separated schemas>
+# Verifies CREATE SESSION only, SELECT on every configured schema, and no
+# object privileges outside those schemas — across the *whole* schema list,
+# not just the first one, so posture checks cannot miss drift on additional
+# schemas (or false-positive on their legitimate SELECT grants).
 _exakit_assert_mcp_readonly_posture() {
     _config_path="$1"
     _readonly_user="$2"
-    _schema="$3"
+    _schemas="$3"
     _identifier_user="$(printf '%s' "$_readonly_user" | tr '[:lower:]' '[:upper:]')"
-    _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
 
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
@@ -631,26 +635,101 @@ _exakit_assert_mcp_readonly_posture() {
         "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE <> 'CREATE SESSION'" \
         "EXAKIT_SYS_PRIV_SCOPE_OK" || die "The MCP read-only user has system privileges beyond CREATE SESSION."
 
-    _exakit_exapump_sql_has_token \
-        "$_config_path" "admin" \
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
-        "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
+    _old_ifs="$IFS"
+    IFS=', '
+    set -- $_schemas
+    IFS="$_old_ifs"
+    _schema_or_clause=""
+    _schema_scope_clause=""
+    for _schema in "$@"; do
+        [ -n "$_schema" ] || continue
+        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
+        _schema_lit="$(_exakit_sql_literal "$_schema_uc")"
 
-    _exakit_exapump_sql_has_token \
-        "$_config_path" "admin" \
-        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")')))" \
-        "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on schema $_schema_uc."
-
-    if _exakit_run_exapump_sql \
-        "$_config_path" "mcp_readonly" \
-        "CREATE TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
-        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
-        _exakit_run_exapump_sql \
+        _exakit_exapump_sql_has_token \
             "$_config_path" "admin" \
-            "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
-            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
-        die "The MCP read-only user unexpectedly succeeded in a write operation."
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$_schema_lit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$_schema_lit'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
+            "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
+
+        _clause="(OBJECT_SCHEMA = '$_schema_lit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$_schema_lit')"
+        if [ -z "$_schema_scope_clause" ]; then
+            _schema_scope_clause="$_clause"
+        else
+            _schema_scope_clause="$_schema_scope_clause OR $_clause"
+        fi
+    done
+    [ -n "$_schema_scope_clause" ] || die "No MCP read-only schemas were configured to assert posture against."
+
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ($_schema_scope_clause))" \
+        "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on the configured schemas ($_schemas)."
+
+    for _schema in "$@"; do
+        [ -n "$_schema" ] || continue
+        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
+        if _exakit_run_exapump_sql \
+            "$_config_path" "mcp_readonly" \
+            "CREATE TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+            _exakit_run_exapump_sql \
+                "$_config_path" "admin" \
+                "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
+                >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
+            die "The MCP read-only user unexpectedly succeeded in a write operation on schema $_schema_uc."
+        fi
+    done
+}
+
+# _exakit_reassert_mcp_readonly_posture — re-run the grant-posture check
+# against the database using the credentials already on file, without
+# re-provisioning anything. Used by `exakit mcp-doctor`/`mcp-validate` so
+# privilege drift after install (e.g. someone widening a grant by hand) is
+# actually caught, not just checked once at setup time.
+# Runs the (die()-on-failure) assertion in a subshell so a posture failure
+# is reported back to the caller instead of aborting the whole CLI.
+_exakit_reassert_mcp_readonly_posture() {
+    _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
+    _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
+    _readonly_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _readonly_password_file="$(manifest_get components.mcp_server.connection.password_file 2>/dev/null || true)"
+    _schemas_json="$(manifest_get components.mcp_server.connection.schemas 2>/dev/null || true)"
+
+    if [ -z "$_runtime_user" ] || [ -z "$_runtime_password_file" ] || \
+       [ -z "$_readonly_user" ] || [ -z "$_readonly_password_file" ] || [ -z "$_schemas_json" ]; then
+        return 0
     fi
+    [ -f "$_runtime_password_file" ] || { warn "Runtime password file missing; skipping MCP grant-posture re-check."; return 1; }
+    [ -f "$_readonly_password_file" ] || { warn "MCP read-only password file missing; skipping MCP grant-posture re-check."; return 1; }
+
+    _schemas_csv="$(run_python - "$_schemas_json" <<'PY'
+import json, sys
+print(",".join(json.loads(sys.argv[1])))
+PY
+)"
+    [ -n "$_schemas_csv" ] || return 0
+
+    _admin_password="$(cat "$_runtime_password_file")"
+    _readonly_password="$(cat "$_readonly_password_file")"
+    _host="$(_exakit_parse_runtime_host)"
+    _port="$(_exakit_parse_runtime_port)"
+    _default_schema="$(_exakit_first_schema "$_schemas_csv")"
+
+    _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX")"
+    _exakit_write_exapump_config \
+        "$_temp_config" "$_host" "$_port" "$_runtime_user" "$_admin_password" \
+        "$_readonly_user" "$_readonly_password" "$_default_schema"
+
+    info "Re-checking MCP read-only grant posture against the database"
+    if ( _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_schemas_csv" ) \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        rm -f "$_temp_config"
+        ok "MCP read-only grant posture is still correct"
+        return 0
+    fi
+    rm -f "$_temp_config"
+    warn "MCP read-only grant posture has drifted from least-privilege (see log). Run 'exakit mcp-repair' or review grants manually."
+    return 1
 }
 
 _exakit_validate_identifier() {
@@ -754,7 +833,7 @@ exakit_configure_mcp_readonly_access() {
         "$_temp_config" "mcp_readonly" \
         "SELECT 'EXAKIT_MCP_READONLY_OK' AS STATUS" \
         "EXAKIT_MCP_READONLY_OK" || die "The MCP read-only user did not pass the validation query."
-    _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_default_schema_uc"
+    _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_readonly_schemas"
 
     manifest_set components.mcp_server.connection.user "$_readonly_user"
     manifest_set components.mcp_server.connection.password_file "$EXAKIT_CREDS_DIR/mcp_readonly_password"
@@ -1083,6 +1162,13 @@ exakit_mcp_operation() {
         exakit_print_mcp_operation_summary "$_result_file"
     fi
     rm -f "$_result_file"
+
+    case "$_operation" in
+        doctor|validate)
+            _exakit_reassert_mcp_readonly_posture || _operation_status=1
+            ;;
+    esac
+
     return "$_operation_status"
 }
 
@@ -1143,9 +1229,12 @@ kit_shared_steps() {
     if command -v mcp_install >/dev/null 2>&1; then
         if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
             mcp_install
-            exakit_generate_mcp_configs
-            mcp_validate
-            mark_step mcp
+            if exakit_generate_mcp_configs; then
+                mcp_validate
+                mark_step mcp
+            else
+                warn "MCP client config generation failed — re-run 'exakit mcp-configs' once the issue above is fixed."
+            fi
         fi
     else
         info "Step ${_step_no}/${_total}  MCP server — module not included in this kit build yet, skipping"
@@ -1155,10 +1244,13 @@ kit_shared_steps() {
     if begin_step exakit_helper "Step ${_step_no}/${_total}  exakit helper command"; then
         mkdir -p "$EXAKIT_BIN_DIR"
         install -m 755 "$_script_dir/exakit" "$EXAKIT_BIN_DIR/exakit"
-        # Keep a copy of the kit library next to the state so exakit finds
-        # it even when this checkout moves or disappears.
+        # Keep a copy of the kit library (and the mcp/ and sql/ packages
+        # exakit_repo_root() depends on) next to the state so exakit finds
+        # them even when this checkout moves or disappears.
         mkdir -p "$EXAKIT_HOME/kit/setup"
         cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/"
+        [ -d "$_kit_root/mcp" ] && cp -R "$_kit_root/mcp" "$EXAKIT_HOME/kit/"
+        [ -d "$_kit_root/sql" ] && cp -R "$_kit_root/sql" "$EXAKIT_HOME/kit/"
         ensure_path_hint "$EXAKIT_BIN_DIR"
         mark_step exakit_helper
         ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"

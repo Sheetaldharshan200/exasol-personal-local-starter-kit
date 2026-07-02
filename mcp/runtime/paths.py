@@ -28,6 +28,8 @@ class RuntimePaths:
 
     def ensure(self) -> None:
         self.runtime_root.mkdir(parents=True, exist_ok=True)
-        self.mcp_dir.mkdir(parents=True, exist_ok=True)
-        self.backups_dir.mkdir(parents=True, exist_ok=True)
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        # Config exports and snapshots under these directories embed database
+        # credentials, so keep the directories themselves owner-only too.
+        for directory in (self.mcp_dir, self.backups_dir, self.logs_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+            directory.chmod(0o700)

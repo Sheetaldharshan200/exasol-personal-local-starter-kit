@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import stat
@@ -17,8 +18,14 @@ class FileSystem:
         path.mkdir(parents=True, exist_ok=True)
 
     def write_text(self, path: Path, content: str) -> None:
+        # Files written by this subsystem can embed database credentials,
+        # so they must be owner-only from the moment they exist — creating
+        # with the default umask and chmod-ing afterward leaves a window
+        # where other local users can read the secret.
         self.ensure_dir(path.parent)
-        path.write_text(content, encoding="utf-8")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
 
     def write_json(self, path: Path, content: dict) -> None:
         self.write_text(path, json.dumps(content, indent=2, sort_keys=True) + "\n")
