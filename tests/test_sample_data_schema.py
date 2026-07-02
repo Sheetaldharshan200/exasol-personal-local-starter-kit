@@ -21,6 +21,10 @@ DATA_DIR = ROOT / "data"
 SCHEMA_SQL = ROOT / "sql" / "01_create_schema.sql"
 LOAD_SQL = ROOT / "sql" / "02_load_data.sql"
 VERIFY_SQL = ROOT / "sql" / "03_verify_setup.sql"
+EXAPUMP_LIB = ROOT / "setup" / "lib" / "exapump.sh"
+COMMON_LIB = ROOT / "setup" / "lib" / "common.sh"
+LOAD_DATA_SH = ROOT / "setup" / "load-data.sh"
+EXAKIT_CLI = ROOT / "setup" / "exakit"
 
 # Fixed row counts at TPC-H scale factor 0.02, per data/README.md and
 # data/data-dictionary.md. lineitem is generator-dependent (~120K) and is
@@ -152,6 +156,55 @@ class LoadPipelineFilesTests(unittest.TestCase):
                     f"sql/03_verify_setup.sql does not mention table {table_name.upper()} "
                     "— it was likely added to the schema without adding verification coverage.",
                 )
+
+
+class LoadWiringTests(unittest.TestCase):
+    """Lock in the interactive-load wiring so it cannot silently regress:
+    one shared pipeline, invoked from all three entry points, with the kit's
+    assets copied where the post-install commands expect them."""
+
+    def test_shared_pipeline_function_is_defined_once(self) -> None:
+        exapump = EXAPUMP_LIB.read_text(encoding="utf-8")
+        self.assertIn(
+            "exakit_load_sample_data()",
+            exapump,
+            "setup/lib/exapump.sh must define the shared exakit_load_sample_data pipeline.",
+        )
+
+    def test_load_data_script_delegates_and_does_not_duplicate_pipeline(self) -> None:
+        load_sh = LOAD_DATA_SH.read_text(encoding="utf-8")
+        self.assertIn(
+            "exakit_load_sample_data",
+            load_sh,
+            "setup/load-data.sh should call the shared function, not reimplement the load.",
+        )
+        # The load pipeline must live in exactly one place — the script must
+        # not carry its own copy of the upload/verify/manifest steps.
+        for reimplemented in ("exapump_upload ", "manifest_set data.loaded"):
+            self.assertNotIn(
+                reimplemented,
+                load_sh,
+                f"setup/load-data.sh re-implements '{reimplemented.strip()}' instead of "
+                "delegating to exakit_load_sample_data.",
+            )
+
+    def test_installer_offers_load_and_copies_assets(self) -> None:
+        common = COMMON_LIB.read_text(encoding="utf-8")
+        self.assertIn(
+            "exakit_maybe_offer_data_load",
+            common,
+            "kit_shared_steps must offer the interactive sample-data load during install.",
+        )
+        # data/ and load-data.sh must be copied into the kit home so the
+        # documented post-install commands keep working after the checkout
+        # is gone (mcp/ and sql/ are copied for the same reason).
+        self.assertIn('cp -R "$_kit_root/data"', common)
+        self.assertIn("load-data.sh", common)
+
+    def test_exakit_cli_exposes_load_data_command(self) -> None:
+        cli = EXAKIT_CLI.read_text(encoding="utf-8")
+        self.assertIn("load-data)", cli, "exakit must dispatch a 'load-data' subcommand.")
+        self.assertIn("cmd_load_data", cli)
 
 
 if __name__ == "__main__":

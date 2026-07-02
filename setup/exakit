@@ -9,6 +9,7 @@
 #   info                print the connection details panel
 #   start               start the local database
 #   stop                stop the local database
+#   load-data [--force] load the sample dataset (schema + CSVs + verify)
 #   mcp-configs         regenerate the ready-made temporary MCP config bundle
 #   mcp-setup           choose temporary or permanent MCP client setup
 #   mcp-status          show managed MCP state
@@ -43,6 +44,7 @@ fi
 . "$_lib_dir/detect.sh"
 . "$_lib_dir/runtime-nano.sh"
 . "$_lib_dir/runtime-personal.sh"
+[ -f "$_lib_dir/exapump.sh" ] && . "$_lib_dir/exapump.sh"
 
 _runtime_type() {
     manifest_get runtime.type 2>/dev/null
@@ -124,6 +126,17 @@ cmd_logs() {
     fi
 }
 
+cmd_load_data() {
+    _require_install
+    command -v exakit_load_sample_data >/dev/null 2>&1 || \
+        die "The exapump data-loading module is not available in this kit build."
+    exakit_init_logging
+    _kit_root="$(exakit_repo_root)" || \
+        die "Could not find the kit's sql/ and data/ files to load."
+    info "Loading the sample dataset (log: ${EXAKIT_LOG_FILE:-none})"
+    exakit_load_sample_data "$_kit_root" "${1:-}"
+}
+
 cmd_mcp_configs() {
     _require_install
     exakit_init_logging
@@ -173,7 +186,7 @@ cmd_mcp_restore() {
 }
 
 usage() {
-    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 case "${1:-help}" in
@@ -183,6 +196,7 @@ case "${1:-help}" in
     info)     connection_panel ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;
+    load-data) shift; cmd_load_data "${1:-}" ;;
     mcp-configs) cmd_mcp_configs ;;
     mcp-setup) cmd_mcp_setup ;;
     mcp-status) shift; cmd_mcp_status "$@" ;;

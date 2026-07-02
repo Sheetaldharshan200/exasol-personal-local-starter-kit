@@ -51,30 +51,36 @@ if [ "$rerun_time" -gt 120 ]; then
     echo "[smoke] WARN: re-run took ${rerun_time}s — idempotent skips should be much faster" >&2
 fi
 
-say "4/4 sample data: load, idempotent skip, forced reload"
+# Exercises the installed `exakit load-data` CLI (not the raw script), which
+# also proves data/ and the SQL were copied into ~/.exasol-starter-kit/kit
+# and resolve after the checkout is gone. The full install itself skips the
+# interactive load offer here because a piped smoke run has no TTY.
+EXAKIT="$HOME/.local/bin/exakit"
+
+say "4/4 sample data: load, idempotent skip, forced reload (via exakit CLI)"
 start=$(date +%s)
-if ! bash "$ROOT/setup/load-data.sh"; then
-    echo "[smoke] FAIL: initial data load exited non-zero" >&2
+if ! "$EXAKIT" load-data; then
+    echo "[smoke] FAIL: 'exakit load-data' exited non-zero" >&2
     exit 1
 fi
 load_time=$(( $(date +%s) - start ))
 say "data load finished in ${load_time}s"
 
 start=$(date +%s)
-if ! bash "$ROOT/setup/load-data.sh" | tee /dev/stderr | grep -q "already loaded"; then
-    echo "[smoke] FAIL: second load-data.sh run did not report 'already loaded' — idempotency guard is broken" >&2
+if ! "$EXAKIT" load-data | tee /dev/stderr | grep -q "already loaded"; then
+    echo "[smoke] FAIL: second 'exakit load-data' did not report 'already loaded' — idempotency guard is broken" >&2
     exit 1
 fi
 say "idempotent re-run skipped correctly in $(( $(date +%s) - start ))s"
 
 start=$(date +%s)
-if ! bash "$ROOT/setup/load-data.sh" --force; then
-    echo "[smoke] FAIL: --force reload exited non-zero (schema recreate + reload + verify should all be repeatable)" >&2
+if ! "$EXAKIT" load-data --force; then
+    echo "[smoke] FAIL: 'exakit load-data --force' exited non-zero (schema recreate + reload + verify should all be repeatable)" >&2
     exit 1
 fi
 say "forced reload finished in $(( $(date +%s) - start ))s"
 
-"$HOME/.local/bin/exakit" status || true
+"$EXAKIT" status || true
 
 say "PASS (full: ${full_time}s, re-run: ${rerun_time}s, data load: ${load_time}s)"
 say "Teardown when you are done testing: exakit teardown --data"

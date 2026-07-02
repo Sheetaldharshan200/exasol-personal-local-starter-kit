@@ -1199,6 +1199,40 @@ exakit_maybe_offer_mcp_setup() {
     fi
 }
 
+# exakit_maybe_offer_data_load <kit_root> — interactively offer to load the
+# sample dataset during install. Mirrors exakit_maybe_offer_mcp_setup:
+# silently skips when already loaded, when there is no dataset to load, or
+# when running non-interactively (so piped/CI installs never block). The
+# actual load runs in a subshell so a die() inside the pipeline is contained
+# and never aborts the surrounding install.
+exakit_maybe_offer_data_load() {
+    _kit_root="$1"
+    command -v exakit_load_sample_data >/dev/null 2>&1 || return 0
+    [ "$(manifest_get data.loaded 2>/dev/null)" = "true" ] && return 0
+
+    _has_data=0
+    for _csv in "$_kit_root"/data/*.csv; do
+        [ -s "$_csv" ] && { _has_data=1; break; }
+    done
+    [ "$_has_data" -eq 1 ] || return 0
+
+    [ -n "$(_exakit_prompt_tty)" ] || {
+        info "Sample data is available. Load it any time with: exakit load-data"
+        return 0
+    }
+
+    info "A sample dataset (TPC-H, ~21 MB) can be loaded into the ${EXAKIT_SCHEMA:-STARTER_KIT} schema now."
+    if ! confirm "Load the sample dataset now?" y; then
+        info "Skipping sample data load. Run it any time with: exakit load-data"
+        return 0
+    fi
+    if ( exakit_load_sample_data "$_kit_root" ); then
+        :
+    else
+        warn "Sample data load did not finish cleanly. Retry any time with: exakit load-data"
+    fi
+}
+
 # kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>
 # The steps every platform runs after its runtime is up: exapump, MCP,
 # the exakit helper, and the pending-assets report. One implementation so
@@ -1244,20 +1278,21 @@ kit_shared_steps() {
         # them even when this checkout moves or disappears.
         mkdir -p "$EXAKIT_HOME/kit/setup"
         cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/"
+        # Copy the assets exakit needs after the checkout is gone: the mcp/
+        # and sql/ packages, the data/ CSVs, and load-data.sh (so both
+        # `exakit load-data` and the documented
+        # ~/.exasol-starter-kit/kit/setup/load-data.sh command keep working).
         [ -d "$_kit_root/mcp" ] && cp -R "$_kit_root/mcp" "$EXAKIT_HOME/kit/"
         [ -d "$_kit_root/sql" ] && cp -R "$_kit_root/sql" "$EXAKIT_HOME/kit/"
+        [ -d "$_kit_root/data" ] && cp -R "$_kit_root/data" "$EXAKIT_HOME/kit/"
+        [ -f "$_script_dir/load-data.sh" ] && cp "$_script_dir/load-data.sh" "$EXAKIT_HOME/kit/setup/"
         ensure_path_hint "$EXAKIT_BIN_DIR"
         mark_step exakit_helper
         ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
     fi
 
     exakit_maybe_offer_mcp_setup || true
-
-    for _pending in sql/01_create_schema.sql data/data-dictionary.md; do
-        if [ ! -s "$_kit_root/$_pending" ]; then
-            info "Pending: $_pending is not in this kit build yet (sample schema/data step will activate once it lands)"
-        fi
-    done
+    exakit_maybe_offer_data_load "$_kit_root" || true
 }
 
 # connection_panel — the payoff screen: everything needed to connect.

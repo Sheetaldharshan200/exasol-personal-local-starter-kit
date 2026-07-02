@@ -61,10 +61,10 @@ After temporary setup, copy or merge the generated config, then restart the clie
 
 ## 5. Ask your first question
 
-Load the sample dataset (once the kit's sample data ships — the command is safe to run any time and tells you if data isn't available yet):
+The installer offers to load the sample dataset for you. If you skipped it (or want to reload), the command is safe to run any time and idempotent:
 
 ```bash
-bash ~/.exasol-starter-kit/kit/setup/load-data.sh
+exakit load-data           # or: exakit load-data --force to reload
 ```
 
 Then ask your assistant something like:
