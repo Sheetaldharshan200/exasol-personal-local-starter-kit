@@ -14,7 +14,7 @@ Gets you from Windows to a local Exasol database with an AI assistant connected,
 Check from a WSL terminal (installs nothing):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
 Every ✗ line tells you what to fix — the usual one is Docker Desktop not running or WSL integration not enabled.
@@ -22,7 +22,7 @@ Every ✗ line tells you what to fix — the usual one is Docker Desktop not run
 ## Install (inside the WSL terminal)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 What happens, in order:
@@ -31,7 +31,7 @@ What happens, in order:
 2. The pinned `exasol/nano` image is pulled (with retries)
 3. The container starts with a persistent volume and a generated password; the SQL port is bound to `127.0.0.1:8563` only
 4. The installer waits until the database reports ready (a few minutes)
-5. exapump is installed with a ready connection profile; the MCP server is set up and validated
+5. exapump is installed with a ready connection profile; the MCP server is set up, a dedicated `mcp_readonly` database user is created and validated, and the ready-made client config bundle is generated for you
 6. You get the connection panel
 
 ## Verify
@@ -43,9 +43,12 @@ exapump sql -p starter-kit 'SELECT CURRENT_TIMESTAMP'
 
 ## Connect your AI assistant
 
-Configs are generated in WSL at `~/.exasol-starter-kit/mcp/`.
+Configs are generated in WSL at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.
 
-Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. For Claude Desktop on Windows: open **Settings → Developer → Edit Config** and merge `claude-config.json` — one adjustment: the `command` must be runnable from Windows, so either install `uv` on Windows too, or wrap the command as `wsl uvx exasol-mcp-server@<version>` keeping the same `env` block.
+Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. For Claude Desktop on Windows: open **Settings → Developer → Edit Config** and merge `claude-config.json` — one adjustment: the generated WSL bundle contains the Linux-side launcher path, so the `command` must be replaced with something Windows can run. The two practical options are:
+
+- Install `uv` on Windows too and replace `command` with the output of `(Get-Command uvx).Source`
+- Keep the same `env` block and wrap the launch as `wsl uvx exasol-mcp-server@<version>`
 
 Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 

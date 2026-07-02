@@ -5,7 +5,7 @@ Goal: a local Exasol database on your machine, an AI assistant connected to it, 
 ## 1. Check your machine (optional, 10 seconds)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
 All ✓? Continue. Any ✗ tells you exactly what to fix.
@@ -15,13 +15,13 @@ All ✓? Continue. Any ✗ tells you exactly what to fix.
 **macOS / Linux / WSL:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
 > **Native Windows note:** the PowerShell path currently installs the database container only — the `exakit`/`exapump` commands below and the generated MCP configs come with the macOS/Linux/WSL path. On Windows, follow the [Windows Docker quickstart](quickstarts/windows-docker.md) for verification and MCP setup, or run the install inside WSL for the full experience.
@@ -47,20 +47,17 @@ If that returns a timestamp, your local database works end to end.
 
 ## 4. Connect your AI assistant
 
-Ready-made configs live in `~/.exasol-starter-kit/mcp/`.
+Run the guided MCP setup:
 
-**Claude Desktop**
+```bash
+exakit mcp-setup
+```
 
-1. Open Claude Desktop → Settings → Developer → **Edit Config**
-2. Merge the contents of `~/.exasol-starter-kit/mcp/claude-config.json` into `claude_desktop_config.json` (if you have no other MCP servers, you can paste it wholesale)
-3. Restart Claude Desktop — you should see the `exasol` server listed
+Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex.
 
-**Cursor**
+When the kit can resolve the local MCP launcher path, it writes that exact path into the generated config instead of assuming `uvx` is available on every desktop app's PATH. That makes the same bundle more portable across macOS, Linux, and Windows clients.
 
-1. Copy `~/.exasol-starter-kit/mcp/cursor-config.json` into your Cursor MCP settings (`.cursor/mcp.json` in a project, or the global MCP settings)
-2. Reload Cursor
-
-**Any other MCP client** — use `generic-config.json`; it contains the bare server definition (command, args, env).
+After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
 ## 5. Ask your first question
 
@@ -72,7 +69,7 @@ bash ~/.exasol-starter-kit/kit/setup/load-data.sh
 
 Then ask your assistant something like:
 
-> *"What schemas and tables exist in my Exasol database?"*
+> *"Use the exasol MCP server connected to my local Exasol database. List the available schemas and tables first. Then answer my questions with read-only SQL only, show me the SQL before you run it, and do not create, update, or delete anything."*
 > *"Show me total revenue by product category — and show me the SQL before you run it."*
 
 The MCP server is **read-only by design**: the assistant can discover schema and run SELECT queries, nothing else. Ask it to show the SQL first — inspect, then approve. That's the workflow this kit exists to prove.

@@ -21,6 +21,23 @@
 EXAKIT_MCP_USER="${EXAKIT_MCP_USER:-MCP_READONLY}"
 EXAKIT_MCP_HTTP_PORT="${EXAKIT_MCP_HTTP_PORT:-8123}"
 
+mcp_command_path() {
+    _manifest_command="$(manifest_get components.mcp_server.command 2>/dev/null || true)"
+    if [ -n "$_manifest_command" ]; then
+        printf '%s\n' "$_manifest_command"
+        return 0
+    fi
+    if command -v uvx >/dev/null 2>&1; then
+        command -v uvx
+        return 0
+    fi
+    if [ -x "$HOME/.local/bin/uvx" ]; then
+        printf '%s\n' "$HOME/.local/bin/uvx"
+        return 0
+    fi
+    printf '%s\n' "uvx"
+}
+
 mcp_uv_install() {
     if command -v uv >/dev/null 2>&1; then
         ok "uv already installed: $(command -v uv)"
@@ -49,6 +66,9 @@ mcp_install() {
     info "Priming ${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION} (downloads on first use)"
     run_logged uvx "${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION}" --help || \
         warn "Could not prime the MCP server package (it will download on first client start)"
+    _uv_bin="$(command -v uv 2>/dev/null || true)"
+    [ -n "$_uv_bin" ] && manifest_set components.mcp_server.uv_path "$_uv_bin"
+    manifest_set components.mcp_server.command "$(mcp_command_path)"
     manifest_set components.mcp_server.package "$EXAKIT_MCP_PACKAGE"
     manifest_set components.mcp_server.version "$EXAKIT_MCP_VERSION"
     ok "MCP server ready to run via uvx"
@@ -69,8 +89,8 @@ mcp_provision_readonly_user() {
     }
 
     _password="$(read_credential mcp_readonly_password)"
-    if [ -z "$_password" ]; then
-        _password="$(generate_password)"
+    if ! _exakit_validate_sql_password_token "$_password"; then
+        _password="$(_exakit_generate_sql_password_token)"
         store_credential mcp_readonly_password "$_password"
     fi
 
@@ -89,12 +109,18 @@ mcp_provision_readonly_user() {
 # mcp_credentials — prints "user<TAB>password_file" for the client configs.
 # Prefers the read-only user; falls back to the runtime admin user.
 mcp_credentials() {
-    if [ -n "$(manifest_get components.mcp_server.user 2>/dev/null)" ]; then
-        printf '%s\t%s\n' "$EXAKIT_MCP_USER" "$EXAKIT_CREDS_DIR/mcp_readonly_password"
-    else
-        printf '%s\t%s\n' "$(manifest_get runtime.user 2>/dev/null)" \
-            "$(manifest_get runtime.password_file 2>/dev/null)"
+    _connection_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _connection_pwfile="$(manifest_get components.mcp_server.connection.password_file 2>/dev/null || true)"
+    if [ -n "$_connection_user" ] && [ -n "$_connection_pwfile" ]; then
+        printf '%s\t%s\n' "$_connection_user" "$_connection_pwfile"
+        return 0
     fi
+    if [ -n "$(manifest_get components.mcp_server.user 2>/dev/null || true)" ]; then
+        printf '%s\t%s\n' "$EXAKIT_MCP_USER" "$EXAKIT_CREDS_DIR/mcp_readonly_password"
+        return 0
+    fi
+    printf '%s\t%s\n' "$(manifest_get runtime.user 2>/dev/null)" \
+        "$(manifest_get runtime.password_file 2>/dev/null)"
 }
 
 # mcp_resolve_creds — sets _mcp_user and _mcp_password for the caller.
@@ -130,12 +156,13 @@ mcp_generate_configs() {
     mkdir -p "$EXAKIT_MCP_DIR"
     chmod 700 "$EXAKIT_MCP_DIR"
 
+    _mcp_command="$(mcp_command_path)"
     require_python3
-    python3 - "$EXAKIT_MCP_DIR" "$EXAKIT_MCP_PACKAGE" "$EXAKIT_MCP_VERSION" "$_dsn" "$_user" "$_password" <<'PY' || die "Could not write MCP configs"
+    python3 - "$EXAKIT_MCP_DIR" "$_mcp_command" "$EXAKIT_MCP_PACKAGE" "$EXAKIT_MCP_VERSION" "$_dsn" "$_user" "$_password" <<'PY' || die "Could not write MCP configs"
 import json, os, sys
-out_dir, pkg, ver, dsn, user, password = sys.argv[1:7]
+out_dir, command, pkg, ver, dsn, user, password = sys.argv[1:8]
 server = {
-    "command": "uvx",
+    "command": command,
     "args": [f"{pkg}@{ver}"],
     "env": {"EXA_DSN": dsn, "EXA_USER": user, "EXA_PASSWORD": password},
 }
@@ -166,17 +193,18 @@ mcp_validate() {
     mcp_resolve_creds
     _user="$_mcp_user"
     _password="$_mcp_password"
+    _mcp_command="$(mcp_command_path)"
 
     require_python3
     _handshake_ok=0
     for _attempt in 1 2; do
         if EXA_DSN="$_dsn" EXA_USER="$_user" EXA_PASSWORD="$_password" \
-            python3 - "$EXAKIT_MCP_PACKAGE" "$EXAKIT_MCP_VERSION" <<'PY' >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
+            python3 - "$_mcp_command" "$EXAKIT_MCP_PACKAGE" "$EXAKIT_MCP_VERSION" <<'PY' >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
 import json, subprocess, sys
 
-pkg, ver = sys.argv[1], sys.argv[2]
+command, pkg, ver = sys.argv[1], sys.argv[2], sys.argv[3]
 proc = subprocess.Popen(
-    ["uvx", f"{pkg}@{ver}"],
+    [command, f"{pkg}@{ver}"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     text=True,
 )

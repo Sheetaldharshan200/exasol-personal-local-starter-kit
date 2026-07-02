@@ -9,6 +9,14 @@
 #   info                print the connection details panel
 #   start               start the local database
 #   stop                stop the local database
+#   mcp-configs         regenerate the ready-made temporary MCP config bundle
+#   mcp-setup           choose temporary or permanent MCP client setup
+#   mcp-status          show managed MCP state
+#   mcp-validate        validate managed MCP configs and connectivity
+#   mcp-repair          repair managed MCP config drift
+#   mcp-doctor          run MCP diagnostics
+#   mcp-remove          remove managed MCP config from the supported clients
+#   mcp-restore         restore the latest (or a chosen) MCP snapshot
 #   teardown [--data]   remove the runtime; --data also deletes database
 #                       content (Nano volume / Personal deployment)
 #   logs                print the path of the latest setup log
@@ -116,8 +124,56 @@ cmd_logs() {
     fi
 }
 
+cmd_mcp_configs() {
+    _require_install
+    exakit_init_logging
+    exakit_generate_mcp_configs || die "Could not generate MCP client configs"
+}
+
+cmd_mcp_setup() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_setup || die "Could not complete MCP client setup"
+}
+
+cmd_mcp_status() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation status "$@" || die "Could not inspect MCP state"
+}
+
+cmd_mcp_validate() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation validate "$@" || die "Could not validate MCP state"
+}
+
+cmd_mcp_repair() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation repair "$@" || die "Could not repair MCP state"
+}
+
+cmd_mcp_doctor() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation doctor "$@" || die "Could not run MCP diagnostics"
+}
+
+cmd_mcp_remove() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation uninstall "$@" || die "Could not remove managed MCP configuration"
+}
+
+cmd_mcp_restore() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_restore "${1:-}" || die "Could not restore managed MCP configuration"
+}
+
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 case "${1:-help}" in
@@ -127,6 +183,14 @@ case "${1:-help}" in
     info)     connection_panel ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;
+    mcp-configs) cmd_mcp_configs ;;
+    mcp-setup) cmd_mcp_setup ;;
+    mcp-status) shift; cmd_mcp_status "$@" ;;
+    mcp-validate) shift; cmd_mcp_validate "$@" ;;
+    mcp-repair) shift; cmd_mcp_repair "$@" ;;
+    mcp-doctor) shift; cmd_mcp_doctor "$@" ;;
+    mcp-remove) shift; cmd_mcp_remove "$@" ;;
+    mcp-restore) shift; cmd_mcp_restore "$@" ;;
     teardown) shift; cmd_teardown "${1:-}" ;;
     logs)     cmd_logs ;;
     help|-h|--help) usage ;;

@@ -11,15 +11,15 @@ Gets you from a bare Mac to a local Exasol database with an AI assistant connect
 Check before you start (installs nothing):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
-If `python3` shows ✗, run `xcode-select --install` first (one-time, standard on any dev Mac).
+If `python3` is missing, that's fine: the installer can bootstrap its own managed Python runtime automatically.
 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 What happens, in order:
@@ -28,8 +28,8 @@ What happens, in order:
 2. The Exasol launcher is downloaded (pinned version, checksum-verified) into `~/.local/bin`
 3. `exasol install local` deploys the database — **this is the 10–20 minute step**; output streams so you can watch it work
 4. exapump (data loading CLI) is installed and a connection profile is created for you
-5. The MCP server (AI agent bridge) is set up and validated
-6. You get a connection panel: DSN, user, where the password is stored, config paths
+5. The MCP server (AI agent bridge) is set up, a dedicated `mcp_readonly` database user is created and validated, and the ready-made client config bundle is generated for you
+6. You get a connection panel: DSN, admin user, MCP user, where the passwords are stored, config paths
 
 Safe to interrupt and re-run at any point — completed steps are skipped.
 
@@ -44,7 +44,7 @@ A timestamp back means the full chain works.
 
 ## Connect your AI assistant
 
-Your ready-made config is at `~/.exasol-starter-kit/mcp/claude-config.json` (Cursor and generic variants sit next to it).
+Your ready-made configs are at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.
 
 For Claude Desktop: **Settings → Developer → Edit Config**, merge the file's contents into `claude_desktop_config.json` (on macOS that file lives at `~/Library/Application Support/Claude/claude_desktop_config.json`), restart the app.
 

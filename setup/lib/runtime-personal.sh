@@ -157,7 +157,7 @@ personal_record_manifest() {
     _sec="$EXAKIT_PERSONAL_DEPLOY_DIR/secrets.json"
     if [ -f "$_dep" ]; then
         require_python3
-        _conn="$(python3 -c '
+        _conn="$(run_python -c '
 import json, sys
 doc = json.load(open(sys.argv[1]))
 c = doc.get("connection", {})
@@ -174,7 +174,7 @@ print("%s:%s\t%s" % (c.get("host", "127.0.0.1"), c.get("dbPort", 8563), c.get("u
     fi
     _password=""
     if [ -f "$_sec" ]; then
-        _password="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dbPassword",""))' "$_sec" 2>/dev/null)"
+        _password="$(run_python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dbPassword",""))' "$_sec" 2>/dev/null)"
     fi
     if [ -n "$_password" ]; then
         store_credential personal_sys_password "$_password"

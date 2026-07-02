@@ -1,6 +1,6 @@
 # install.ps1 — Exasol Personal Local Starter Kit, one-command installer (Windows).
 #
-#   irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
 #
 # What it does, in order:
 #   1. detects your hardware and container runtime
@@ -20,7 +20,7 @@
 $ErrorActionPreference = "Stop"
 
 $ExakitHome = if ($env:EXAKIT_HOME) { $env:EXAKIT_HOME } else { Join-Path $HOME ".exasol-starter-kit" }
-$Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "ranjanm-chn/exasol-personal-local-starter-kit" }
+$Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "Sheetaldharshan200/exasol-personal-local-starter-kit" }
 $Ref        = if ($env:EXAKIT_REF)  { $env:EXAKIT_REF }  else { "main" }
 $KitDir     = Join-Path $ExakitHome "kit"
 

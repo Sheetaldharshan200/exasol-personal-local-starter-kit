@@ -21,6 +21,9 @@ EXAKIT_MANIFEST="$EXAKIT_HOME/manifest.json"
 EXAKIT_MCP_DIR="$EXAKIT_HOME/mcp"
 EXAKIT_CREDS_DIR="$EXAKIT_HOME/credentials"
 EXAKIT_BIN_DIR="${EXAKIT_BIN_DIR:-$HOME/.local/bin}"
+EXAKIT_MANAGED_PYTHON_VERSION="${EXAKIT_MANAGED_PYTHON_VERSION:-3.12}"
+EXAKIT_MCP_READONLY_USER="${EXAKIT_MCP_READONLY_USER:-mcp_readonly}"
+EXAKIT_MCP_READONLY_SCHEMAS="${EXAKIT_MCP_READONLY_SCHEMAS:-STARTER_KIT}"
 
 # ---------------------------------------------------------------------------
 # Pinned component versions (override via environment)
@@ -87,12 +90,7 @@ confirm() {
     _question="$1"
     _default="${2:-y}"
     # A usable tty is one we can actually open, not one that merely exists.
-    _tty=""
-    if [ -t 0 ]; then
-        _tty="stdin"
-    elif (: < /dev/tty) 2>/dev/null; then
-        _tty="/dev/tty"
-    fi
+    _tty="$(_exakit_prompt_tty)"
     if [ -z "$_tty" ]; then
         [ "$_default" = "y" ]
         return
@@ -107,16 +105,83 @@ confirm() {
     esac
 }
 
+_exakit_prompt_tty() {
+    if [ -t 0 ]; then
+        printf 'stdin\n'
+    elif (: < /dev/tty) 2>/dev/null; then
+        printf '/dev/tty\n'
+    fi
+}
+
+prompt_text() {
+    _question="$1"
+    _default="${2:-}"
+    _tty="$(_exakit_prompt_tty)"
+    if [ -z "$_tty" ]; then
+        printf '%s\n' "$_default"
+        return 0
+    fi
+    if [ -n "$_default" ]; then
+        printf '\033[1;36m  ?\033[0m %s [%s] ' "$_question" "$_default" >&2
+    else
+        printf '\033[1;36m  ?\033[0m %s ' "$_question" >&2
+    fi
+    if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
+    printf '%s\n' "${_answer:-$_default}"
+}
+
 # ---------------------------------------------------------------------------
 # Manifest
 # ---------------------------------------------------------------------------
 require_python3() {
-    command -v python3 >/dev/null 2>&1 && return 0
-    case "$(uname -s)" in
-        Darwin) _hint="Install the Apple Command Line Tools: xcode-select --install" ;;
-        *)      _hint="Install it with your package manager, e.g. 'sudo apt install python3' or 'sudo dnf install python3'" ;;
-    esac
-    die "python3 is required (it maintains the install manifest). $_hint — then re-run."
+    _exakit_has_system_python3 && return 0
+    exakit_ensure_uv || die "A Python runtime is required, and the automatic uv bootstrap failed."
+}
+
+_exakit_has_system_python3() {
+    [ "${EXAKIT_DISABLE_SYSTEM_PYTHON:-0}" != "1" ] && command -v python3 >/dev/null 2>&1
+}
+
+exakit_ensure_uv() {
+    if [ -n "${EXAKIT_UV_BIN:-}" ] && [ -x "$EXAKIT_UV_BIN" ]; then
+        return 0
+    fi
+    if command -v uv >/dev/null 2>&1; then
+        EXAKIT_UV_BIN="$(command -v uv)"
+        return 0
+    fi
+    if [ -x "$EXAKIT_BIN_DIR/uv" ]; then
+        EXAKIT_UV_BIN="$EXAKIT_BIN_DIR/uv"
+        return 0
+    fi
+    info "Installing the managed Python bootstrapper (uv)"
+    mkdir -p "$EXAKIT_BIN_DIR"
+    if command -v curl >/dev/null 2>&1; then
+        env UV_NO_MODIFY_PATH=1 INSTALLER_NO_MODIFY_PATH=1 sh -c \
+            'curl -LsSf https://astral.sh/uv/install.sh | sh' >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || return 1
+    elif command -v wget >/dev/null 2>&1; then
+        env UV_NO_MODIFY_PATH=1 INSTALLER_NO_MODIFY_PATH=1 sh -c \
+            'wget -qO- https://astral.sh/uv/install.sh | sh' >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || return 1
+    else
+        warn "Neither curl nor wget is available to install uv."
+        return 1
+    fi
+    if [ -x "$EXAKIT_BIN_DIR/uv" ]; then
+        EXAKIT_UV_BIN="$EXAKIT_BIN_DIR/uv"
+        ok "uv installed at $EXAKIT_UV_BIN"
+        return 0
+    fi
+    warn "uv installation finished but the binary was not found in $EXAKIT_BIN_DIR."
+    return 1
+}
+
+run_python() {
+    if _exakit_has_system_python3; then
+        python3 "$@"
+        return $?
+    fi
+    exakit_ensure_uv || return 1
+    "$EXAKIT_UV_BIN" run --python "$EXAKIT_MANAGED_PYTHON_VERSION" --no-project python "$@"
 }
 
 manifest_init() {
@@ -125,7 +190,7 @@ manifest_init() {
         # Self-heal after an interrupted run: a manifest that no longer
         # parses is quarantined and rebuilt. Each install step re-verifies
         # what actually exists on disk, so nothing is reinstalled blindly.
-        if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$EXAKIT_MANIFEST" 2>/dev/null; then
+        if run_python -c 'import json,sys; json.load(open(sys.argv[1]))' "$EXAKIT_MANIFEST" 2>/dev/null; then
             return 0
         fi
         warn "The install manifest is corrupted (interrupted run?) — rebuilding it; existing components will be re-detected"
@@ -155,7 +220,7 @@ EOF
 # Value is stored as JSON if it parses as JSON, otherwise as a string.
 manifest_set() {
     require_python3
-    python3 - "$EXAKIT_MANIFEST" "$1" "$2" <<'PY' || die "Failed to update manifest ($1)"
+    run_python - "$EXAKIT_MANIFEST" "$1" "$2" <<'PY' || die "Failed to update manifest ($1)"
 import json, os, sys
 path, key, value = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f:
@@ -179,7 +244,7 @@ PY
 # manifest_get <dot.path> — prints the value; exits non-zero if missing.
 manifest_get() {
     require_python3
-    python3 - "$EXAKIT_MANIFEST" "$1" <<'PY'
+    run_python - "$EXAKIT_MANIFEST" "$1" <<'PY'
 import json, sys
 path, key = sys.argv[1], sys.argv[2]
 try:
@@ -201,7 +266,7 @@ PY
 step_done() {
     [ -f "$EXAKIT_MANIFEST" ] || return 1
     require_python3
-    python3 - "$EXAKIT_MANIFEST" "$1" <<'PY'
+    run_python - "$EXAKIT_MANIFEST" "$1" <<'PY'
 import json, sys
 with open(sys.argv[1]) as f:
     doc = json.load(f)
@@ -215,7 +280,7 @@ PY
 # transient failure must not undo an earlier successful deployment).
 mark_step() {
     require_python3
-    python3 - "$EXAKIT_MANIFEST" "$1" <<'PY' || die "Failed to record step $1"
+    run_python - "$EXAKIT_MANIFEST" "$1" <<'PY' || die "Failed to record step $1"
 import json, os, sys
 with open(sys.argv[1]) as f:
     doc = json.load(f)
@@ -412,6 +477,647 @@ ensure_path_hint() {
     esac
 }
 
+exakit_repo_root() {
+    if [ -d "$EXAKIT_HOME/kit/mcp" ]; then
+        printf '%s\n' "$EXAKIT_HOME/kit"
+        return 0
+    fi
+    _common_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    _repo_root="$(cd "$_common_dir/../.." && pwd)"
+    if [ -d "$_repo_root/mcp" ]; then
+        printf '%s\n' "$_repo_root"
+        return 0
+    fi
+    return 1
+}
+
+exakit_generate_mcp_configs() {
+    require_python3
+    _repo_root="$(exakit_repo_root)" || {
+        warn "Could not find the MCP package source to generate client configs."
+        return 1
+    }
+    exakit_configure_mcp_readonly_access || return 1
+    info "Generating ready-made MCP client configs"
+    if ! (
+        cd "$_repo_root" &&
+        PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
+            run_python -m mcp export-runtime-configs --runtime-root "$EXAKIT_HOME"
+    ) >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        warn "MCP config generation failed (see log)."
+        return 1
+    fi
+    mark_step mcp_configs
+    ok "MCP client configs are ready in $EXAKIT_MCP_DIR"
+    return 0
+}
+
+exakit_exapump_bin() {
+    _manifest_path="$(manifest_get components.exapump.path 2>/dev/null || true)"
+    if [ -n "$_manifest_path" ] && [ -x "$_manifest_path" ]; then
+        printf '%s\n' "$_manifest_path"
+        return 0
+    fi
+    if command -v exapump >/dev/null 2>&1; then
+        command -v exapump
+        return 0
+    fi
+    if [ -x "$EXAKIT_BIN_DIR/exapump" ]; then
+        printf '%s\n' "$EXAKIT_BIN_DIR/exapump"
+        return 0
+    fi
+    return 1
+}
+
+_exakit_sql_literal() {
+    printf "%s" "$1" | sed "s/'/''/g"
+}
+
+_exakit_manifest_runtime_value() {
+    manifest_get "$1" 2>/dev/null || true
+}
+
+_exakit_parse_runtime_host() {
+    _dsn="$(_exakit_manifest_runtime_value runtime.dsn)"
+    printf '%s\n' "${_dsn%%:*}"
+}
+
+_exakit_parse_runtime_port() {
+    _dsn="$(_exakit_manifest_runtime_value runtime.dsn)"
+    printf '%s\n' "${_dsn##*:}"
+}
+
+_exakit_first_schema() {
+    _schemas="$1"
+    _old_ifs="$IFS"
+    IFS=', '
+    set -- $_schemas
+    IFS="$_old_ifs"
+    printf '%s\n' "${1:-STARTER_KIT}"
+}
+
+_exakit_write_exapump_config() {
+    _config_path="$1"
+    _host="$2"
+    _port="$3"
+    _admin_user="$4"
+    _admin_password="$5"
+    _readonly_user="$6"
+    _readonly_password="$7"
+    _schema="$8"
+    run_python - "$_config_path" "$_host" "$_port" "$_admin_user" "$_admin_password" "$_readonly_user" "$_readonly_password" "$_schema" <<'PY'
+import sys
+
+config_path, host, port, admin_user, admin_password, readonly_user, readonly_password, schema = sys.argv[1:]
+
+def toml_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+doc = [
+    "[admin]\n",
+    f"host = {toml_string(host)}\n",
+    f"port = {port}\n",
+    f"user = {toml_string(admin_user)}\n",
+    f"password = {toml_string(admin_password)}\n",
+    "tls = true\n",
+    "validate_certificate = false\n",
+    "\n",
+    "[mcp_readonly]\n",
+    f"host = {toml_string(host)}\n",
+    f"port = {port}\n",
+    f"user = {toml_string(readonly_user)}\n",
+    f"password = {toml_string(readonly_password)}\n",
+    f"schema = {toml_string(schema)}\n",
+    "tls = true\n",
+    "validate_certificate = false\n",
+]
+with open(config_path, "w", encoding="utf-8") as handle:
+    handle.writelines(doc)
+PY
+    chmod 600 "$_config_path"
+}
+
+_exakit_run_exapump_sql() {
+    _config_path="$1"
+    _profile="$2"
+    _sql="$3"
+    _bin="$(exakit_exapump_bin)" || die "exapump is required for MCP read-only setup but was not found."
+    EXAPUMP_CONFIG="$_config_path" "$_bin" sql -p "$_profile" "$_sql"
+}
+
+_exakit_exapump_sql_has_token() {
+    _config_path="$1"
+    _profile="$2"
+    _sql="$3"
+    _token="$4"
+    _output="$(_exakit_run_exapump_sql "$_config_path" "$_profile" "$_sql" 2>> "${EXAKIT_LOG_FILE:-/dev/null}")" || return 1
+    printf '%s\n' "$_output" | grep -Fq "$_token"
+}
+
+_exakit_assert_mcp_readonly_posture() {
+    _config_path="$1"
+    _readonly_user="$2"
+    _schema="$3"
+    _identifier_user="$(printf '%s' "$_readonly_user" | tr '[:lower:]' '[:upper:]')"
+    _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
+
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'CREATE SESSION') THEN 'EXAKIT_CREATE_SESSION_OK' ELSE 'EXAKIT_CREATE_SESSION_MISSING' END AS STATUS" \
+        "EXAKIT_CREATE_SESSION_OK" || die "The MCP read-only user is missing CREATE SESSION."
+
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE <> 'CREATE SESSION'" \
+        "EXAKIT_SYS_PRIV_SCOPE_OK" || die "The MCP read-only user has system privileges beyond CREATE SESSION."
+
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
+        "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
+
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")')))" \
+        "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on schema $_schema_uc."
+
+    if _exakit_run_exapump_sql \
+        "$_config_path" "mcp_readonly" \
+        "CREATE TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        _exakit_run_exapump_sql \
+            "$_config_path" "admin" \
+            "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
+        die "The MCP read-only user unexpectedly succeeded in a write operation."
+    fi
+}
+
+_exakit_validate_identifier() {
+    case "$1" in
+        ""|*[!A-Za-z0-9_]*)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+_exakit_validate_sql_password_token() {
+    case "$1" in
+        ""|[!A-Z]*|*[!A-Z0-9_]*)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+_exakit_generate_sql_password_token() {
+    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9_' < /dev/urandom | head -c 23)"
+}
+
+exakit_configure_mcp_readonly_access() {
+    require_python3
+    _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
+    _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
+    [ -n "$_runtime_user" ] || die "runtime.user is missing; cannot prepare the MCP read-only database user."
+    [ -n "$_runtime_password_file" ] || die "runtime.password_file is missing; cannot prepare the MCP read-only database user."
+    [ -f "$_runtime_password_file" ] || die "The runtime password file does not exist: $_runtime_password_file"
+    _admin_password="$(cat "$_runtime_password_file")"
+    _host="$(_exakit_parse_runtime_host)"
+    _port="$(_exakit_parse_runtime_port)"
+    [ -n "$_host" ] || die "runtime.dsn is missing a host; cannot prepare the MCP read-only database user."
+    [ -n "$_port" ] || die "runtime.dsn is missing a port; cannot prepare the MCP read-only database user."
+
+    _readonly_user="$EXAKIT_MCP_READONLY_USER"
+    _readonly_schemas="$EXAKIT_MCP_READONLY_SCHEMAS"
+    _default_schema="$(_exakit_first_schema "$_readonly_schemas")"
+    _readonly_password="$(read_credential mcp_readonly_password)"
+    if ! _exakit_validate_sql_password_token "$_readonly_password"; then
+        _readonly_password="$(_exakit_generate_sql_password_token)"
+        store_credential mcp_readonly_password "$_readonly_password"
+    fi
+
+    _identifier_user="$(printf '%s' "$_readonly_user" | tr '[:lower:]' '[:upper:]')"
+    _default_schema_uc="$(printf '%s' "$_default_schema" | tr '[:lower:]' '[:upper:]')"
+    _exakit_validate_identifier "$_identifier_user" || die "Invalid EXAKIT_MCP_READONLY_USER: $_readonly_user"
+    _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX")"
+    _exakit_write_exapump_config \
+        "$_temp_config" "$_host" "$_port" "$_runtime_user" "$_admin_password" \
+        "$_readonly_user" "$_readonly_password" "$_default_schema_uc"
+
+    if ! _exakit_exapump_sql_has_token \
+        "$_temp_config" "admin" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$(_exakit_sql_literal "$_identifier_user")') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" \
+        "EXAKIT_MCP_USER_PRESENT"; then
+        info "Creating the dedicated MCP read-only database user ($_readonly_user)"
+        _exakit_run_exapump_sql \
+            "$_temp_config" "admin" \
+            "CREATE USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create the MCP read-only database user."
+    fi
+
+    _exakit_run_exapump_sql \
+        "$_temp_config" "admin" \
+        "ALTER USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not refresh the MCP read-only database password."
+    _exakit_run_exapump_sql \
+        "$_temp_config" "admin" \
+        "GRANT CREATE SESSION TO ${_identifier_user}" \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not grant CREATE SESSION to the MCP read-only database user."
+
+    _old_ifs="$IFS"
+    IFS=', '
+    set -- $_readonly_schemas
+    IFS="$_old_ifs"
+    for _schema in "$@"; do
+        [ -n "$_schema" ] || continue
+        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
+        _exakit_validate_identifier "$_schema_uc" || die "Invalid MCP schema name: $_schema"
+        if ! _exakit_exapump_sql_has_token \
+            "$_temp_config" "admin" \
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$(_exakit_sql_literal "$_schema_uc")') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" \
+            "EXAKIT_SCHEMA_PRESENT"; then
+            info "Creating starter schema $_schema_uc for MCP-safe querying"
+            _exakit_run_exapump_sql "$_temp_config" "admin" "CREATE SCHEMA ${_schema_uc}" \
+                >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create schema $_schema_uc for MCP access."
+        fi
+        _exakit_run_exapump_sql "$_temp_config" "admin" "GRANT SELECT ON SCHEMA ${_schema_uc} TO ${_identifier_user}" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not grant read-only access on schema $_schema_uc."
+    done
+
+    info "Validating dedicated MCP read-only login"
+    _exakit_exapump_sql_has_token \
+        "$_temp_config" "mcp_readonly" \
+        "SELECT CURRENT_USER AS EXAKIT_CURRENT_USER" \
+        "$_identifier_user" || die "The MCP read-only user could not log in with the generated credentials."
+    _exakit_exapump_sql_has_token \
+        "$_temp_config" "mcp_readonly" \
+        "SELECT 'EXAKIT_MCP_READONLY_OK' AS STATUS" \
+        "EXAKIT_MCP_READONLY_OK" || die "The MCP read-only user did not pass the validation query."
+    _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_default_schema_uc"
+
+    manifest_set components.mcp_server.connection.user "$_readonly_user"
+    manifest_set components.mcp_server.connection.password_file "$EXAKIT_CREDS_DIR/mcp_readonly_password"
+    manifest_set components.mcp_server.connection.schemas "[\"$(printf '%s' "$_readonly_schemas" | tr ',' '\n' | sed '/^$/d' | paste -sd '","' -)\"]"
+    manifest_set components.mcp_server.connection.validated "true"
+    rm -f "$_temp_config"
+    ok "Dedicated MCP read-only access is configured and validated"
+    return 0
+}
+
+exakit_run_mcp_setup_cli() {
+    _mode="$1"
+    _clients_csv="$2"
+    _output_file="$3"
+    require_python3
+    _repo_root="$(exakit_repo_root)" || {
+        warn "Could not find the MCP package source to configure MCP clients."
+        return 1
+    }
+    exakit_configure_mcp_readonly_access || return 1
+    _old_ifs="$IFS"
+    IFS=','
+    set -- $_clients_csv
+    IFS="$_old_ifs"
+    if ! (
+        cd "$_repo_root" &&
+        PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
+            run_python -m mcp setup-runtime-clients \
+                --runtime-root "$EXAKIT_HOME" \
+                --mode "$_mode" \
+                --clients "$@"
+    ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+        warn "MCP client setup failed (see log)."
+        return 1
+    fi
+    return 0
+}
+
+exakit_run_mcp_operation_cli() {
+    _operation="$1"
+    _clients_csv="$2"
+    _output_file="$3"
+    _snapshot_id="${4:-}"
+    require_python3
+    _repo_root="$(exakit_repo_root)" || {
+        warn "Could not find the MCP package source to manage MCP clients."
+        return 1
+    }
+    case "$_operation" in
+        validate|repair|doctor)
+            exakit_configure_mcp_readonly_access || return 1
+            ;;
+    esac
+    _old_ifs="$IFS"
+    IFS=','
+    set -- $_clients_csv
+    IFS="$_old_ifs"
+    if [ -n "$_snapshot_id" ]; then
+        if ! (
+            cd "$_repo_root" &&
+            PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
+                run_python -m mcp run-runtime-operation \
+                    "$_operation" \
+                    --runtime-root "$EXAKIT_HOME" \
+                    --snapshot-id "$_snapshot_id" \
+                    --clients "$@"
+        ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+            warn "MCP $_operation failed (see log)."
+            return 1
+        fi
+        return 0
+    fi
+    if ! (
+        cd "$_repo_root" &&
+        PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
+            run_python -m mcp run-runtime-operation \
+                "$_operation" \
+                --runtime-root "$EXAKIT_HOME" \
+                --clients "$@"
+    ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+        warn "MCP $_operation failed (see log)."
+        return 1
+    fi
+    return 0
+}
+
+exakit_print_mcp_setup_summary() {
+    _result_file="$1"
+    require_python3
+    run_python - "$_result_file" <<'PY'
+import json, sys
+
+LABELS = {
+    "claude_desktop": "Claude Desktop",
+    "cursor": "Cursor",
+    "codex": "Codex",
+}
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    doc = json.load(handle)
+
+clients = ", ".join(LABELS.get(item, item) for item in doc.get("selected_clients", []))
+print("")
+print("  MCP setup summary")
+print(f"  Mode:     {doc.get('mode', 'unknown')}")
+if doc.get("mode") == "temporary":
+    print("  Meaning:  Generated config files only; no AI client config was changed.")
+elif doc.get("mode") == "permanent":
+    print("  Meaning:  Wrote managed MCP entries into the selected client config files.")
+print(f"  Clients:  {clients or 'none'}")
+print(f"  Status:   {doc.get('status', 'unknown')}")
+if doc.get("mode") == "temporary":
+    print(f"  Bundle:   {doc.get('bundle_dir', 'unknown')}")
+for artifact in doc.get("artifacts", []):
+    client = LABELS.get(artifact.get("client"), artifact.get("client", "unknown"))
+    print(f"  File:     {client} -> {artifact.get('path', 'unknown')}")
+
+findings = doc.get("findings", [])
+if findings:
+    print("")
+    print("  Notes:")
+    for finding in findings:
+        print(f"  - {finding.get('message', 'Unknown issue')}")
+
+actions = doc.get("next_actions", [])
+if actions:
+    print("")
+    print("  Next:")
+    for action in actions:
+        print(f"  - {action.get('message', '')}")
+PY
+}
+
+exakit_print_mcp_ready_panel() {
+    _mode="${1:-}"
+    _dsn="$(manifest_get runtime.dsn 2>/dev/null || true)"
+    _mcp_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _mcp_package="$(manifest_get components.mcp_server.package 2>/dev/null || printf '%s' "$EXAKIT_MCP_PACKAGE")"
+    _mcp_version="$(manifest_get components.mcp_server.version 2>/dev/null || printf '%s' "$EXAKIT_MCP_VERSION")"
+    _mcp_command="$(manifest_get components.mcp_server.command 2>/dev/null || true)"
+    [ -n "$_mcp_command" ] || _mcp_command="uvx"
+
+    printf '\n'
+    printf '  MCP is ready\n'
+    printf '  Server name:   exasol\n'
+    printf '  How it runs:   your AI client starts it on demand over stdio\n'
+    printf '  Command:       %s %s@%s\n' "$_mcp_command" "$_mcp_package" "$_mcp_version"
+    printf '  Database:      %s\n' "${_dsn:-unknown}"
+    printf '  DB user:       %s (read-only)\n' "${_mcp_user:-mcp_readonly}"
+    printf '  Config bundle: %s\n' "$EXAKIT_MCP_DIR"
+    printf '\n'
+    if [ "$_mode" = "temporary" ]; then
+        printf '  Temporary mode did not change your AI client config.\n'
+        printf '  Next steps:\n'
+        printf '  1. Open the generated config file for your client from the bundle above.\n'
+        printf '  2. Copy or merge it into that AI client MCP config.\n'
+        printf '  3. Restart the client.\n'
+    else
+        printf '  Permanent mode updated the selected client config files.\n'
+        printf '  Next step: restart the selected client now.\n'
+    fi
+    printf '  After setup/restart, look for an MCP server named: exasol\n'
+    printf '\n'
+    printf '  First prompt to try in your AI client:\n'
+    printf '  "Use the exasol MCP server connected to my local Exasol database. List\n'
+    printf '  the available schemas and tables first. Then answer my questions with\n'
+    printf '  read-only SQL only, show me the SQL before you run it, and do not create,\n'
+    printf '  update, or delete anything."\n'
+}
+
+exakit_print_mcp_operation_summary() {
+    _result_file="$1"
+    require_python3
+    run_python - "$_result_file" <<'PY'
+import json, sys
+
+LABELS = {
+    "claude_desktop": "Claude Desktop",
+    "cursor": "Cursor",
+    "codex": "Codex",
+}
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    doc = json.load(handle)
+
+clients = ", ".join(LABELS.get(item, item) for item in doc.get("selected_clients", []))
+print("")
+print("  MCP operation summary")
+print(f"  Operation: {doc.get('operation', 'unknown')}")
+print(f"  Clients:   {clients or 'all managed clients'}")
+print(f"  Status:    {doc.get('status', 'unknown')}")
+print(f"  Summary:   {doc.get('summary', 'No summary returned')}")
+if doc.get("backup_reference"):
+    print(f"  Snapshot:  {doc.get('backup_reference')}")
+
+changes = doc.get("changes", [])
+if changes:
+    print("")
+    print("  Changes:")
+    for change in changes:
+        print(f"  - {change.get('kind', 'change')} {change.get('path', '')}")
+
+findings = doc.get("findings", [])
+if findings:
+    print("")
+    print("  Notes:")
+    for finding in findings:
+        print(f"  - {finding.get('message', 'Unknown issue')}")
+
+actions = doc.get("next_actions", [])
+if actions:
+    print("")
+    print("  Next:")
+    for action in actions:
+        print(f"  - {action.get('message', '')}")
+PY
+}
+
+exakit_mcp_clients_from_args() {
+    if [ "$#" -eq 0 ]; then
+        printf '%s\n' "claude_desktop,cursor,codex"
+        return 0
+    fi
+    exakit_parse_mcp_client_selection "$*"
+}
+
+exakit_parse_mcp_client_selection() {
+    _raw="$(printf '%s' "$1" | tr ',/' '  ' | tr -s ' ')"
+    case "$_raw" in
+        "" ) return 1 ;;
+        all|ALL|All ) printf '%s\n' "claude_desktop,cursor,codex"; return 0 ;;
+    esac
+    _result=""
+    for _token in $_raw; do
+        case "$_token" in
+            1|claude|claude_desktop) _client="claude_desktop" ;;
+            2|cursor) _client="cursor" ;;
+            3|codex) _client="codex" ;;
+            *) return 1 ;;
+        esac
+        case ",$_result," in
+            *,"$_client",*) ;;
+            *)
+                if [ -n "$_result" ]; then
+                    _result="$_result,$_client"
+                else
+                    _result="$_client"
+                fi
+                ;;
+        esac
+    done
+    [ -n "$_result" ] || return 1
+    printf '%s\n' "$_result"
+}
+
+exakit_mcp_setup() {
+    info "Choose how you want MCP set up in your AI clients"
+    printf '    1. Temporary setup (copy/paste instructions only)\n'
+    printf '       The kit does NOT edit Claude, Cursor, or Codex.\n'
+    printf '       It creates ready-made config files in %s.\n' "$EXAKIT_MCP_DIR"
+    printf '       You copy or merge the file yourself when you are ready.\n'
+    printf '    2. Permanent setup (edit selected clients now)\n'
+    printf '       The kit backs up and updates the selected client config files.\n'
+    printf '       Restart the selected client afterwards.\n'
+    printf '\n'
+    printf '    Quick guide:\n'
+    printf '       Choose 1 if you only want files and copy/paste steps.\n'
+    printf '       Choose 2 if you want the kit to configure the apps for you.\n'
+    while :; do
+        _mode_choice="$(prompt_text "Choose setup mode (1 temporary, 2 permanent)" "1")"
+        case "$_mode_choice" in
+            1|temporary|Temporary|default|Default) _mode="temporary"; break ;;
+            2|permanent|Permanent) _mode="permanent"; break ;;
+            *) warn "Please enter 1 for temporary or 2 for permanent." ;;
+        esac
+    done
+
+    printf '\n'
+    info "Choose one or more clients"
+    printf '    1. Claude Desktop\n'
+    printf '    2. Cursor\n'
+    printf '    3. Codex\n'
+    printf '    Enter numbers separated by commas, or type all.\n'
+    while :; do
+        _selection="$(prompt_text "Choose client numbers" "all")"
+        _clients_csv="$(exakit_parse_mcp_client_selection "$_selection")" && break
+        warn "Please choose valid client numbers, for example 1,2,3 or all."
+    done
+
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX")"
+    info "Applying MCP setup ($_mode mode)"
+    _setup_status=0
+    if exakit_run_mcp_setup_cli "$_mode" "$_clients_csv" "$_result_file"; then
+        :
+    else
+        _setup_status=$?
+    fi
+    if [ -s "$_result_file" ]; then
+        exakit_print_mcp_setup_summary "$_result_file"
+    fi
+    rm -f "$_result_file"
+    if [ "$_setup_status" -ne 0 ]; then
+        return "$_setup_status"
+    fi
+    exakit_print_mcp_ready_panel "$_mode"
+    ok "MCP setup guidance is ready."
+    return 0
+}
+
+exakit_mcp_operation() {
+    _operation="$1"
+    shift
+    _clients_csv="$(exakit_mcp_clients_from_args "$@")" || {
+        warn "Please choose valid MCP clients: claude_desktop, cursor, codex, or all."
+        return 1
+    }
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-operation.XXXXXX")"
+    _operation_status=0
+    info "Running MCP $_operation"
+    if exakit_run_mcp_operation_cli "$_operation" "$_clients_csv" "$_result_file"; then
+        :
+    else
+        _operation_status=$?
+    fi
+    if [ -s "$_result_file" ]; then
+        exakit_print_mcp_operation_summary "$_result_file"
+    fi
+    rm -f "$_result_file"
+    return "$_operation_status"
+}
+
+exakit_mcp_restore() {
+    _snapshot_id="${1:-}"
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-restore.XXXXXX")"
+    _operation_status=0
+    info "Running MCP restore"
+    if exakit_run_mcp_operation_cli "restore" "claude_desktop,cursor,codex" "$_result_file" "$_snapshot_id"; then
+        :
+    else
+        _operation_status=$?
+    fi
+    if [ -s "$_result_file" ]; then
+        exakit_print_mcp_operation_summary "$_result_file"
+    fi
+    rm -f "$_result_file"
+    return "$_operation_status"
+}
+
+exakit_maybe_offer_mcp_setup() {
+    _already_done="$(manifest_get components.mcp_server.client_setup.completed 2>/dev/null || true)"
+    [ "$_already_done" = "true" ] && return 0
+    [ -n "$(_exakit_prompt_tty)" ] || return 0
+    info "The Exasol runtime and MCP server are ready."
+    if ! confirm "Set up MCP in your AI client(s) now?" y; then
+        info "Skipping live MCP client setup for now. You can run: exakit mcp-setup"
+        return 0
+    fi
+    if ! exakit_mcp_setup; then
+        warn "Your local runtime is installed, but MCP client setup did not finish cleanly."
+        warn "Retry any time with: exakit mcp-setup"
+    fi
+}
+
 # kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>
 # The steps every platform runs after its runtime is up: exapump, MCP,
 # the exakit helper, and the pending-assets report. One implementation so
@@ -437,7 +1143,7 @@ kit_shared_steps() {
     if command -v mcp_install >/dev/null 2>&1; then
         if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
             mcp_install
-            mcp_generate_configs
+            exakit_generate_mcp_configs
             mcp_validate
             mark_step mcp
         fi
@@ -458,6 +1164,8 @@ kit_shared_steps() {
         ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
     fi
 
+    exakit_maybe_offer_mcp_setup || true
+
     for _pending in sql/01_create_schema.sql data/data-dictionary.md; do
         if [ ! -s "$_kit_root/$_pending" ]; then
             info "Pending: $_pending is not in this kit build yet (sample schema/data step will activate once it lands)"
@@ -474,6 +1182,8 @@ connection_panel() {
     _dsn="$(manifest_get runtime.dsn 2>/dev/null)"
     _user="$(manifest_get runtime.user 2>/dev/null)"
     _pwfile="$(manifest_get runtime.password_file 2>/dev/null)"
+    _mcp_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _mcp_pwfile="$(manifest_get components.mcp_server.connection.password_file 2>/dev/null || true)"
 
     printf '\n'
     printf '  ────────────────────────────────────────────────────────\n'
@@ -481,9 +1191,15 @@ connection_panel() {
     printf '  ────────────────────────────────────────────────────────\n'
     printf '   Runtime:      %s\n' "${_type:-unknown}"
     printf '   DSN:          %s\n' "${_dsn:-unknown}"
-    printf '   User:         %s\n' "${_user:-sys}"
+    printf '   Admin user:   %s\n' "${_user:-sys}"
     if [ -n "$_pwfile" ]; then
-        printf '   Password:     stored in %s\n' "$_pwfile"
+        printf '   Admin pass:   stored in %s\n' "$_pwfile"
+    fi
+    if [ -n "$_mcp_user" ]; then
+        printf '   MCP user:     %s\n' "$_mcp_user"
+    fi
+    if [ -n "$_mcp_pwfile" ]; then
+        printf '   MCP pass:     stored in %s\n' "$_mcp_pwfile"
     fi
     printf '   TLS:          enabled (self-signed certificate)\n'
     if [ "$_type" = "personal" ]; then

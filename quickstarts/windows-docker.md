@@ -11,7 +11,7 @@ Gets you from Windows to a local Exasol database, staying entirely in **PowerShe
 ## Install (regular PowerShell, no admin needed)
 
 ```powershell
-irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
 What happens, in order:
@@ -20,7 +20,7 @@ What happens, in order:
 2. Docker (or Podman) is verified — if Docker Desktop isn't running you get told exactly that, and re-run after starting it
 3. The pinned `exasol/nano` image is pulled; the container starts with a persistent volume, a generated password, and the SQL port on `127.0.0.1:8563` only
 4. The installer waits until the database reports ready (a few minutes)
-5. You get the connection panel: DSN `127.0.0.1:8563`, user `sys`, password file location
+5. You get the connection panel: DSN `127.0.0.1:8563`, admin user, dedicated MCP user, and password file locations
 
 Want to look before it runs? `$env:EXAKIT_DRY_RUN = "1"` first — it downloads and plans, installs nothing.
 
@@ -31,22 +31,28 @@ docker ps --filter name=exasol-nano        # container up?
 docker logs exasol-nano | Select-String "up and running"
 ```
 
-Any SQL client (DBeaver etc.) connects with: host `127.0.0.1`, port `8563`, user `sys`, password from `~\.exasol-starter-kit\credentials\nano_sys_password`, certificate validation off (local self-signed).
+Any SQL client (DBeaver etc.) connects with: host `127.0.0.1`, port `8563`, admin user `sys`, password from `~\.exasol-starter-kit\credentials\nano_sys_password`, certificate validation off (local self-signed).
 
 ## Connect your AI assistant
 
-On the native Windows path, point your MCP client at the database with this server definition (Claude Desktop: **Settings → Developer → Edit Config**; config file: `%APPDATA%\Claude\claude_desktop_config.json`). Install [uv](https://docs.astral.sh/uv/getting-started/installation/) on Windows first, then:
+On the native Windows path, point your MCP client at the database with this server definition (Claude Desktop: **Settings → Developer → Edit Config**; config file: `%APPDATA%\Claude\claude_desktop_config.json`). Install [uv](https://docs.astral.sh/uv/getting-started/installation/) on Windows first. For the most reliable desktop-app setup, use the full launcher path from:
+
+```powershell
+(Get-Command uvx).Source
+```
+
+Then:
 
 ```json
 {
   "mcpServers": {
     "exasol": {
-      "command": "uvx",
+      "command": "C:\\Users\\you\\.local\\bin\\uvx.exe",
       "args": ["exasol-mcp-server@1.10.1"],
       "env": {
         "EXA_DSN": "127.0.0.1:8563",
-        "EXA_USER": "sys",
-        "EXA_PASSWORD": "<contents of ~\\.exasol-starter-kit\\credentials\\nano_sys_password>"
+        "EXA_USER": "mcp_readonly",
+        "EXA_PASSWORD": "<contents of ~\\.exasol-starter-kit\\credentials\\mcp_readonly_password>"
       }
     }
   }
