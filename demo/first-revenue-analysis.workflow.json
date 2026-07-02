@@ -1,0 +1,61 @@
+{
+  "workflow_version": 1,
+  "name": "first-revenue-analysis",
+  "title": "Revenue by product category",
+  "description": "The kit's first guided workflow: which product category generated the most revenue, answered with inspect-before-run discipline and independent validation. Serves as the template for saving your own workflows.",
+  "question": "Which product category generated the most revenue?",
+  "database": {
+    "schema": "STARTER_KIT",
+    "connection_profile": "starter-kit"
+  },
+  "steps": [
+    {
+      "id": "discover",
+      "type": "prompt",
+      "description": "Ground the assistant in the real schema before asking anything",
+      "prompt": "What schemas and tables are available in my Exasol database? For the tables in the STARTER_KIT schema, describe their columns and how they relate to each other."
+    },
+    {
+      "id": "ask",
+      "type": "prompt",
+      "description": "Ask the question with the inspect-before-run instruction",
+      "prompt": "Which product category generated the most revenue? Show me the SQL you intend to run and explain it before executing.",
+      "inspect_before_run": true,
+      "review_checklist": [
+        "Which columns define revenue (price x quantity, or an amount column)?",
+        "Are returns subtracted (net) or included (gross)?",
+        "Any filters applied (dates, order status)?"
+      ]
+    },
+    {
+      "id": "run",
+      "type": "sql",
+      "description": "The SQL approved during the ask step. Placeholder below - replace with the reviewed query from your session; exact column names follow data/data-dictionary.md.",
+      "sql": "-- illustrative; align with the data dictionary before relying on it\nSELECT p.PRODUCT_CATEGORY,\n       SUM(o.QUANTITY * p.PRICE) AS REVENUE\nFROM   STARTER_KIT.ORDERS o\nJOIN   STARTER_KIT.PRODUCTS p ON p.PRODUCT_ID = o.PRODUCT_ID\nGROUP  BY p.PRODUCT_CATEGORY\nORDER  BY REVENUE DESC",
+      "executed_via": "mcp read-only query tool"
+    },
+    {
+      "id": "validate",
+      "type": "shell",
+      "description": "Independent reproduction outside the assistant - same SQL, direct database path",
+      "command": "exapump sql -p starter-kit < revenue-by-category.sql",
+      "expectation": "Result matches the assistant's answer"
+    },
+    {
+      "id": "rerun",
+      "type": "note",
+      "description": "Rerun any time with the validate command above; results are comparable run over run because the SQL is fixed and reviewed. Kit 2 adds the audit/run log and semantic definitions on top of this format."
+    }
+  ],
+  "outcome": {
+    "deliverable": "Ranked product categories by revenue, verified through two independent paths",
+    "trust_properties": [
+      "SQL reviewed by a human before execution",
+      "Read-only database access for the assistant",
+      "Result reproduced outside the assistant with exapump",
+      "Workflow captured in this file for rerun"
+    ]
+  },
+  "created": "2026-07-02",
+  "kit_level_required": 1
+}
