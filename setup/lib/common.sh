@@ -209,7 +209,10 @@ sys.exit(0 if sys.argv[2] in doc.get("steps_completed", []) else 1)
 PY
 }
 
-# mark_step <name> — records a completed step (idempotent).
+# mark_step <name> — records a completed step (idempotent). Completing a
+# step also discards the undo entries registered during it: rollback only
+# ever covers the step that actually failed, never a finished one (a late
+# transient failure must not undo an earlier successful deployment).
 mark_step() {
     require_python3
     python3 - "$EXAKIT_MANIFEST" "$1" <<'PY' || die "Failed to record step $1"
@@ -225,6 +228,7 @@ with open(tmp, "w") as f:
     f.write("\n")
 os.replace(tmp, sys.argv[1])
 PY
+    [ -n "$EXAKIT_ROLLBACK_FILE" ] && : > "$EXAKIT_ROLLBACK_FILE"
     _exakit_log_file "STEP  completed: $1"
 }
 
@@ -290,7 +294,7 @@ exakit_on_failure() {
     printf '    Re-running the installer is safe: completed steps are skipped.\n' >&2
     if [ "${EXAKIT_AUTO_ROLLBACK:-0}" = "1" ]; then
         run_rollback
-    elif confirm "Undo the changes made by this run?" n; then
+    elif confirm "Undo the failed step's changes?" n; then
         run_rollback
     else
         info "Keeping partial progress. Re-run the installer to resume."
@@ -406,6 +410,59 @@ ensure_path_hint() {
             printf '      export PATH="%s:$PATH"\n' "$1" >&2
             ;;
     esac
+}
+
+# kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>
+# The steps every platform runs after its runtime is up: exapump, MCP,
+# the exakit helper, and the pending-assets report. One implementation so
+# the per-OS setup scripts cannot drift apart.
+kit_shared_steps() {
+    _step_no="$1"
+    _total="$2"
+    _script_dir="$3"
+    _kit_root="$4"
+
+    if command -v exapump_install >/dev/null 2>&1; then
+        if begin_step exapump "Step ${_step_no}/${_total}  exapump (data loading CLI)"; then
+            exapump_install
+            exapump_create_profile
+            exapump_validate_connection
+            mark_step exapump
+        fi
+    else
+        info "Step ${_step_no}/${_total}  exapump — module not included in this kit build yet, skipping"
+    fi
+    _step_no=$((_step_no + 1))
+
+    if command -v mcp_install >/dev/null 2>&1; then
+        if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
+            mcp_install
+            mcp_generate_configs
+            mcp_validate
+            mark_step mcp
+        fi
+    else
+        info "Step ${_step_no}/${_total}  MCP server — module not included in this kit build yet, skipping"
+    fi
+    _step_no=$((_step_no + 1))
+
+    if begin_step exakit_helper "Step ${_step_no}/${_total}  exakit helper command"; then
+        mkdir -p "$EXAKIT_BIN_DIR"
+        install -m 755 "$_script_dir/exakit" "$EXAKIT_BIN_DIR/exakit"
+        # Keep a copy of the kit library next to the state so exakit finds
+        # it even when this checkout moves or disappears.
+        mkdir -p "$EXAKIT_HOME/kit/setup"
+        cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/"
+        ensure_path_hint "$EXAKIT_BIN_DIR"
+        mark_step exakit_helper
+        ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
+    fi
+
+    for _pending in sql/01_create_schema.sql data/data-dictionary.md; do
+        if [ ! -s "$_kit_root/$_pending" ]; then
+            info "Pending: $_pending is not in this kit build yet (sample schema/data step will activate once it lands)"
+        fi
+    done
 }
 
 # connection_panel — the payoff screen: everything needed to connect.

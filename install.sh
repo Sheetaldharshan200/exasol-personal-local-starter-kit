@@ -1,0 +1,136 @@
+#!/bin/sh
+# install.sh — Exasol Personal Local Starter Kit, one-command installer.
+#
+#   curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
+#
+# What it does, in order:
+#   1. detects your OS and hardware
+#   2. downloads the starter kit to ~/.exasol-starter-kit/kit (so you can
+#      read every script before or after it runs)
+#   3. shows the installation plan
+#   4. hands off to the matching setup script, which installs and connects
+#      a local Exasol database, exapump, and the Exasol MCP server
+#
+# Options (environment variables, because flags don't travel through a pipe):
+#   EXAKIT_DRY_RUN=1        show the plan and downloaded scripts, install nothing
+#   EXAKIT_PREFLIGHT=1      check this machine's requirements, install nothing
+#   EXAKIT_REPO=...         override the source repo (owner/name)
+#   EXAKIT_REF=...          override the git ref to install from
+#   EXAKIT_LOCAL_KIT=path   use a local checkout instead of downloading
+#                           (development / private-repo testing)
+#   GITHUB_TOKEN=...        auth for downloading from a private repo
+#
+# Windows (PowerShell): use install.ps1 instead.
+#
+# The whole script is wrapped in main() so a truncated download cannot
+# execute a half-fetched script.
+
+set -u
+
+main() {
+    EXAKIT_HOME="${EXAKIT_HOME:-$HOME/.exasol-starter-kit}"
+    EXAKIT_REPO="${EXAKIT_REPO:-ranjanm-chn/exasol-personal-local-starter-kit}"
+    EXAKIT_REF="${EXAKIT_REF:-main}"
+    kit_dir="$EXAKIT_HOME/kit"
+
+    say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+    fail() { printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2; exit 1; }
+
+    printf '\n  Exasol Personal Local Starter Kit\n'
+    printf '  Local database + AI agent bridge, one command.\n\n'
+
+    # --- 1. preflight --------------------------------------------------------
+    [ "$(id -u)" -ne 0 ] || fail "Please run as a regular user, not root."
+    command -v curl >/dev/null 2>&1 || fail "curl is required."
+    command -v tar  >/dev/null 2>&1 || fail "tar is required."
+
+    # --- 2. detect -----------------------------------------------------------
+    os="$(uname -s)"
+    arch="$(uname -m)"
+    case "$os" in
+        Darwin)
+            platform="macos"
+            target="Exasol Personal (local deployment)"
+            setup_script="setup/setup-macos.sh"
+            ;;
+        Linux)
+            if grep -qi microsoft /proc/version 2>/dev/null; then
+                platform="wsl"
+            else
+                platform="linux"
+            fi
+            target="Exasol Nano (container: Docker preferred, Podman fallback)"
+            setup_script="setup/setup-wsl.sh"
+            ;;
+        *)
+            fail "Unsupported platform: $os. On Windows, run install.ps1 in PowerShell."
+            ;;
+    esac
+    case "$arch" in
+        arm64|aarch64|x86_64|amd64) : ;;
+        *) fail "Unsupported CPU architecture: $arch" ;;
+    esac
+
+    # --- 3. fetch the kit ----------------------------------------------------
+    mkdir -p "$kit_dir"
+    if [ -n "${EXAKIT_LOCAL_KIT:-}" ]; then
+        [ -f "$EXAKIT_LOCAL_KIT/install.sh" ] || fail "EXAKIT_LOCAL_KIT does not look like a kit checkout: $EXAKIT_LOCAL_KIT"
+        say "Using local kit checkout: $EXAKIT_LOCAL_KIT"
+        find "$kit_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+        cp -R "$EXAKIT_LOCAL_KIT"/. "$kit_dir/"
+        rm -rf "$kit_dir/.git"
+    else
+        say "Downloading the starter kit ($EXAKIT_REPO@$EXAKIT_REF)"
+        tmp_tar="$(mktemp "${TMPDIR:-/tmp}/exakit-src.XXXXXX")"
+        auth_header=""
+        [ -n "${GITHUB_TOKEN:-}" ] && auth_header="Authorization: Bearer $GITHUB_TOKEN"
+        curl -fL --proto '=https' --retry 3 --connect-timeout 15 -sS \
+            ${auth_header:+-H "$auth_header"} -o "$tmp_tar" \
+            "https://github.com/$EXAKIT_REPO/archive/refs/heads/$EXAKIT_REF.tar.gz" \
+            || curl -fL --proto '=https' --retry 3 --connect-timeout 15 -sS \
+            ${auth_header:+-H "$auth_header"} -o "$tmp_tar" \
+            "https://github.com/$EXAKIT_REPO/archive/refs/tags/$EXAKIT_REF.tar.gz" \
+            || fail "Could not download the kit from github.com/$EXAKIT_REPO ($EXAKIT_REF). If the repo is private, set GITHUB_TOKEN or use EXAKIT_LOCAL_KIT."
+
+        # Replace previous kit copy so re-runs always use the fetched ref.
+        find "$kit_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+        tar -xzf "$tmp_tar" -C "$kit_dir" --strip-components 1 \
+            || fail "Could not extract the kit archive."
+        rm -f "$tmp_tar"
+    fi
+
+    if [ "${EXAKIT_PREFLIGHT:-0}" = "1" ]; then
+        exec bash -c ". '$kit_dir/setup/lib/detect.sh'; preflight_report"
+    fi
+
+    # --- 4. show the plan ----------------------------------------------------
+    printf '\n  Installation plan\n'
+    printf '  ─────────────────\n'
+    printf '   Platform:   %s (%s)\n' "$platform" "$arch"
+    printf '   Database:   %s\n' "$target"
+    printf '   Components: local database, exapump, MCP server\n'
+    printf '   Kit copy:   %s (read the scripts any time)\n' "$kit_dir"
+    printf '   State/logs: %s\n' "$EXAKIT_HOME"
+    printf '\n'
+
+    if [ "${EXAKIT_DRY_RUN:-0}" = "1" ]; then
+        say "Dry run requested (EXAKIT_DRY_RUN=1) — nothing was installed."
+        say "Inspect the scripts under $kit_dir, then run:"
+        printf '      bash %s/%s\n\n' "$kit_dir" "$setup_script"
+        exit 0
+    fi
+
+    # --- 5. hand off ---------------------------------------------------------
+    # When piped (curl | sh), stdin is the exhausted pipe. Reattach the
+    # terminal when one is available so any interactive step (for example a
+    # first-run license confirmation) can still read the keyboard.
+    say "Starting setup: $setup_script"
+    printf '\n'
+    if [ ! -t 0 ] && (: < /dev/tty) 2>/dev/null; then
+        exec bash "$kit_dir/$setup_script" < /dev/tty
+    else
+        exec bash "$kit_dir/$setup_script"
+    fi
+}
+
+main "$@"
