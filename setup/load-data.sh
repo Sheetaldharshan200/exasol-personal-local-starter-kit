@@ -32,6 +32,8 @@ mkdir -p "$EXAKIT_LOG_DIR"
 [ -f "$EXAKIT_MANIFEST" ] || die "No installation found. Run the installer first."
 command -v "$(exapump_cli)" >/dev/null 2>&1 || [ -x "$(exapump_cli)" ] || \
     die "exapump is not installed. Run the installer first."
+[ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
+    die "No exapump connection profile is recorded — the exapump setup step has not completed. Re-run the installer, then retry."
 
 if [ "$(manifest_get data.loaded 2>/dev/null)" = "true" ] && [ "${1:-}" != "--force" ]; then
     ok "Sample data already loaded (pass --force to re-run)"

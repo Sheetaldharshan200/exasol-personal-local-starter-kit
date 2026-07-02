@@ -39,9 +39,15 @@ function Fail([string]$Msg)  { Write-Host "  x $Msg" -ForegroundColor Red;    Wr
 
 # --- manifest helpers ------------------------------------------------------------
 function Get-Manifest {
-    if (Test-Path $ManifestPath) { Get-Content $ManifestPath -Raw | ConvertFrom-Json }
-    else {
-        [pscustomobject]@{
+    if (Test-Path $ManifestPath) {
+        try {
+            return (Get-Content $ManifestPath -Raw | ConvertFrom-Json)
+        } catch {
+            Warn2 "The install manifest is corrupted (interrupted run?) — rebuilding it; existing components will be re-detected"
+            Move-Item -Force $ManifestPath "$ManifestPath.corrupt-$(Get-Date -Format 'yyyyMMddHHmmss')"
+        }
+    }
+    [pscustomobject]@{
             manifest_version = 1
             kit_level        = 1
             installed_at     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -52,10 +58,14 @@ function Get-Manifest {
             data             = [pscustomobject]@{ loaded = $false }
             steps_completed  = @()
             log_dir          = $LogDir
-        }
     }
 }
-function Save-Manifest($m) { $m | ConvertTo-Json -Depth 8 | Set-Content $ManifestPath }
+# Atomic write: an interrupted run must never leave a truncated manifest.
+function Save-Manifest($m) {
+    $tmp = "$ManifestPath.tmp"
+    $m | ConvertTo-Json -Depth 8 | Set-Content $tmp
+    Move-Item -Force $tmp $ManifestPath
+}
 function Test-StepDone($m, [string]$Step) { $m.steps_completed -contains $Step }
 function Set-StepDone($m, [string]$Step) {
     if (-not (Test-StepDone $m $Step)) { $m.steps_completed = @($m.steps_completed) + $Step }
@@ -95,7 +105,7 @@ function Test-NanoReady {
     (& $engine logs $NanoContainer 2>&1 | Select-String -SimpleMatch "Database is now up and running!") -ne $null
 }
 
-if (Test-StepDone $manifest "runtime" -and ((& $engine container inspect -f "{{.State.Running}}" $NanoContainer 2>$null) -eq "true")) {
+if ((Test-StepDone $manifest "runtime") -and ((& $engine container inspect -f "{{.State.Running}}" $NanoContainer 2>$null) -eq "true")) {
     Ok "Step 1/4  Exasol Nano container — already running, skipping"
 } else {
     Info "Step 1/4  Exasol Nano container"

@@ -97,6 +97,16 @@ mcp_credentials() {
     fi
 }
 
+# mcp_resolve_creds — sets _mcp_user and _mcp_password for the caller.
+# Single place that turns the credential reference into a usable secret.
+mcp_resolve_creds() {
+    _creds="$(mcp_credentials)"
+    _mcp_user="$(printf '%s' "$_creds" | cut -f1)"
+    _pwfile="$(printf '%s' "$_creds" | cut -f2)"
+    _mcp_password=""
+    [ -n "$_pwfile" ] && [ -f "$_pwfile" ] && _mcp_password="$(cat "$_pwfile")"
+}
+
 # mcp_generate_configs — write ready-to-use client configs (0600, because
 # they embed the database password).
 mcp_generate_configs() {
@@ -106,11 +116,9 @@ mcp_generate_configs() {
     _kit_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     mcp_provision_readonly_user "$_kit_root/sql/mcp_readonly_user.sql" || true
 
-    _creds="$(mcp_credentials)"
-    _user="$(printf '%s' "$_creds" | cut -f1)"
-    _pwfile="$(printf '%s' "$_creds" | cut -f2)"
-    _password=""
-    [ -n "$_pwfile" ] && [ -f "$_pwfile" ] && _password="$(cat "$_pwfile")"
+    mcp_resolve_creds
+    _user="$_mcp_user"
+    _password="$_mcp_password"
     if [ -z "$_password" ]; then
         warn "No stored password for user '$_user' — edit the generated configs and fill EXA_PASSWORD manually"
         _password="FILL_ME_IN"
@@ -155,11 +163,9 @@ PY
 mcp_validate() {
     info "Validating the MCP server (stdio handshake)"
     _dsn="$(manifest_get runtime.dsn 2>/dev/null)"
-    _creds="$(mcp_credentials)"
-    _user="$(printf '%s' "$_creds" | cut -f1)"
-    _pwfile="$(printf '%s' "$_creds" | cut -f2)"
-    _password=""
-    [ -n "$_pwfile" ] && [ -f "$_pwfile" ] && _password="$(cat "$_pwfile")"
+    mcp_resolve_creds
+    _user="$_mcp_user"
+    _password="$_mcp_password"
 
     require_python3
     _handshake_ok=0
@@ -225,11 +231,9 @@ PY
 mcp_validate_http() {
     info "Validating the MCP server (HTTP mode on port $EXAKIT_MCP_HTTP_PORT)"
     _dsn="$(manifest_get runtime.dsn 2>/dev/null)"
-    _creds="$(mcp_credentials)"
-    _user="$(printf '%s' "$_creds" | cut -f1)"
-    _pwfile="$(printf '%s' "$_creds" | cut -f2)"
-    _password=""
-    [ -n "$_pwfile" ] && [ -f "$_pwfile" ] && _password="$(cat "$_pwfile")"
+    mcp_resolve_creds
+    _user="$_mcp_user"
+    _password="$_mcp_password"
 
     # The HTTP server refuses to start without authentication unless
     # --no-auth is passed. For this brief localhost-only validation that is

@@ -86,8 +86,8 @@ cmd_teardown() {
     fi
     confirm "Continue with teardown?" n || { info "Teardown cancelled"; exit 0; }
     case "$_type" in
-        nano)     nano_teardown "${1:-}" ;;
-        personal) personal_teardown ;;
+        nano)     nano_teardown "${1:-}" || exit 1 ;;
+        personal) personal_teardown "${1:-}" || exit 1 ;;
     esac
     ok "Teardown finished. Credentials, logs and the manifest remain in $EXAKIT_HOME"
     info "Remove them with: rm -rf $EXAKIT_HOME"

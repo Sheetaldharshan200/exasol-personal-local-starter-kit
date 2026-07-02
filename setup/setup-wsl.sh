@@ -49,47 +49,8 @@ else
     fi
 fi
 
-# --- step 3: exapump ----------------------------------------------------------
-if command -v exapump_install >/dev/null 2>&1; then
-    if begin_step exapump "Step 2/4  exapump (data loading CLI)"; then
-        exapump_install
-        exapump_create_profile
-        exapump_validate_connection
-        mark_step exapump
-    fi
-else
-    info "Step 2/4  exapump — module not included in this kit build yet, skipping"
-fi
-
-# --- step 4: MCP server --------------------------------------------------------
-if command -v mcp_install >/dev/null 2>&1; then
-    if begin_step mcp "Step 3/4  MCP server (AI agent bridge)"; then
-        mcp_install
-        mcp_generate_configs
-        mcp_validate
-        mark_step mcp
-    fi
-else
-    info "Step 3/4  MCP server — module not included in this kit build yet, skipping"
-fi
-
-# --- step 5: lifecycle helper --------------------------------------------------
-if begin_step exakit_helper "Step 4/4  exakit helper command"; then
-    mkdir -p "$EXAKIT_BIN_DIR"
-    install -m 755 "$SCRIPT_DIR/exakit" "$EXAKIT_BIN_DIR/exakit"
-    mkdir -p "$EXAKIT_HOME/kit/setup"
-    cp -R "$SCRIPT_DIR/lib" "$EXAKIT_HOME/kit/setup/"
-    ensure_path_hint "$EXAKIT_BIN_DIR"
-    mark_step exakit_helper
-    ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
-fi
-
-# --- team assets (delivered separately) -----------------------------------------
-for _pending in sql/01_create_schema.sql data/data-dictionary.md; do
-    if [ ! -s "$KIT_ROOT/$_pending" ]; then
-        info "Pending: $_pending is not in this kit build yet (sample schema/data step will activate once it lands)"
-    fi
-done
+# --- steps 2-4: exapump, MCP server, exakit helper (shared) --------------------
+kit_shared_steps 2 4 "$SCRIPT_DIR" "$KIT_ROOT"
 
 exakit_finish
 ok "Setup complete"

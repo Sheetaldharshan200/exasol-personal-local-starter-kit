@@ -24,6 +24,8 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
+> **Native Windows note:** the PowerShell path currently installs the database container only — the `exakit`/`exapump` commands below and the generated MCP configs come with the macOS/Linux/WSL path. On Windows, follow the [Windows Docker quickstart](quickstarts/windows-docker.md) for verification and MCP setup, or run the install inside WSL for the full experience.
+
 What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment takes 10–20 minutes (one-time); container platforms are up in a few minutes.
 
 > Prefer to read the scripts first? Add `EXAKIT_DRY_RUN=1` before `sh` — the kit is downloaded to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup script yourself.
@@ -93,7 +95,7 @@ Re-running the installer is always safe — it skips what's done and repairs wha
 | Symptom | Fix |
 |---|---|
 | "Docker is installed but not running" | Start Docker Desktop / `podman machine start`, then re-run |
-| "Port 8563 is already in use" | Stop the other app, or re-run with `EXAKIT_DB_PORT=8564` |
+| "Port 8563 is already in use" | Stop the other app; on Linux/Windows containers you can instead re-run with `EXAKIT_DB_PORT=8564` (the macOS deployment needs 8563 itself) |
 | Setup failed mid-way | Re-run the same install command — it resumes from the failed step |
 | Assistant can't see the database | `exakit status` (is the runtime running?), then restart the MCP client after config changes |
 | Anything else | `exakit logs` has the full story; every error message names its remedy |
