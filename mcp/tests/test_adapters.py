@@ -68,6 +68,34 @@ class AdditionalAdapterTests(unittest.TestCase):
         self.assertIn("[mcp_servers.exasol]", rendered.content or "")
         self.assertIn('command = "uvx"', rendered.content or "")
 
+    def test_codex_adapter_preserves_quoted_table_keys(self) -> None:
+        adapter = self._registry.get("codex")
+        location = adapter.locate(self._environment)
+        assert location.path is not None
+        location.path.parent.mkdir(parents=True, exist_ok=True)
+        location.path.write_text(
+            '\n'.join(
+                [
+                    'notify = ["/tmp/example", "turn-ended"]',
+                    '',
+                    '[projects."/Users/example/workspace"]',
+                    'trust_level = "trusted"',
+                    '',
+                    '[mcp_servers.node_repl]',
+                    'args = []',
+                    'command = "/tmp/node_repl"',
+                ]
+            )
+            + '\n',
+            encoding="utf-8",
+        )
+        inspection = adapter.inspect(location.path, "exasol")  # type: ignore[arg-type]
+        rendered = adapter.render(self._server, inspection)
+        findings = adapter.validate_render(rendered)
+        self.assertEqual(findings, [])
+        self.assertIn('[projects."/Users/example/workspace"]', rendered.content or "")
+        self.assertIn("[mcp_servers.exasol]", rendered.content or "")
+
     def test_discover_reports_supported_adapters(self) -> None:
         for adapter_id in (
             "claude_desktop",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+import re
 
 from mcp.core.models import DeploymentMode, Finding, NextAction, Severity, ServerDefinition
 from mcp.core.serialization import sha256_json
@@ -206,15 +207,26 @@ def _emit_toml_table(lines: list[str], table: dict, prefix: tuple[str, ...]) -> 
         else:
             scalar_items.append((key, value))
     if prefix:
-        lines.append(f"[{'.'.join(prefix)}]\n")
+        lines.append(f"[{'.'.join(_toml_key(part) for part in prefix)}]\n")
     for key, value in scalar_items:
-        lines.append(f"{key} = {_toml_value(value)}\n")
+        lines.append(f"{_toml_key(key)} = {_toml_value(value)}\n")
     if scalar_items and nested_items:
         lines.append("\n")
     for index, (key, value) in enumerate(nested_items):
         _emit_toml_table(lines, value, prefix + (key,))
         if index != len(nested_items) - 1:
             lines.append("\n")
+
+
+_BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_key(value: object) -> str:
+    text = str(value)
+    if _BARE_TOML_KEY.match(text):
+        return text
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def _toml_value(value: object) -> str:
