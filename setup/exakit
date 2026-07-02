@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# exakit — lifecycle helper for the Exasol Personal Local Starter Kit.
+#
+# usage: exakit <command>
+#
+#   preflight           check this machine's requirements, install nothing
+#   status              show what is installed and whether it is healthy
+#   info                print the connection details panel
+#   start               start the local database
+#   stop                stop the local database
+#   teardown [--data]   remove the runtime; --data also deletes database
+#                       content (Nano volume / Personal deployment)
+#   logs                print the path of the latest setup log
+#   help                this text
+#
+# Installed to ~/.local/bin by the setup scripts; also runs straight from a
+# repo checkout (setup/exakit).
+
+set -u
+set -o pipefail
+
+# --- locate the kit's lib directory ----------------------------------------
+_script_dir="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$_script_dir/lib/common.sh" ]; then
+    _lib_dir="$_script_dir/lib"
+elif [ -f "${EXAKIT_HOME:-$HOME/.exasol-starter-kit}/kit/setup/lib/common.sh" ]; then
+    _lib_dir="${EXAKIT_HOME:-$HOME/.exasol-starter-kit}/kit/setup/lib"
+else
+    echo "exakit: cannot find the kit library (looked in $_script_dir/lib and ~/.exasol-starter-kit/kit)" >&2
+    exit 1
+fi
+
+. "$_lib_dir/common.sh"
+. "$_lib_dir/detect.sh"
+. "$_lib_dir/runtime-nano.sh"
+. "$_lib_dir/runtime-personal.sh"
+
+_runtime_type() {
+    manifest_get runtime.type 2>/dev/null
+}
+
+_require_install() {
+    [ -f "$EXAKIT_MANIFEST" ] || die "No installation found. Run the installer first."
+    [ -n "$(_runtime_type)" ] || die "No runtime recorded in the manifest yet."
+}
+
+cmd_status() {
+    if [ ! -f "$EXAKIT_MANIFEST" ]; then
+        echo "Not installed (no manifest at $EXAKIT_MANIFEST)"
+        exit 0
+    fi
+    _type="$(_runtime_type)"
+    printf 'Kit level:  %s\n' "$(manifest_get kit_level 2>/dev/null)"
+    printf 'Runtime:    %s\n' "${_type:-none}"
+    case "$_type" in
+        nano)     printf 'Status:     %s\n' "$(nano_status)" ;;
+        personal) printf 'Status:     %s\n' "$(personal_status)" ;;
+        *)        printf 'Status:     unknown\n' ;;
+    esac
+    printf 'Steps done: %s\n' "$(manifest_get steps_completed 2>/dev/null)"
+    printf 'Manifest:   %s\n' "$EXAKIT_MANIFEST"
+}
+
+cmd_start() {
+    _require_install
+    case "$(_runtime_type)" in
+        nano)     nano_start ;;
+        personal) personal_start ;;
+    esac
+}
+
+cmd_stop() {
+    _require_install
+    case "$(_runtime_type)" in
+        nano)     nano_stop ;;
+        personal) personal_stop ;;
+    esac
+}
+
+cmd_teardown() {
+    _require_install
+    _type="$(_runtime_type)"
+    warn "This removes the local Exasol runtime ($_type)."
+    if [ "${1:-}" = "--data" ]; then
+        warn "It will ALSO delete all database content."
+    fi
+    confirm "Continue with teardown?" n || { info "Teardown cancelled"; exit 0; }
+    case "$_type" in
+        nano)     nano_teardown "${1:-}" ;;
+        personal) personal_teardown ;;
+    esac
+    ok "Teardown finished. Credentials, logs and the manifest remain in $EXAKIT_HOME"
+    info "Remove them with: rm -rf $EXAKIT_HOME"
+}
+
+cmd_logs() {
+    _latest="$(ls -t "$EXAKIT_LOG_DIR"/*.log 2>/dev/null | head -1)"
+    if [ -n "$_latest" ]; then
+        echo "$_latest"
+    else
+        echo "No logs found in $EXAKIT_LOG_DIR" >&2
+        exit 1
+    fi
+}
+
+usage() {
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-help}" in
+    preflight) preflight_report ;;
+    status)   cmd_status ;;
+    info)     connection_panel ;;
+    start)    cmd_start ;;
+    stop)     cmd_stop ;;
+    teardown) shift; cmd_teardown "${1:-}" ;;
+    logs)     cmd_logs ;;
+    help|-h|--help) usage ;;
+    *) echo "exakit: unknown command '${1}'" >&2; usage >&2; exit 2 ;;
+esac
