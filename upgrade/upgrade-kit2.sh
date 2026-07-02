@@ -23,10 +23,17 @@ LIB_DIR="$KIT_ROOT/setup/lib"
 
 . "$LIB_DIR/common.sh"
 . "$LIB_DIR/detect.sh"
-. "$LIB_DIR/exapump.sh"
+[ -f "$LIB_DIR/exapump.sh" ] && . "$LIB_DIR/exapump.sh"
 
 exakit_init_logging
 exakit_enable_failure_handling
+
+# SQL assets are applied through exapump; without the module nothing may be
+# recorded as installed.
+require_exapump_module() {
+    command -v exapump_run_sql_file >/dev/null 2>&1 || \
+        die "The exapump module is missing from this kit build — cannot apply $1. Update the kit and re-run the upgrade."
+}
 
 printf '\n  Kit 1 -> Kit 2 upgrade (Trusted AI Workflow Add-on)\n\n'
 
@@ -72,6 +79,7 @@ if begin_step kit2_semantic "Kit 2 asset 1/3  Semantic model"; then
         # The semantic layer is virtual-schema based; applying the model is a
         # SQL step delivered with the semantic assets.
         if [ -s "$KIT_ROOT/advanced/semantic/install_semantic_views.sql" ]; then
+            require_exapump_module "the semantic views SQL"
             exapump_run_sql_file "$KIT_ROOT/advanced/semantic/install_semantic_views.sql" "semantic views installation"
             manifest_set kit2.semantic_views_installed true
         else
@@ -88,6 +96,7 @@ fi
 if begin_step kit2_audit "Kit 2 asset 2/3  Audit/run log"; then
     _audit="$KIT_ROOT/advanced/audit_log_schema.sql"
     if [ -s "$_audit" ]; then
+        require_exapump_module "the audit log SQL"
         exapump_run_sql_file "$_audit" "audit log schema (audit_log_schema.sql)"
         manifest_set kit2.audit_log_installed true
         mark_step kit2_audit

@@ -65,6 +65,9 @@ exapump_cli() {
 }
 
 exapump_install() {
+    [ "$(detect_arch)" != "unsupported" ] || \
+        die "Unsupported CPU architecture: $(uname -m). exapump binaries exist for x86_64 and arm64 only."
+
     if command -v exapump >/dev/null 2>&1 || [ -x "$EXAKIT_EXAPUMP_BIN" ]; then
         # Trust the existing binary only if it actually runs — an interrupted
         # earlier download can leave a broken file at the same path.

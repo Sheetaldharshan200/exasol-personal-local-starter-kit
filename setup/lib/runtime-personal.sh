@@ -12,6 +12,7 @@
 #   - `exasol info` prints connection details for the current deployment
 #   - rerunning `exasol install local` with the same preset is safe
 
+EXAKIT_PERSONAL_PORT=8563
 EXAKIT_PERSONAL_MIN_RAM_GB="${EXAKIT_PERSONAL_MIN_RAM_GB:-8}"
 EXAKIT_PERSONAL_MIN_DISK_GB="${EXAKIT_PERSONAL_MIN_DISK_GB:-20}"
 EXAKIT_PERSONAL_BIN="$EXAKIT_BIN_DIR/exasol"
@@ -109,8 +110,10 @@ personal_deploy_local() {
         return 0
     fi
 
-    if port_in_use "$EXAKIT_DB_PORT"; then
-        die "Port $EXAKIT_DB_PORT is already in use by another application. Stop it or set EXAKIT_DB_PORT, then re-run."
+    # The launcher deploys on its own fixed port; EXAKIT_DB_PORT does not
+    # apply to the macOS path, so check the real port and say so honestly.
+    if port_in_use "$EXAKIT_PERSONAL_PORT"; then
+        die "Port $EXAKIT_PERSONAL_PORT is required by Exasol Personal and is already in use. Stop the other application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
     fi
 
     info "Deploying Exasol Personal locally — this takes 10-20 minutes on first install"
@@ -141,11 +144,6 @@ personal_wait_ready() {
     die "Deployment does not answer to 'exasol info'. Check: $(personal_cli) info"
 }
 
-# personal_connection_info — raw connection details as printed by the CLI.
-personal_connection_info() {
-    "$(personal_cli)" info 2>/dev/null
-}
-
 personal_record_manifest() {
     manifest_set runtime.type "personal"
     manifest_set runtime.version "$EXAKIT_PERSONAL_VERSION"
@@ -165,18 +163,24 @@ doc = json.load(open(sys.argv[1]))
 c = doc.get("connection", {})
 print("%s:%s\t%s" % (c.get("host", "127.0.0.1"), c.get("dbPort", 8563), c.get("username", "sys")))
 ' "$_dep" 2>/dev/null)"
-        manifest_set runtime.dsn "$(printf '%s' "$_conn" | cut -f1)"
-        manifest_set runtime.user "$(printf '%s' "$_conn" | cut -f2)"
+        _dsn="$(printf '%s' "$_conn" | cut -f1)"
+        _user="$(printf '%s' "$_conn" | cut -f2)"
+        # A corrupt/unreadable deployment.json must not record an empty DSN.
+        manifest_set runtime.dsn "${_dsn:-127.0.0.1:${EXAKIT_PERSONAL_PORT}}"
+        manifest_set runtime.user "${_user:-sys}"
     else
-        manifest_set runtime.dsn "127.0.0.1:${EXAKIT_DB_PORT}"
+        manifest_set runtime.dsn "127.0.0.1:${EXAKIT_PERSONAL_PORT}"
         manifest_set runtime.user "sys"
     fi
+    _password=""
     if [ -f "$_sec" ]; then
         _password="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dbPassword",""))' "$_sec" 2>/dev/null)"
-        if [ -n "$_password" ]; then
-            store_credential personal_sys_password "$_password"
-            manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/personal_sys_password"
-        fi
+    fi
+    if [ -n "$_password" ]; then
+        store_credential personal_sys_password "$_password"
+        manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/personal_sys_password"
+    else
+        warn "Could not read the database password from the deployment secrets — the exapump profile and MCP configs will ask for it or need manual completion."
     fi
     manifest_set runtime.tls "self-signed"
     manifest_set runtime.status "healthy"
@@ -218,8 +222,16 @@ personal_stop() {
     fi
 }
 
-# personal_teardown — destroy the local deployment and its resources.
+# personal_teardown [--data] — destroy the local deployment. An Exasol
+# Personal deployment keeps runtime and data together, so removing it always
+# deletes the database content; without --data we refuse instead of silently
+# destroying data the documented contract says would be kept.
 personal_teardown() {
+    if [ "${1:-}" != "--data" ]; then
+        warn "Exasol Personal keeps the runtime and the database content in one deployment — removing it deletes all data."
+        info "Use 'exakit stop' to stop it without deleting, or 'exakit teardown --data' to remove everything."
+        return 1
+    fi
     if personal_deployment_exists; then
         info "Destroying the local Exasol Personal deployment"
         run_logged "$(personal_cli)" destroy --remove || warn "Destroy reported errors (see log)"

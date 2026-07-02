@@ -7,8 +7,10 @@
 #   2. downloads the starter kit to ~\.exasol-starter-kit\kit (so you can
 #      read every script before or after it runs)
 #   3. shows the installation plan
-#   4. hands off to setup\setup-windows-docker.ps1, which installs and
-#      connects Exasol Nano (container), exapump, and the Exasol MCP server
+#   4. hands off to setup\setup-windows-docker.ps1, which installs the
+#      Exasol Nano database container (exapump and MCP setup on native
+#      Windows currently follow quickstarts\windows-docker.md; the WSL
+#      path installs everything)
 #
 # Options (environment variables):
 #   $env:EXAKIT_DRY_RUN = "1"   show the plan, install nothing
@@ -64,7 +66,7 @@ Write-Host "  Installation plan"
 Write-Host "  -----------------"
 Write-Host "   Platform:   windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)"
 Write-Host "   Database:   Exasol Nano (container via Docker Desktop)"
-Write-Host "   Components: local database, exapump, MCP server"
+Write-Host "   Components: local database (exapump and MCP setup: see quickstarts/windows-docker.md)"
 Write-Host "   Kit copy:   $KitDir (read the scripts any time)"
 Write-Host "   State/logs: $ExakitHome"
 Write-Host ""

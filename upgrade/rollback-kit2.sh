@@ -16,7 +16,12 @@ LIB_DIR="$KIT_ROOT/setup/lib"
 
 . "$LIB_DIR/common.sh"
 . "$LIB_DIR/detect.sh"
-. "$LIB_DIR/exapump.sh"
+[ -f "$LIB_DIR/exapump.sh" ] && . "$LIB_DIR/exapump.sh"
+
+# Rollback SQL runs through exapump; degrade to manual guidance without it.
+can_run_sql() {
+    command -v exapump_run_sql_file >/dev/null 2>&1
+}
 
 exakit_init_logging
 
@@ -36,10 +41,10 @@ confirm "Continue with the rollback?" n || { info "Rollback cancelled"; exit 0; 
 # --- semantic model -----------------------------------------------------------
 if [ -n "$(manifest_get kit2.semantic_views_installed 2>/dev/null)" ]; then
     _drop="$KIT_ROOT/advanced/semantic/uninstall_semantic_views.sql"
-    if [ -s "$_drop" ]; then
+    if [ -s "$_drop" ] && can_run_sql; then
         exapump_run_sql_file "$_drop" "semantic views removal"
     else
-        warn "No uninstall SQL for the semantic views — remove them manually if needed"
+        warn "Cannot run the semantic views uninstall SQL (missing SQL file or exapump module) — remove them manually if needed"
     fi
 fi
 if [ -d "$EXAKIT_HOME/kit2/semantic" ]; then
@@ -50,10 +55,10 @@ fi
 # --- audit log ------------------------------------------------------------------
 if [ -n "$(manifest_get kit2.audit_log_installed 2>/dev/null)" ]; then
     _drop="$KIT_ROOT/advanced/audit_log_drop.sql"
-    if [ -s "$_drop" ]; then
+    if [ -s "$_drop" ] && can_run_sql; then
         exapump_run_sql_file "$_drop" "audit log schema removal"
     else
-        warn "No drop SQL for the audit log schema — remove it manually if needed"
+        warn "Cannot run the audit log drop SQL (missing SQL file or exapump module) — remove it manually if needed"
     fi
 fi
 
