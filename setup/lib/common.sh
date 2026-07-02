@@ -687,7 +687,7 @@ exakit_configure_mcp_readonly_access() {
     _identifier_user="$(printf '%s' "$_readonly_user" | tr '[:lower:]' '[:upper:]')"
     _default_schema_uc="$(printf '%s' "$_default_schema" | tr '[:lower:]' '[:upper:]')"
     _exakit_validate_identifier "$_identifier_user" || die "Invalid EXAKIT_MCP_READONLY_USER: $_readonly_user"
-    _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX.toml")"
+    _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX")"
     _exakit_write_exapump_config \
         "$_temp_config" "$_host" "$_port" "$_runtime_user" "$_admin_password" \
         "$_readonly_user" "$_readonly_password" "$_default_schema_uc"
@@ -981,7 +981,7 @@ exakit_mcp_setup() {
         warn "Please choose valid client numbers, for example 1,2,3 or all."
     done
 
-    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX.json")"
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX")"
     info "Applying MCP setup ($_mode mode)"
     _setup_status=0
     if exakit_run_mcp_setup_cli "$_mode" "$_clients_csv" "$_result_file"; then
@@ -1007,7 +1007,7 @@ exakit_mcp_operation() {
         warn "Please choose valid MCP clients: claude_desktop, cursor, codex, or all."
         return 1
     }
-    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-operation.XXXXXX.json")"
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-operation.XXXXXX")"
     _operation_status=0
     info "Running MCP $_operation"
     if exakit_run_mcp_operation_cli "$_operation" "$_clients_csv" "$_result_file"; then
@@ -1024,7 +1024,7 @@ exakit_mcp_operation() {
 
 exakit_mcp_restore() {
     _snapshot_id="${1:-}"
-    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-restore.XXXXXX.json")"
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-restore.XXXXXX")"
     _operation_status=0
     info "Running MCP restore"
     if exakit_run_mcp_operation_cli "restore" "claude_desktop,cursor,codex" "$_result_file" "$_snapshot_id"; then
