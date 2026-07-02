@@ -64,7 +64,7 @@ Out of scope:
 
 - `FR-001` The subsystem shall provide a stable public service boundary for `discover`, `install`, `configure`, `validate`, `repair`, `backup`, `restore`, `doctor`, `uninstall`, and `status`.
 - `FR-002` The subsystem shall discover supported AI clients through client adapters rather than core hardcoding.
-- `FR-003` The initial adapter roadmap shall cover Claude, Cursor, GitHub Copilot, VS Code, Codex, Continue, Cline, and Windsurf.
+- `FR-003` The initial adapter roadmap shall cover Claude, Cursor, and Codex.
 - `FR-004` The subsystem shall generate client-specific MCP configuration outside the repository under `~/.exasol-starter-kit/clients/`.
 - `FR-005` The subsystem shall generate and maintain a runtime manifest outside the repository under `~/.exasol-starter-kit/manifest.json`.
 - `FR-006` The subsystem shall validate that generated client configuration is syntactically valid before activation.

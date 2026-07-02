@@ -6,6 +6,8 @@ from mcp.core.errors import MCPSubsystemError
 
 from .base import ClientAdapter
 from .claude_desktop import ClaudeDesktopAdapter
+from .codex import CodexAdapter
+from .cursor import CursorAdapter
 
 
 class AdapterRegistry:
@@ -14,7 +16,14 @@ class AdapterRegistry:
     def __init__(self, adapters: list[ClientAdapter] | None = None) -> None:
         self._adapters = {
             adapter.adapter_id(): adapter
-            for adapter in (adapters or [ClaudeDesktopAdapter()])
+            for adapter in (
+                adapters
+                or [
+                    ClaudeDesktopAdapter(),
+                    CursorAdapter(),
+                    CodexAdapter(),
+                ]
+            )
         }
 
     def all(self) -> list[ClientAdapter]:

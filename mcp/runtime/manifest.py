@@ -15,6 +15,9 @@ from .paths import RuntimePaths
 class ManifestRepository:
     """Persist and update the subsystem manifest."""
 
+    _UPSTREAM_COMPONENT_KEY = "mcp_server"
+    _UPSTREAM_STATE_KEY = "managed_state"
+
     def __init__(
         self,
         paths: RuntimePaths,
@@ -37,16 +40,67 @@ class ManifestRepository:
             "snapshots": [],
         }
 
-    def load(self) -> dict:
-        self._paths.ensure()
+    def _normalize_manifest(self, manifest: dict | None) -> dict:
+        doc = dict(manifest or {})
+        empty = self._empty_manifest()
+        for key, value in empty.items():
+            doc.setdefault(key, value)
+        doc["artifacts"] = list(doc.get("artifacts", []))
+        doc["snapshots"] = list(doc.get("snapshots", []))
+        doc["runtime_root"] = str(self._paths.runtime_root)
+        return doc
+
+    @staticmethod
+    def _is_upstream_manifest(document: dict) -> bool:
+        return "manifest_version" in document and "schema_version" not in document
+
+    def _load_root_document(self) -> dict | None:
         if not self._paths.manifest_path.exists():
-            return self._empty_manifest()
+            return None
         return self._filesystem.read_json(self._paths.manifest_path)
 
+    def _exported_config_names(self, manifest: dict) -> list[str]:
+        names = {
+            Path(artifact["path"]).name
+            for artifact in manifest.get("artifacts", [])
+            if artifact.get("removed_at") is None
+        }
+        return sorted(names)
+
+    def load(self) -> dict:
+        self._paths.ensure()
+        root_document = self._load_root_document()
+        if root_document is None:
+            return self._empty_manifest()
+        if self._is_upstream_manifest(root_document):
+            components = root_document.get("components", {})
+            component_state = {}
+            if isinstance(components, dict):
+                mcp_component = components.get(self._UPSTREAM_COMPONENT_KEY, {})
+                if isinstance(mcp_component, dict):
+                    component_state = mcp_component.get(self._UPSTREAM_STATE_KEY, {}) or {}
+            return self._normalize_manifest(component_state)
+        return self._normalize_manifest(root_document)
+
     def save(self, manifest: dict) -> None:
-        manifest["updated_at"] = utc_now()
-        content = json.dumps(manifest, indent=2, sort_keys=True)
-        self._filesystem.write_text(self._paths.manifest_path, content + "\n")
+        state = self._normalize_manifest(manifest)
+        state["updated_at"] = utc_now()
+        root_document = self._load_root_document()
+        if root_document is not None and self._is_upstream_manifest(root_document):
+            components = root_document.setdefault("components", {})
+            if not isinstance(components, dict):
+                components = {}
+                root_document["components"] = components
+            mcp_component = components.setdefault(self._UPSTREAM_COMPONENT_KEY, {})
+            if not isinstance(mcp_component, dict):
+                mcp_component = {}
+                components[self._UPSTREAM_COMPONENT_KEY] = mcp_component
+            mcp_component[self._UPSTREAM_STATE_KEY] = state
+            mcp_component["configs"] = self._exported_config_names(state)
+            mcp_component["export_dir"] = str(self._paths.mcp_dir)
+            self._filesystem.write_json(self._paths.manifest_path, root_document)
+            return
+        self._filesystem.write_json(self._paths.manifest_path, state)
 
     def list_active_artifacts(self) -> list[dict]:
         return [
@@ -100,6 +154,24 @@ class ManifestRepository:
     def add_snapshot(self, snapshot_record: dict) -> None:
         manifest = self.load()
         manifest["snapshots"].append(snapshot_record)
+        self.save(manifest)
+
+    def record_client_setup(self, setup: dict) -> None:
+        root_document = self._load_root_document()
+        if root_document is not None and self._is_upstream_manifest(root_document):
+            components = root_document.setdefault("components", {})
+            if not isinstance(components, dict):
+                components = {}
+                root_document["components"] = components
+            mcp_component = components.setdefault(self._UPSTREAM_COMPONENT_KEY, {})
+            if not isinstance(mcp_component, dict):
+                mcp_component = {}
+                components[self._UPSTREAM_COMPONENT_KEY] = mcp_component
+            mcp_component["client_setup"] = dict(setup)
+            self._filesystem.write_json(self._paths.manifest_path, root_document)
+            return
+        manifest = self.load()
+        manifest["client_setup"] = dict(setup)
         self.save(manifest)
 
     def latest_snapshot_id(self) -> str | None:

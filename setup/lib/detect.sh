@@ -139,10 +139,12 @@ preflight_report() {
     done
     if command -v python3 >/dev/null 2>&1; then
         _pf_ok "python3 available"
+    elif command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
+        _pf_ok "uv available — it can provide Python automatically"
     elif [ "$_os" = "macos" ]; then
-        _pf_bad "python3 missing — run: xcode-select --install"
+        _pf_note "python3 missing — the installer can bootstrap a managed Python runtime automatically"
     else
-        _pf_bad "python3 missing — e.g. sudo apt install python3"
+        _pf_note "python3 missing — the installer can bootstrap a managed Python runtime automatically"
     fi
 
     # container runtime (only the Nano platforms need one)

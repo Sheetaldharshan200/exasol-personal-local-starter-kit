@@ -119,6 +119,54 @@ class MCPSubsystemLifecycleTests(unittest.TestCase):
         result = self.subsystem.execute(self._base_request("install"))
         self.assertEqual(result.status, OperationStatus.BLOCKED)
 
+    def test_multi_client_configure_and_uninstall(self) -> None:
+        cursor_path = self._temp_dir / "cursor" / "mcp.json"
+        codex_path = self._temp_dir / "codex" / "config.toml"
+        workspace = self._temp_dir / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        environment = ExecutionEnvironment(
+            os_name="darwin",
+            home=self._temp_dir,
+            env={
+                "CURSOR_MCP_CONFIG_PATH": str(cursor_path),
+                "CODEX_MCP_CONFIG_PATH": str(codex_path),
+            },
+            cwd=workspace,
+        )
+        subsystem = MCPAccessSubsystem(environment=environment)
+        request = {
+            **self._base_request("configure"),
+            "target_clients": ["cursor", "codex"],
+        }
+        with self._mock_connectivity():
+            configure = subsystem.execute(request)
+            self.assertEqual(configure.status, OperationStatus.SUCCESS)
+            self.assertTrue(cursor_path.exists())
+            self.assertTrue(codex_path.exists())
+
+            cursor_doc = json.loads(cursor_path.read_text(encoding="utf-8"))
+            self.assertIn("exasol", cursor_doc["mcpServers"])
+            codex_doc = codex_path.read_text(encoding="utf-8")
+            self.assertIn("[mcp_servers.exasol]", codex_doc)
+
+            validate = subsystem.execute(
+                {
+                    **self._base_request("validate"),
+                    "target_clients": ["cursor", "codex"],
+                }
+            )
+            self.assertEqual(validate.status, OperationStatus.SUCCESS)
+
+            uninstall = subsystem.execute(
+                {
+                    **self._base_request("uninstall"),
+                    "target_clients": ["cursor", "codex"],
+                }
+            )
+            self.assertEqual(uninstall.status, OperationStatus.SUCCESS)
+            self.assertFalse(cursor_path.exists())
+            self.assertFalse(codex_path.exists())
+
     def _base_request(self, operation: str) -> dict:
         return {
             "operation": operation,

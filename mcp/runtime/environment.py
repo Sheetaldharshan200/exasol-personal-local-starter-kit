@@ -13,7 +13,13 @@ class ExecutionEnvironment:
     os_name: str
     home: Path
     env: dict[str, str]
+    cwd: Path | None = None
 
     @classmethod
     def current(cls) -> "ExecutionEnvironment":
-        return cls(os_name=sys.platform, home=Path.home(), env=dict(os.environ))
+        return cls(
+            os_name=sys.platform,
+            home=Path.home(),
+            env=dict(os.environ),
+            cwd=Path.cwd(),
+        )

@@ -4,7 +4,8 @@ This subsystem now has a working Python implementation plus lifecycle tests.
 
 ## Current Status
 
-- Supported verified client adapter: Claude Desktop
+- Supported verified live adapters: Claude Desktop, Cursor, and Codex
+- Ready-made runtime bundle export: Claude Desktop, Cursor, and Codex
 - Supported operations: discover, configure, validate, repair, backup, restore, doctor, uninstall, status
 - Explicitly blocked operation: install
 - Runtime files are generated under the request-specific runtime root, defaulting to `~/.exasol-starter-kit`
@@ -23,4 +24,26 @@ This subsystem now has a working Python implementation plus lifecycle tests.
 
 ```bash
 python3 -m unittest discover -s mcp/tests -v
+```
+
+## Export Runtime Configs
+
+Once the starter kit itself has been installed and `~/.exasol-starter-kit/manifest.json` contains runtime connection details, export all ready-made MCP client configs with:
+
+```bash
+python3 -m mcp export-runtime-configs
+```
+
+## Lifecycle Commands
+
+The installed user-facing wrapper now exposes the managed MCP lifecycle directly:
+
+```bash
+exakit mcp-setup
+exakit mcp-status
+exakit mcp-validate
+exakit mcp-repair
+exakit mcp-doctor
+exakit mcp-remove
+exakit mcp-restore
 ```

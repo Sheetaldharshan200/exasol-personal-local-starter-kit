@@ -20,6 +20,9 @@ class FileSystem:
         self.ensure_dir(path.parent)
         path.write_text(content, encoding="utf-8")
 
+    def write_json(self, path: Path, content: dict) -> None:
+        self.write_text(path, json.dumps(content, indent=2, sort_keys=True) + "\n")
+
     def read_text(self, path: Path) -> str:
         return path.read_text(encoding="utf-8")
 

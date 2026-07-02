@@ -30,3 +30,7 @@ Status: Baseline strategy carried into Phase 4; detailed matrix to be expanded a
 ## Phase Gate
 
 Detailed test matrix and fixtures should be finalized after architecture and design are approved.
+
+## Current QA Expansion
+
+The detailed MCP edge-case matrix is now tracked in [qa-edge-cases.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/qa-edge-cases.md).

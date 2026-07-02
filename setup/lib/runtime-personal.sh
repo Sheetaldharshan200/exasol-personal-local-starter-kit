@@ -159,7 +159,7 @@ personal_record_manifest() {
     _sec="$EXAKIT_PERSONAL_DEPLOY_DIR/secrets.json"
     if [ -f "$_dep" ]; then
         require_python3
-        _conn="$(python3 -c '
+        _conn="$(run_python -c '
 import json, sys
 doc = json.load(open(sys.argv[1]))
 c = doc.get("connection", {})
@@ -172,7 +172,7 @@ print("%s:%s\t%s" % (c.get("host", "127.0.0.1"), c.get("dbPort", 8563), c.get("u
         manifest_set runtime.user "sys"
     fi
     if [ -f "$_sec" ]; then
-        _password="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dbPassword",""))' "$_sec" 2>/dev/null)"
+        _password="$(run_python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dbPassword",""))' "$_sec" 2>/dev/null)"
         if [ -n "$_password" ]; then
             store_credential personal_sys_password "$_password"
             manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/personal_sys_password"
@@ -180,6 +180,9 @@ print("%s:%s\t%s" % (c.get("host", "127.0.0.1"), c.get("dbPort", 8563), c.get("u
     fi
     manifest_set runtime.tls "self-signed"
     manifest_set runtime.status "healthy"
+    exakit_configure_mcp_readonly_access || return 1
+    exakit_generate_mcp_configs || return 1
+    exakit_maybe_offer_mcp_setup || true
 }
 
 # --- lifecycle (used by exakit) ---------------------------------------------

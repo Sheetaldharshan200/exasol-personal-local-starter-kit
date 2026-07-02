@@ -43,8 +43,8 @@ exasol-personal-local-starter-kit/
 │
 ├── mcp/                              # MCP client config templates
 │   ├── claude-config.json
-│   ├── cursor-config.json
-│   └── generic-config.json
+│   ├── cursor-mcp.json
+│   ├── codex-config.toml
 │
 ├── demo/                             # first guided workflow
 │   ├── first-revenue-analysis.md
@@ -73,8 +73,9 @@ exasol-personal-local-starter-kit/
 
 ## Principles
 
-1. **One command installs everything** — `install.sh` detects OS and hardware, routes to the right runtime (Exasol Personal on macOS; Exasol Nano container on Windows/Linux/WSL, Docker first with Podman fallback), installs exapump and the MCP server, connects all components, and prints the connection strings.
+1. **One command installs everything** — `install.sh` detects OS and hardware, routes to the right runtime (Exasol Personal on macOS; Exasol Nano container on Windows/Linux/WSL, Docker first with Podman fallback), installs exapump and the MCP server, creates a dedicated MCP read-only user, generates the ready-made MCP client configs, and prints the connection strings.
 2. **Repo stays pure source** — all runtime state (install manifest, logs, credentials, generated configs) lives in `~/.exasol-starter-kit/` on the user's machine; nothing generated is committed.
+3. **No preinstalled Python required from the user** — the setup flow uses system `python3` when present, otherwise it bootstraps a managed runtime automatically through `uv`.
 3. **The install manifest is the Kit 1 → Kit 2 contract** — it records what is installed at which kit level, so the Kit 2 upgrade is purely additive and can roll back cleanly.
 4. **Parallel-friendly ownership** — setup scripts consume `sql/`, `data/`, and `mcp/` files by path as external inputs; missing files are reported as pending, not errors.
 5. **Layered and inspectable** — `install.sh` → `setup-<os>.sh` → `setup/lib/` modules; every layer can be downloaded, read, and run manually.

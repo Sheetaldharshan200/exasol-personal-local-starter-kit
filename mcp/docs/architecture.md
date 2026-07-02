@@ -37,7 +37,7 @@ Status: Phase 2 approved baseline for Phase 3 detailed design.
 
 ### Downstream
 
-- local AI clients such as Claude Desktop, Cursor, Codex, Continue, Cline, Windsurf, VS Code, and GitHub Copilot
+- local AI clients such as Claude Desktop, Cursor, and Codex
 - local runtime state under `~/.exasol-starter-kit/`
 
 ## High-Level Architecture

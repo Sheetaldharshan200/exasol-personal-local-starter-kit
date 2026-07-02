@@ -15,6 +15,10 @@ class RuntimePaths:
         return self.runtime_root / "manifest.json"
 
     @property
+    def mcp_dir(self) -> Path:
+        return self.runtime_root / "mcp"
+
+    @property
     def backups_dir(self) -> Path:
         return self.runtime_root / "backups"
 
@@ -24,5 +28,6 @@ class RuntimePaths:
 
     def ensure(self) -> None:
         self.runtime_root.mkdir(parents=True, exist_ok=True)
+        self.mcp_dir.mkdir(parents=True, exist_ok=True)
         self.backups_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
