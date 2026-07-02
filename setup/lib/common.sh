@@ -662,6 +662,21 @@ _exakit_validate_identifier() {
     return 0
 }
 
+_exakit_validate_sql_password_token() {
+    case "$1" in
+        [A-Za-z][A-Za-z0-9_]*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_exakit_generate_sql_password_token() {
+    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Za-z0-9_' < /dev/urandom | head -c 23)"
+}
+
 exakit_configure_mcp_readonly_access() {
     require_python3
     _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
@@ -679,8 +694,8 @@ exakit_configure_mcp_readonly_access() {
     _readonly_schemas="$EXAKIT_MCP_READONLY_SCHEMAS"
     _default_schema="$(_exakit_first_schema "$_readonly_schemas")"
     _readonly_password="$(read_credential mcp_readonly_password)"
-    if [ -z "$_readonly_password" ]; then
-        _readonly_password="$(generate_password)"
+    if ! _exakit_validate_sql_password_token "$_readonly_password"; then
+        _readonly_password="$(_exakit_generate_sql_password_token)"
         store_credential mcp_readonly_password "$_readonly_password"
     fi
 
@@ -699,13 +714,13 @@ exakit_configure_mcp_readonly_access() {
         info "Creating the dedicated MCP read-only database user ($_readonly_user)"
         _exakit_run_exapump_sql \
             "$_temp_config" "admin" \
-            "CREATE USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" \
+            "CREATE USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
             >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create the MCP read-only database user."
     fi
 
     _exakit_run_exapump_sql \
         "$_temp_config" "admin" \
-        "ALTER USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" \
+        "ALTER USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
         >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not refresh the MCP read-only database password."
     _exakit_run_exapump_sql \
         "$_temp_config" "admin" \

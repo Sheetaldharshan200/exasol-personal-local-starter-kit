@@ -69,8 +69,8 @@ mcp_provision_readonly_user() {
     }
 
     _password="$(read_credential mcp_readonly_password)"
-    if [ -z "$_password" ]; then
-        _password="$(generate_password)"
+    if ! _exakit_validate_sql_password_token "$_password"; then
+        _password="$(_exakit_generate_sql_password_token)"
         store_credential mcp_readonly_password "$_password"
     fi
 
