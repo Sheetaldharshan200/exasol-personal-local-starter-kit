@@ -67,9 +67,20 @@ if [ -s "$KIT_ROOT/sql/02_load_data.sql" ]; then
 fi
 
 # --- 4. verify -------------------------------------------------------------------
+_verify_failed=0
 if [ -s "$KIT_ROOT/sql/03_verify_setup.sql" ]; then
     info "Verification (03_verify_setup.sql):"
-    "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" < "$KIT_ROOT/sql/03_verify_setup.sql" | tee -a "$EXAKIT_LOG_FILE"
+    _verify_output="$(mktemp "${TMPDIR:-/tmp}/exakit-verify.XXXXXX")"
+    "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" < "$KIT_ROOT/sql/03_verify_setup.sql" \
+        | tee -a "$EXAKIT_LOG_FILE" > "$_verify_output"
+    _verify_status=$?
+    cat "$_verify_output"
+    { [ "$_verify_status" -ne 0 ] || grep -qi 'FAIL' "$_verify_output"; } && _verify_failed=1
+    rm -f "$_verify_output"
+fi
+
+if [ "$_verify_failed" -eq 1 ]; then
+    die "Verification failed (query error or a FAIL row) — see $EXAKIT_LOG_FILE. Data is loaded but not marked ready; fix the underlying issue and re-run with --force."
 fi
 
 if [ "$_loaded_any" -eq 1 ]; then
