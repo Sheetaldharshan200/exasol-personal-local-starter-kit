@@ -87,6 +87,10 @@ class RuntimeExportTests(unittest.TestCase):
         self.assertEqual(claude["mcpServers"]["exasol"]["args"], ["exasol-mcp-server@1.10.1"])
         self.assertEqual(claude["mcpServers"]["exasol"]["env"]["EXA_DSN"], "127.0.0.1:8563")
         self.assertEqual(claude["mcpServers"]["exasol"]["env"]["EXA_USER"], "mcp_readonly")
+        self.assertEqual(
+            claude["mcpServers"]["exasol"]["env"]["EXA_SSL_CERT_VALIDATION"],
+            "no",
+        )
 
         codex = (mcp_dir / "codex-config.toml").read_text(encoding="utf-8")
         self.assertIn("[mcp_servers.exasol]", codex)
@@ -98,6 +102,10 @@ class RuntimeExportTests(unittest.TestCase):
         self.assertEqual(
             parsed_codex["mcp_servers"]["exasol"]["env"]["EXA_PASSWORD"],
             "readonly-secret",
+        )
+        self.assertEqual(
+            parsed_codex["mcp_servers"]["exasol"]["env"]["EXA_SSL_CERT_VALIDATION"],
+            "no",
         )
 
         manifest = json.loads((self.runtime_root / "manifest.json").read_text(encoding="utf-8"))

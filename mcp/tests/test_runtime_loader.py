@@ -100,6 +100,21 @@ class RuntimeLoaderEdgeCaseTests(unittest.TestCase):
         context = self.loader.load(self.runtime_root)
         self.assertEqual(context.server_definition.command, "/custom/tools/uvx")
 
+    def test_load_disables_certificate_validation_for_local_self_signed_runtime(self) -> None:
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    }
+                }
+            }
+        )
+        context = self.loader.load(self.runtime_root)
+        self.assertEqual(context.server_definition.env["EXA_SSL_CERT_VALIDATION"], "no")
+
     def test_load_falls_back_to_managed_home_local_bin_command(self) -> None:
         managed_command = self._temp_dir / ".local" / "bin" / "uvx"
         managed_command.parent.mkdir(parents=True, exist_ok=True)

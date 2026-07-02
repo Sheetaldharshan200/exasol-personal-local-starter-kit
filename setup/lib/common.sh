@@ -974,6 +974,7 @@ exakit_print_mcp_ready_panel() {
     _mcp_package="$(manifest_get components.mcp_server.package 2>/dev/null || printf '%s' "$EXAKIT_MCP_PACKAGE")"
     _mcp_version="$(manifest_get components.mcp_server.version 2>/dev/null || printf '%s' "$EXAKIT_MCP_VERSION")"
     _mcp_command="$(manifest_get components.mcp_server.command 2>/dev/null || true)"
+    _tls="$(manifest_get runtime.tls 2>/dev/null || true)"
     [ -n "$_mcp_command" ] || _mcp_command="uvx"
 
     printf '\n'
@@ -983,6 +984,9 @@ exakit_print_mcp_ready_panel() {
     printf '  Command:       %s %s@%s\n' "$_mcp_command" "$_mcp_package" "$_mcp_version"
     printf '  Database:      %s\n' "${_dsn:-unknown}"
     printf '  DB user:       %s (read-only)\n' "${_mcp_user:-mcp_readonly}"
+    if [ "$_tls" = "self-signed" ]; then
+        printf '  TLS:           local self-signed certificate accepted for 127.0.0.1\n'
+    fi
     printf '  Config bundle: %s\n' "$EXAKIT_MCP_DIR"
     printf '\n'
     if [ "$_mode" = "temporary" ]; then

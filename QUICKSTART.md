@@ -57,6 +57,8 @@ Choose `temporary` for copy/paste instructions only: files are generated in `~/.
 
 When the kit can resolve the local MCP launcher path, it writes that exact path into the generated config instead of assuming `uvx` is available on every desktop app's PATH. That makes the same bundle more portable across macOS, Linux, and Windows clients.
 
+For the local Exasol Personal runtime, the generated MCP config also sets `EXA_SSL_CERT_VALIDATION=no`. This matches the local `127.0.0.1` self-signed certificate setup; use a trusted CA instead for a real remote or shared production database.
+
 After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
 ## 5. Ask your first question

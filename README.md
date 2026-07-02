@@ -143,6 +143,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 ## Safety and operations
 
 - **Dedicated read-only MCP login** — the kit provisions and validates a least-privilege database user before managed MCP flows proceed.
+- **Local TLS handled for MCP clients** — generated Claude, Cursor, and Codex configs set `EXA_SSL_CERT_VALIDATION=no` only for the local self-signed `127.0.0.1` runtime; use trusted CA validation for real remote databases.
 - **No preinstalled Python required** — the setup uses `python3` when present, otherwise it bootstraps a managed runtime through `uv`.
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.

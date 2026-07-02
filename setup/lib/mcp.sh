@@ -7,7 +7,7 @@
 #
 # Server facts:
 #   - PyPI package exasol-mcp-server; run: uvx exasol-mcp-server@<version>
-#   - config env: EXA_DSN, EXA_USER, EXA_PASSWORD
+#   - config env: EXA_DSN, EXA_USER, EXA_PASSWORD, EXA_SSL_CERT_VALIDATION
 #   - HTTP mode: exasol-mcp-server-http --host <h> --port <p>
 #   - the server's tools are read-only (metadata + data reading queries);
 #     a least-privilege database user adds defense in depth
@@ -37,6 +37,25 @@ mcp_command_path() {
         return 0
     fi
     printf '%s\n' "uvx"
+}
+
+mcp_ssl_cert_validation() {
+    _tls="$(manifest_get runtime.tls 2>/dev/null || true)"
+    _dsn="$(manifest_get runtime.dsn 2>/dev/null || true)"
+    case "$_tls" in
+        self-signed|self_signed|selfsigned)
+            printf '%s\n' "no"
+            return 0
+            ;;
+    esac
+    case "$_dsn" in
+        127.0.0.1:*|localhost:*|\[::1\]:*)
+            printf '%s\n' "no"
+            ;;
+        *)
+            printf '%s\n' "yes"
+            ;;
+    esac
 }
 
 mcp_uv_install() {
@@ -111,11 +130,13 @@ mcp_validate() {
     _user="$_mcp_user"
     _password="$_mcp_password"
     _mcp_command="$(mcp_command_path)"
+    _ssl_cert_validation="$(mcp_ssl_cert_validation)"
 
     require_python3
     _handshake_ok=0
     for _attempt in 1 2; do
         if EXA_DSN="$_dsn" EXA_USER="$_user" EXA_PASSWORD="$_password" \
+            EXA_SSL_CERT_VALIDATION="$_ssl_cert_validation" \
             run_python - "$_mcp_command" "$EXAKIT_MCP_PACKAGE" "$EXAKIT_MCP_VERSION" <<'PY' >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
 import json, subprocess, sys
 
@@ -179,11 +200,13 @@ mcp_validate_http() {
     mcp_resolve_creds
     _user="$_mcp_user"
     _password="$_mcp_password"
+    _ssl_cert_validation="$(mcp_ssl_cert_validation)"
 
     # The HTTP server refuses to start without authentication unless
     # --no-auth is passed. For this brief localhost-only validation that is
     # acceptable; a real remote deployment must configure proper auth.
     EXA_DSN="$_dsn" EXA_USER="$_user" EXA_PASSWORD="$_password" \
+        EXA_SSL_CERT_VALIDATION="$_ssl_cert_validation" \
         uvx --from "${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION}" \
         exasol-mcp-server-http --host 127.0.0.1 --port "$EXAKIT_MCP_HTTP_PORT" --no-auth \
         >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 &
