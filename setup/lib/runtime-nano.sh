@@ -206,9 +206,6 @@ nano_record_manifest() {
     manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/nano_sys_password"
     manifest_set runtime.tls "self-signed"
     manifest_set runtime.status "healthy"
-    exakit_configure_mcp_readonly_access || return 1
-    exakit_generate_mcp_configs || return 1
-    exakit_maybe_offer_mcp_setup || true
 }
 
 # --- lifecycle (used by exakit) ---------------------------------------------

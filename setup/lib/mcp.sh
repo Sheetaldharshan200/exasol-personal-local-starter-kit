@@ -89,12 +89,18 @@ mcp_provision_readonly_user() {
 # mcp_credentials — prints "user<TAB>password_file" for the client configs.
 # Prefers the read-only user; falls back to the runtime admin user.
 mcp_credentials() {
-    if [ -n "$(manifest_get components.mcp_server.user 2>/dev/null)" ]; then
-        printf '%s\t%s\n' "$EXAKIT_MCP_USER" "$EXAKIT_CREDS_DIR/mcp_readonly_password"
-    else
-        printf '%s\t%s\n' "$(manifest_get runtime.user 2>/dev/null)" \
-            "$(manifest_get runtime.password_file 2>/dev/null)"
+    _connection_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _connection_pwfile="$(manifest_get components.mcp_server.connection.password_file 2>/dev/null || true)"
+    if [ -n "$_connection_user" ] && [ -n "$_connection_pwfile" ]; then
+        printf '%s\t%s\n' "$_connection_user" "$_connection_pwfile"
+        return 0
     fi
+    if [ -n "$(manifest_get components.mcp_server.user 2>/dev/null || true)" ]; then
+        printf '%s\t%s\n' "$EXAKIT_MCP_USER" "$EXAKIT_CREDS_DIR/mcp_readonly_password"
+        return 0
+    fi
+    printf '%s\t%s\n' "$(manifest_get runtime.user 2>/dev/null)" \
+        "$(manifest_get runtime.password_file 2>/dev/null)"
 }
 
 # mcp_resolve_creds — sets _mcp_user and _mcp_password for the caller.

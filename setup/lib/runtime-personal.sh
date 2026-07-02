@@ -184,9 +184,6 @@ print("%s:%s\t%s" % (c.get("host", "127.0.0.1"), c.get("dbPort", 8563), c.get("u
     fi
     manifest_set runtime.tls "self-signed"
     manifest_set runtime.status "healthy"
-    exakit_configure_mcp_readonly_access || return 1
-    exakit_generate_mcp_configs || return 1
-    exakit_maybe_offer_mcp_setup || true
 }
 
 # --- lifecycle (used by exakit) ---------------------------------------------

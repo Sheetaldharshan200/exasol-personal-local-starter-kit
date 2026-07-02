@@ -1079,7 +1079,7 @@ kit_shared_steps() {
     if command -v mcp_install >/dev/null 2>&1; then
         if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
             mcp_install
-            mcp_generate_configs
+            exakit_generate_mcp_configs
             mcp_validate
             mark_step mcp
         fi
@@ -1099,6 +1099,8 @@ kit_shared_steps() {
         mark_step exakit_helper
         ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
     fi
+
+    exakit_maybe_offer_mcp_setup || true
 
     for _pending in sql/01_create_schema.sql data/data-dictionary.md; do
         if [ ! -s "$_kit_root/$_pending" ]; then
