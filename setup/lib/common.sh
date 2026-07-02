@@ -1234,9 +1234,11 @@ exakit_maybe_offer_data_load() {
 }
 
 # kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>
-# The steps every platform runs after its runtime is up: exapump, MCP,
-# the exakit helper, and the pending-assets report. One implementation so
-# the per-OS setup scripts cannot drift apart.
+# The steps every platform runs after its runtime is up, in order: exapump,
+# the sample-data load offer, the MCP server, the exakit helper, and the MCP
+# client setup offer. Data is loaded before MCP so the read-only user is
+# provisioned against a populated schema. One implementation so the per-OS
+# setup scripts cannot drift apart.
 kit_shared_steps() {
     _step_no="$1"
     _total="$2"
@@ -1254,6 +1256,13 @@ kit_shared_steps() {
         info "Step ${_step_no}/${_total}  exapump — module not included in this kit build yet, skipping"
     fi
     _step_no=$((_step_no + 1))
+
+    # Load the sample data before any MCP configuration. exapump is now up
+    # (its only dependency), and doing this first means the read-only MCP
+    # user is provisioned, granted, and posture-checked against a schema
+    # that already holds the sample tables — and the AI client has data to
+    # query the moment it connects.
+    exakit_maybe_offer_data_load "$_kit_root" || true
 
     if command -v mcp_install >/dev/null 2>&1; then
         if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
@@ -1292,7 +1301,6 @@ kit_shared_steps() {
     fi
 
     exakit_maybe_offer_mcp_setup || true
-    exakit_maybe_offer_data_load "$_kit_root" || true
 }
 
 # connection_panel — the payoff screen: everything needed to connect.
