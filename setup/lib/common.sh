@@ -122,9 +122,9 @@ prompt_text() {
         return 0
     fi
     if [ -n "$_default" ]; then
-        printf '\033[1;36m  ?\033[0m %s [%s] ' "$_question" "$_default"
+        printf '\033[1;36m  ?\033[0m %s [%s] ' "$_question" "$_default" >&2
     else
-        printf '\033[1;36m  ?\033[0m %s ' "$_question"
+        printf '\033[1;36m  ?\033[0m %s ' "$_question" >&2
     fi
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     printf '%s\n' "${_answer:-$_default}"
