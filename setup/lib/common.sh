@@ -1092,12 +1092,7 @@ exakit_parse_mcp_client_selection() {
 exakit_mcp_setup() {
     info "Choose how you want MCP set up in your AI clients"
     printf '    1. Temporary setup (copy/paste instructions only)\n'
-    printf '       The kit does NOT edit Claude, Cursor, or Codex.\n'
-    printf '       It creates ready-made config files in %s.\n' "$EXAKIT_MCP_DIR"
-    printf '       You copy or merge the file yourself when you are ready.\n'
     printf '    2. Permanent setup (edit selected clients now)\n'
-    printf '       The kit backs up and updates the selected client config files.\n'
-    printf '       Restart the selected client afterwards.\n'
     printf '\n'
     printf '    Quick guide:\n'
     printf '       Choose 1 if you only want files and copy/paste steps.\n'
