@@ -45,7 +45,10 @@ exapump sql -p starter-kit 'SELECT CURRENT_TIMESTAMP'
 
 Configs are generated in WSL at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.
 
-Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. For Claude Desktop on Windows: open **Settings → Developer → Edit Config** and merge `claude-config.json` — one adjustment: the `command` must be runnable from Windows, so either install `uv` on Windows too, or wrap the command as `wsl uvx exasol-mcp-server@<version>` keeping the same `env` block.
+Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. For Claude Desktop on Windows: open **Settings → Developer → Edit Config** and merge `claude-config.json` — one adjustment: the generated WSL bundle contains the Linux-side launcher path, so the `command` must be replaced with something Windows can run. The two practical options are:
+
+- Install `uv` on Windows too and replace `command` with the output of `(Get-Command uvx).Source`
+- Keep the same `env` block and wrap the launch as `wsl uvx exasol-mcp-server@<version>`
 
 Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 

@@ -35,13 +35,19 @@ Any SQL client (DBeaver etc.) connects with: host `127.0.0.1`, port `8563`, admi
 
 ## Connect your AI assistant
 
-On the native Windows path, point your MCP client at the database with this server definition (Claude Desktop: **Settings → Developer → Edit Config**; config file: `%APPDATA%\Claude\claude_desktop_config.json`). Install [uv](https://docs.astral.sh/uv/getting-started/installation/) on Windows first, then:
+On the native Windows path, point your MCP client at the database with this server definition (Claude Desktop: **Settings → Developer → Edit Config**; config file: `%APPDATA%\Claude\claude_desktop_config.json`). Install [uv](https://docs.astral.sh/uv/getting-started/installation/) on Windows first. For the most reliable desktop-app setup, use the full launcher path from:
+
+```powershell
+(Get-Command uvx).Source
+```
+
+Then:
 
 ```json
 {
   "mcpServers": {
     "exasol": {
-      "command": "uvx",
+      "command": "C:\\Users\\you\\.local\\bin\\uvx.exe",
       "args": ["exasol-mcp-server@1.10.1"],
       "env": {
         "EXA_DSN": "127.0.0.1:8563",

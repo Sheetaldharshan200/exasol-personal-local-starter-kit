@@ -34,7 +34,7 @@ class AdditionalAdapterTests(unittest.TestCase):
         self._server = ServerDefinition(
             transport=DeploymentMode.STDIO,
             name="exasol",
-            command="uvx",
+            command="/tmp/uvx",
             args=("exasol-mcp-server@1.10.1",),
             env={"EXA_DSN": "127.0.0.1:8563", "EXA_USER": "sys"},
         )
@@ -66,7 +66,26 @@ class AdditionalAdapterTests(unittest.TestCase):
         findings = adapter.validate_render(rendered)
         self.assertEqual(findings, [])
         self.assertIn("[mcp_servers.exasol]", rendered.content or "")
-        self.assertIn('command = "uvx"', rendered.content or "")
+        self.assertIn('command = "/tmp/uvx"', rendered.content or "")
+
+    def test_codex_adapter_escapes_windows_command_paths(self) -> None:
+        adapter = self._registry.get("codex")
+        location = adapter.locate(self._environment)
+        inspection = adapter.inspect(location.path, "exasol")  # type: ignore[arg-type]
+        server = ServerDefinition(
+            transport=DeploymentMode.STDIO,
+            name="exasol",
+            command=r"C:\Users\Example\.local\bin\uvx.exe",
+            args=("exasol-mcp-server@1.10.1",),
+            env={"EXA_DSN": "127.0.0.1:8563", "EXA_USER": "sys"},
+        )
+        rendered = adapter.render(server, inspection)
+        findings = adapter.validate_render(rendered)
+        self.assertEqual(findings, [])
+        self.assertIn(
+            'command = "C:\\\\Users\\\\Example\\\\.local\\\\bin\\\\uvx.exe"',
+            rendered.content or "",
+        )
 
     def test_codex_adapter_preserves_quoted_table_keys(self) -> None:
         adapter = self._registry.get("codex")

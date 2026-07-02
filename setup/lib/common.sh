@@ -894,12 +894,14 @@ exakit_print_mcp_ready_panel() {
     _mcp_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
     _mcp_package="$(manifest_get components.mcp_server.package 2>/dev/null || printf '%s' "$EXAKIT_MCP_PACKAGE")"
     _mcp_version="$(manifest_get components.mcp_server.version 2>/dev/null || printf '%s' "$EXAKIT_MCP_VERSION")"
+    _mcp_command="$(manifest_get components.mcp_server.command 2>/dev/null || true)"
+    [ -n "$_mcp_command" ] || _mcp_command="uvx"
 
     printf '\n'
     printf '  MCP is ready\n'
     printf '  Server name:   exasol\n'
     printf '  How it runs:   your AI client starts it on demand over stdio\n'
-    printf '  Command:       uvx %s@%s\n' "$_mcp_package" "$_mcp_version"
+    printf '  Command:       %s %s@%s\n' "$_mcp_command" "$_mcp_package" "$_mcp_version"
     printf '  Database:      %s\n' "${_dsn:-unknown}"
     printf '  DB user:       %s (read-only)\n' "${_mcp_user:-mcp_readonly}"
     printf '  Config bundle: %s\n' "$EXAKIT_MCP_DIR"

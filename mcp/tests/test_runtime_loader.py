@@ -84,6 +84,61 @@ class RuntimeLoaderEdgeCaseTests(unittest.TestCase):
             self.loader.load(self.runtime_root)
         self.assertEqual(ctx.exception.code, "runtime_mcp_connection_incomplete")
 
+    def test_load_prefers_recorded_mcp_command(self) -> None:
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "command": "/custom/tools/uvx",
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    },
+                }
+            }
+        )
+        context = self.loader.load(self.runtime_root)
+        self.assertEqual(context.server_definition.command, "/custom/tools/uvx")
+
+    def test_load_falls_back_to_managed_home_local_bin_command(self) -> None:
+        managed_command = self._temp_dir / ".local" / "bin" / "uvx"
+        managed_command.parent.mkdir(parents=True, exist_ok=True)
+        managed_command.write_text("", encoding="utf-8")
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    }
+                }
+            }
+        )
+        context = self.loader.load(self.runtime_root)
+        self.assertEqual(context.server_definition.command, str(managed_command))
+
+    def test_load_supports_windows_managed_command_path(self) -> None:
+        managed_command = self._temp_dir / ".local" / "bin" / "uvx.exe"
+        managed_command.parent.mkdir(parents=True, exist_ok=True)
+        managed_command.write_text("", encoding="utf-8")
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    }
+                }
+            }
+        )
+        loader = ExakitRuntimeLoader(
+            environment=ExecutionEnvironment(os_name="win32", home=self._temp_dir, env={}),
+        )
+        context = loader.load(self.runtime_root)
+        self.assertEqual(context.server_definition.command, str(managed_command))
+
     def _write_manifest(self, *, components: dict) -> None:
         manifest = {
             "manifest_version": 1,

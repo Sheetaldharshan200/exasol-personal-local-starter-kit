@@ -55,6 +55,8 @@ exakit mcp-setup
 
 Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex.
 
+When the kit can resolve the local MCP launcher path, it writes that exact path into the generated config instead of assuming `uvx` is available on every desktop app's PATH. That makes the same bundle more portable across macOS, Linux, and Windows clients.
+
 After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
 ## 5. Ask your first question

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 
 from mcp.core.errors import MCPSubsystemError
 from mcp.core.models import DeploymentMode, ServerDefinition
@@ -98,9 +99,7 @@ class ExakitRuntimeLoader:
             or component_state.get("version")
             or DEFAULT_MCP_VERSION
         ).strip()
-        command = str(
-            self._environment.env.get("EXAKIT_MCP_COMMAND") or DEFAULT_MCP_COMMAND
-        ).strip()
+        command = self._resolve_mcp_command(component_state)
         server_name = str(
             self._environment.env.get("EXAKIT_MCP_SERVER_NAME") or DEFAULT_SERVER_NAME
         ).strip()
@@ -123,6 +122,47 @@ class ExakitRuntimeLoader:
             password_file=password_file,
             server_definition=definition,
         )
+
+    def _resolve_mcp_command(self, component_state: dict) -> str:
+        for candidate in self._candidate_mcp_commands(component_state):
+            if candidate:
+                return candidate
+        return DEFAULT_MCP_COMMAND
+
+    def _candidate_mcp_commands(self, component_state: dict) -> tuple[str, ...]:
+        env_command = str(self._environment.env.get("EXAKIT_MCP_COMMAND") or "").strip()
+        manifest_command = str(component_state.get("command") or "").strip()
+        uv_path = str(component_state.get("uv_path") or "").strip()
+        resolved_path = shutil.which(DEFAULT_MCP_COMMAND) or ""
+        local_bin = self._environment.home / ".local" / "bin"
+        platform_candidates = (
+            local_bin / "uvx",
+            local_bin / "uvx.exe",
+        )
+
+        derived_from_uv: list[str] = []
+        if uv_path:
+            uv_binary = Path(uv_path).expanduser()
+            derived_from_uv.extend(
+                [
+                    str(uv_binary.with_name("uvx")),
+                    str(uv_binary.with_name("uvx.exe")),
+                ]
+            )
+
+        discovered: list[str] = []
+        for raw in (
+            env_command,
+            manifest_command,
+            *derived_from_uv,
+            *(str(path) for path in platform_candidates if path.exists()),
+            resolved_path,
+            DEFAULT_MCP_COMMAND,
+        ):
+            candidate = str(raw).strip()
+            if candidate and candidate not in discovered:
+                discovered.append(candidate)
+        return tuple(discovered)
 
     @staticmethod
     def _require_mapping(document: dict, key: str) -> dict:

@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 
+from mcp.core.serialization import sha256_text
+
 
 class RuntimeClientSetupCLITests(unittest.TestCase):
     def setUp(self) -> None:
@@ -113,6 +115,87 @@ class RuntimeClientSetupCLITests(unittest.TestCase):
         client_setup = manifest["components"]["mcp_server"]["client_setup"]
         self.assertEqual(client_setup["mode"], "permanent")
         self.assertEqual(client_setup["clients"], ["cursor", "codex"])
+
+    def test_permanent_setup_after_temporary_bundle_does_not_report_manifest_drift(self) -> None:
+        cursor_path = self._temp_dir / "cursor" / "mcp.json"
+        codex_path = self._temp_dir / "codex" / "config.toml"
+        cursor_path.parent.mkdir(parents=True, exist_ok=True)
+        codex_path.parent.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        env.update(
+            {
+                "CURSOR_MCP_CONFIG_PATH": str(cursor_path),
+                "CODEX_MCP_CONFIG_PATH": str(codex_path),
+            }
+        )
+        self._write_manifest("exa-local")
+
+        temporary = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "mcp",
+                "setup-runtime-clients",
+                "--runtime-root",
+                str(self.runtime_root),
+                "--mode",
+                "temporary",
+                "--clients",
+                "cursor",
+                "codex",
+            ],
+            cwd=Path(__file__).resolve().parents[2],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(temporary.returncode, 0, temporary.stderr)
+        self._rewrite_exported_artifacts_with_legacy_file_hashes()
+
+        permanent = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "mcp",
+                "setup-runtime-clients",
+                "--runtime-root",
+                str(self.runtime_root),
+                "--mode",
+                "permanent",
+                "--clients",
+                "cursor",
+                "codex",
+            ],
+            cwd=Path(__file__).resolve().parents[2],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(permanent.returncode, 0, permanent.stderr)
+        output = json.loads(permanent.stdout)
+        messages = [finding["message"] for finding in output["findings"]]
+        self.assertNotIn("Managed client configuration has drifted from the manifest.", messages)
+
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        artifacts = manifest["components"]["mcp_server"]["managed_state"]["artifacts"]
+        for artifact in artifacts:
+            if artifact["source_adapter"] == "runtime_exporter":
+                self.assertNotEqual(
+                    artifact["content_hash"],
+                    sha256_text(Path(artifact["path"]).read_text(encoding="utf-8")),
+                )
+
+    def _rewrite_exported_artifacts_with_legacy_file_hashes(self) -> None:
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        artifacts = manifest["components"]["mcp_server"]["managed_state"]["artifacts"]
+        for artifact in artifacts:
+            if artifact["source_adapter"] == "runtime_exporter":
+                artifact["content_hash"] = sha256_text(
+                    Path(artifact["path"]).read_text(encoding="utf-8")
+                )
+        self.manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     def _write_manifest(self, dsn: str) -> None:
         manifest = {

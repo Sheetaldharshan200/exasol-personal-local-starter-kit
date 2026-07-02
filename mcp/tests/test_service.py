@@ -36,7 +36,7 @@ class MCPSubsystemLifecycleTests(unittest.TestCase):
             self.assertTrue(self.config_path.exists())
             config_doc = json.loads(self.config_path.read_text(encoding="utf-8"))
             self.assertIn("exasol", config_doc["mcpServers"])
-            self.assertEqual(config_doc["mcpServers"]["exasol"]["command"], "exasol-mcp-server")
+            self.assertTrue(config_doc["mcpServers"]["exasol"]["command"].endswith("exasol-mcp-server"))
 
             discover = self.subsystem.execute(self._base_request("discover"))
             self.assertEqual(discover.status, OperationStatus.SUCCESS)

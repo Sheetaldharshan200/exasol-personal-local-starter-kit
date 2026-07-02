@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 
 
@@ -31,6 +32,7 @@ class RuntimeExportTests(unittest.TestCase):
             },
             "components": {
                 "mcp_server": {
+                    "command": r"C:\Users\demo\.local\bin\uvx.exe",
                     "connection": {
                         "user": "mcp_readonly",
                         "password_file": str(self.mcp_password_file),
@@ -78,15 +80,25 @@ class RuntimeExportTests(unittest.TestCase):
         self.assertEqual(expected_files, {path.name for path in mcp_dir.iterdir()})
 
         claude = json.loads((mcp_dir / "claude-config.json").read_text(encoding="utf-8"))
-        self.assertEqual(claude["mcpServers"]["exasol"]["command"], "uvx")
+        self.assertEqual(
+            claude["mcpServers"]["exasol"]["command"],
+            r"C:\Users\demo\.local\bin\uvx.exe",
+        )
         self.assertEqual(claude["mcpServers"]["exasol"]["args"], ["exasol-mcp-server@1.10.1"])
         self.assertEqual(claude["mcpServers"]["exasol"]["env"]["EXA_DSN"], "127.0.0.1:8563")
         self.assertEqual(claude["mcpServers"]["exasol"]["env"]["EXA_USER"], "mcp_readonly")
 
         codex = (mcp_dir / "codex-config.toml").read_text(encoding="utf-8")
         self.assertIn("[mcp_servers.exasol]", codex)
-        self.assertIn('command = "uvx"', codex)
-        self.assertIn('EXA_PASSWORD = "readonly-secret"', codex)
+        parsed_codex = tomllib.loads(codex)
+        self.assertEqual(
+            parsed_codex["mcp_servers"]["exasol"]["command"],
+            r"C:\Users\demo\.local\bin\uvx.exe",
+        )
+        self.assertEqual(
+            parsed_codex["mcp_servers"]["exasol"]["env"]["EXA_PASSWORD"],
+            "readonly-secret",
+        )
 
         manifest = json.loads((self.runtime_root / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["runtime"]["dsn"], "127.0.0.1:8563")

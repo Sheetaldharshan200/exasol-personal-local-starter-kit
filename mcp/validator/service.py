@@ -18,6 +18,7 @@ from mcp.core.models import (
     Severity,
     VerificationEvidence,
 )
+from mcp.core.serialization import sha256_text
 from mcp.runtime.environment import ExecutionEnvironment
 from mcp.runtime.manifest import ManifestRepository
 from mcp.runtime.paths import RuntimePaths
@@ -211,8 +212,9 @@ class ValidatorService:
             artifact = ArtifactReference(**record)
             adapter = self._registry.get(artifact.client)
             entry_name = str(artifact.metadata.get("entry_name", "exasol"))
-            inspection = adapter.inspect(Path(artifact.path), entry_name)
-            if not Path(artifact.path).exists():
+            path = Path(artifact.path)
+            inspection = adapter.inspect(path, entry_name)
+            if not path.exists():
                 findings.append(
                     Finding(
                         code="manifest_drift_missing_artifact",
@@ -224,6 +226,16 @@ class ValidatorService:
                 )
                 continue
             if inspection.managed_hash != artifact.content_hash:
+                if self._migrate_legacy_file_hash(path, artifact, inspection.managed_hash):
+                    evidence.append(
+                        VerificationEvidence(
+                            stage="manifest_consistency",
+                            status="pass",
+                            details="Migrated legacy file-level manifest hash to the managed entry hash.",
+                            subject=artifact.path,
+                        )
+                    )
+                    continue
                 findings.append(
                     Finding(
                         code="manifest_drift_hash_mismatch",
@@ -248,6 +260,24 @@ class ValidatorService:
                 )
         status = "fail_recoverable" if findings else "pass"
         return StageResult("manifest_consistency", status, findings, evidence)
+
+    def _migrate_legacy_file_hash(
+        self,
+        path: Path,
+        artifact: ArtifactReference,
+        current_managed_hash: str | None,
+    ) -> bool:
+        if artifact.source_adapter != "runtime_exporter" or current_managed_hash is None:
+            return False
+        try:
+            file_hash = sha256_text(path.read_text(encoding="utf-8"))
+        except OSError:
+            return False
+        if file_hash != artifact.content_hash:
+            return False
+        artifact.content_hash = current_managed_hash
+        self._manifest_repository.upsert_artifact(artifact)
+        return True
 
     def run(
         self,

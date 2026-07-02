@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from mcp.core.models import ArtifactReference, OwnershipState, ServerDefinition
-from mcp.core.serialization import sha256_text
+from mcp.core.serialization import sha256_json
 from mcp.security.policy import SecurityPolicy
 
 from .exakit import ExakitRuntimeContext
@@ -59,6 +59,7 @@ class RuntimeMCPConfigExporter:
             for client_id in (tuple(clients) if clients else ALL_CLIENT_IDS)
         ]
         artifacts: list[ArtifactReference] = []
+        managed_hash = sha256_json(self._stdio_entry(context.server_definition))
         for item in exported:
             self._filesystem.write_text(item.path, item.content)
             permissions = self._security.apply_managed_permissions(item.path)
@@ -68,7 +69,7 @@ class RuntimeMCPConfigExporter:
                 kind="client_config",
                 ownership_state=OwnershipState.MANAGED,
                 client=item.client,
-                content_hash=sha256_text(item.content),
+                content_hash=managed_hash,
                 permissions=permissions,
                 source_adapter="runtime_exporter",
                 metadata={
