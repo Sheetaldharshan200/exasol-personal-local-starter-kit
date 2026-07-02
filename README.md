@@ -1,10 +1,19 @@
 <div align="center">
 
-# Exasol Personal Local Starter Kit
+<picture>
+  <source srcset="static/Exasol_Logo_2025_Bright.svg" media="(prefers-color-scheme: dark)">
+  <img src="static/Exasol_Logo_2025_Dark.svg" alt="Exasol Logo" width="300">
+</picture>
+
+# Personal Local Starter Kit
 
 ### Your own analytics database. Your own machine. Your AI assistant connected to it.
 
 **One command. No cloud account. No license key. No admin rights.**
+
+[![Documentation](https://img.shields.io/badge/docs-exasol.com-blue)](https://docs.exasol.com/db/latest/home.htm)
+[![Community](https://img.shields.io/badge/community-exasol-green)](https://community.exasol.com)
+[![Quickstart](https://img.shields.io/badge/first%20AI%20query-~15%20minutes-orange)](QUICKSTART.md)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
@@ -147,5 +156,7 @@ Built for people who read installers before piping them to a shell:
 **Start locally. Connect AI safely. Inspect the SQL. Validate the output. Rerun the workflow.**
 
 *Questions or issues → open an issue in this repository.*
+
+<sub>Part of the [Exasol](https://www.exasol.com) ecosystem · [Exasol Personal](https://github.com/exasol/exasol-personal) · [exapump](https://github.com/exasol-labs/exapump) · [MCP server](https://github.com/exasol/mcp-server)</sub>
 
 </div>
