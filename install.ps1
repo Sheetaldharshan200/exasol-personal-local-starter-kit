@@ -1,6 +1,15 @@
-﻿# install.ps1 - Exasol Personal Local Starter Kit, one-command installer (Windows).
+# install.ps1 - Exasol Personal Local Starter Kit, one-command installer (Windows).
 #
 #   irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
+#
+# IMPORTANT: this file must NOT have a UTF-8 BOM. It is only ever executed
+# via `irm | iex` (as a fetched string, never read from disk with -File), and
+# a BOM that survives into that string as a literal U+FEFF character breaks
+# PowerShell's '#' comment-line detection - the parser then tries to execute
+# the comment text itself as commands. (setup\setup-windows-docker.ps1 and
+# setup\exakit.ps1 are the opposite case: always read from disk via -File,
+# where a BOM is the correct fix for a different, real encoding bug - do not
+# "fix" those to match this file.)
 #
 # What it does, in order:
 #   1. detects your hardware and container runtime

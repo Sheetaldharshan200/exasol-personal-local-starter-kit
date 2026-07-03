@@ -29,7 +29,7 @@ $script:McpReadonlySchemas = if ($env:EXAKIT_MCP_READONLY_SCHEMAS) { $env:EXAKIT
 # Pinned component versions (override via environment)
 # ---------------------------------------------------------------------------
 $script:NanoImage       = "exasol/nano"
-$script:NanoTag         = if ($env:EXAKIT_NANO_TAG) { $env:EXAKIT_NANO_TAG } else { "2026.2.0-nano.2" }
+$script:NanoTag         = if ($env:EXAKIT_NANO_TAG) { $env:EXAKIT_NANO_TAG } else { "latest" }
 $script:ExapumpVersion  = if ($env:EXAKIT_EXAPUMP_VERSION) { $env:EXAKIT_EXAPUMP_VERSION } else { "0.11.2" }
 $script:ExapumpRepo     = "exasol-labs/exapump"
 $script:McpPackage      = if ($env:EXAKIT_MCP_PACKAGE) { $env:EXAKIT_MCP_PACKAGE } else { "exasol-mcp-server" }
@@ -385,7 +385,12 @@ function Protect-ExakitFile {
 function New-ExakitPassword {
     $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".ToCharArray()
     $bytes = New-Object byte[] 24
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    # RandomNumberGenerator's static Fill() is .NET 6+/Core-only. Windows
+    # PowerShell 5.1 runs on .NET Framework, which only has the classic
+    # instance-based Create()+GetBytes() API - use that instead so this
+    # works on both.
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
 }
 

@@ -221,7 +221,10 @@ function Test-ExakitSqlPasswordToken {
 function New-ExakitSqlPasswordToken {
     $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".ToCharArray()
     $bytes = New-Object byte[] 23
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    # See the comment on New-ExakitPassword in exakit-common.ps1: Fill() is
+    # .NET 6+/Core-only, Windows PowerShell 5.1 needs Create()+GetBytes().
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return "A" + (-join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] }))
 }
 
