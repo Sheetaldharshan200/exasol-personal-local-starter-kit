@@ -190,8 +190,16 @@ function Test-ExapumpConnection {
         Fail "No connection profile exists (no database password was available to write one). Create it manually with 'exapump profile init $($script:ExapumpProfile)', then re-run this script."
     }
     Info "Validating the database connection (SELECT 1)"
+    $lastOutput = ""
     for ($tries = 0; $tries -lt 6; $tries++) {
-        $code = Invoke-ExakitLogged (Get-ExapumpCli) "sql" "-p" $script:ExapumpProfile "SELECT 1"
+        $code = 1
+        try {
+            $lastOutput = & (Get-ExapumpCli) sql -p $script:ExapumpProfile "SELECT 1" 2>&1 | Out-String
+            $code = $LASTEXITCODE
+        } catch {
+            $lastOutput = "$_"
+        }
+        if ($script:LogFile) { $lastOutput | Add-Content -Path $script:LogFile }
         if ($code -eq 0) {
             Ok "Connection works"
             Set-ExakitManifestValue "components.exapump.validated" $true
@@ -199,7 +207,15 @@ function Test-ExapumpConnection {
         }
         Start-Sleep -Seconds 5
     }
-    Fail "SELECT 1 failed through profile '$($script:ExapumpProfile)'. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
+    # Surface the actual error inline instead of only in the log file - the
+    # exapump/database error text (auth failure vs. connection refused vs.
+    # TLS handshake error) is exactly what's needed to diagnose this, and
+    # making someone go dig through a log file for it is not production-grade.
+    if ($lastOutput.Trim()) {
+        Write-Host "  Last attempt's output:" -ForegroundColor Yellow
+        $lastOutput.Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
+    }
+    Fail "SELECT 1 failed through profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
 }
 
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.

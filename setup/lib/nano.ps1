@@ -145,15 +145,41 @@ function Install-Nano {
             Set-ExakitCredential "nano_sys_password" $password
         }
         $pwFile = Join-Path $script:CredsDir "nano_sys_password"
+        # Docker's bind-mount source parsing on Windows is picky about
+        # backslashes (Join-Path produces "C:\Users\...\nano_sys_password",
+        # and mixing that with the ":/run/secrets/...:ro" suffix can mis-parse
+        # or silently mount the wrong thing) - forward slashes are the
+        # documented, reliable form for a -v source path on Windows.
+        $pwFileMount = $pwFile -replace '\\', '/'
 
         Info "Starting Nano container ($($script:NanoContainer))"
         $code = Invoke-ExakitLogged $engine "run" "-d" "--name" $script:NanoContainer `
             "--shm-size=512mb" "--pids-limit=-1" `
             "-p" "127.0.0.1:$($script:DbPort):8563" `
             "-v" "$($script:NanoVolume):/exa" `
-            "-v" "${pwFile}:/run/secrets/sys_password:ro" `
+            "-v" "${pwFileMount}:/run/secrets/sys_password:ro" `
             $image "init" "sys_password_file=/run/secrets/sys_password"
         if ($code -ne 0) { Fail "Container failed to start (see log)" }
+
+        # Verify the secret actually landed in the container instead of
+        # silently trusting the bind mount. If it didn't, the database ends
+        # up with a different (or no) password than the one written to
+        # ~\.exasol-starter-kit\credentials\nano_sys_password, and every
+        # later SQL connection attempt fails with no obvious cause - this
+        # catches that here, immediately, with a specific fix.
+        try {
+            Start-Sleep -Seconds 2
+            $mountedSize = & $engine exec $script:NanoContainer sh -c "wc -c < /run/secrets/sys_password 2>/dev/null || echo 0" 2>$null
+            $expectedSize = (Get-Item $pwFile).Length
+            if (($mountedSize | Select-Object -Last 1).Trim() -ne "$expectedSize") {
+                Warn2 "The generated password file did not mount into the container as expected (this is a known Docker Desktop on Windows bind-mount issue). The database may be using a different password than the one recorded locally."
+                Warn2 "If the connection check below fails, try: Settings > Resources > File sharing in Docker Desktop, ensure your user profile drive is shared, then run 'exakit teardown -Data' and re-install."
+            }
+        } catch {
+            # Diagnostic-only: if we can't even check (container not exec-able
+            # yet, no `sh`, etc.), don't let that abort the install.
+            Write-ExakitLog "WARN" "Could not verify the secret mount: $_"
+        }
     }
 
     Wait-NanoReady
