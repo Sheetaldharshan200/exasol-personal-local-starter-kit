@@ -351,6 +351,11 @@ function Get-ExakitSha256 {
     return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function ConvertTo-UpperInvariantString {
+    param([Parameter(Mandatory)]$Value)
+    return ([string]$Value).ToUpperInvariant()
+}
+
 function Test-ExakitSha256 {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Expected)
     $actual = Get-ExakitSha256 $Path

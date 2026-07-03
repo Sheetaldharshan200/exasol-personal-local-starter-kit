@@ -251,7 +251,7 @@ function New-ExakitSqlPasswordToken {
 # schemas (or false-positive on their legitimate SELECT grants).
 function Assert-McpReadonlyPosture {
     param([Parameter(Mandatory)][string]$ConfigPath, [Parameter(Mandatory)][string]$ReadonlyUser, [Parameter(Mandatory)][string]$Schemas)
-    $identifierUser = $ReadonlyUser.ToUpperInvariant()
+    $identifierUser = ConvertTo-UpperInvariantString $ReadonlyUser
     $identifierLit = ConvertTo-SqlLiteral $identifierUser
 
     if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE = 'CREATE SESSION') THEN 'EXAKIT_CREATE_SESSION_OK' ELSE 'EXAKIT_CREATE_SESSION_MISSING' END AS STATUS" "EXAKIT_CREATE_SESSION_OK")) {
@@ -264,7 +264,7 @@ function Assert-McpReadonlyPosture {
     $schemaTokens = @($Schemas -split '[,\s]+' | Where-Object { $_ })
     $scopeClauses = @()
     foreach ($schema in $schemaTokens) {
-        $schemaUc = $schema.ToUpperInvariant()
+        $schemaUc = ConvertTo-UpperInvariantString $schema
         $schemaLit = ConvertTo-SqlLiteral $schemaUc
         if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$schemaLit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$schemaLit'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" "EXAKIT_SCHEMA_SELECT_OK")) {
             Fail "The MCP read-only user is missing SELECT on schema $schemaUc."
@@ -279,7 +279,7 @@ function Assert-McpReadonlyPosture {
     }
 
     foreach ($schema in $schemaTokens) {
-        $schemaUc = $schema.ToUpperInvariant()
+        $schemaUc = ConvertTo-UpperInvariantString $schema
         $probe = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "mcp_readonly" -Sql "CREATE TABLE $schemaUc.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)"
         if ($script:LogFile) { $probe.Output | Add-Content -Path $script:LogFile }
         # This write MUST fail for a correctly-scoped read-only user. .Success
@@ -318,8 +318,8 @@ function Set-McpReadonlyAccess {
         Set-ExakitCredential "mcp_readonly_password" $readonlyPassword
     }
 
-    $identifierUser = $readonlyUser.ToUpperInvariant()
-    $defaultSchemaUc = $defaultSchema.ToUpperInvariant()
+    $identifierUser = ConvertTo-UpperInvariantString $readonlyUser
+    $defaultSchemaUc = ConvertTo-UpperInvariantString $defaultSchema
     if (-not (Test-ExakitIdentifier $identifierUser)) { Fail "Invalid EXAKIT_MCP_READONLY_USER: $readonlyUser" }
 
     $tempConfig = Join-Path ([System.IO.Path]::GetTempPath()) "exakit-exapump-$([guid]::NewGuid().ToString('N')).toml"
@@ -344,7 +344,7 @@ function Set-McpReadonlyAccess {
 
     $schemaTokens = @($readonlySchemas -split '[,\s]+' | Where-Object { $_ })
     foreach ($schema in $schemaTokens) {
-        $schemaUc = $schema.ToUpperInvariant()
+        $schemaUc = ConvertTo-UpperInvariantString $schema
         if (-not (Test-ExakitIdentifier $schemaUc)) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Invalid MCP schema name: $schema" }
         $schemaLit = ConvertTo-SqlLiteral $schemaUc
         if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaLit') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" "EXAKIT_SCHEMA_PRESENT")) {

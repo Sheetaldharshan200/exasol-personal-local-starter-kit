@@ -333,7 +333,7 @@ function Get-ExakitTableName {
     param([Parameter(Mandatory)][string]$Path)
     $base = (Split-Path $Path -Leaf) -replace '\?.*$', ''
     $base = [System.IO.Path]::GetFileNameWithoutExtension($base)
-    $table = ($base.ToUpperInvariant() -replace '[^A-Z0-9_]', '_')
+    $table = (ConvertTo-UpperInvariantString $base -replace '[^A-Z0-9_]', '_')
     $table = ($table -replace '^_+', '') -replace '_+$', ''
     $table = $table -replace '_{2,}', '_'
     if (-not $table) { return "MY_TABLE" }
@@ -355,18 +355,18 @@ function Test-ExakitTableTarget {
 
 function Get-ExakitTargetSchema {
     param([Parameter(Mandatory)][string]$Target)
-    return ($Target -split '\.', 2)[0].ToUpperInvariant()
+    return ConvertTo-UpperInvariantString (($Target -split '\.', 2)[0])
 }
 
 function Get-ExakitUpperTableTarget {
     param([Parameter(Mandatory)][string]$Target)
     $parts = $Target -split '\.', 2
-    return "$($parts[0].ToUpperInvariant()).$($parts[1].ToUpperInvariant())"
+    return "$(ConvertTo-UpperInvariantString $parts[0]).$(ConvertTo-UpperInvariantString $parts[1])"
 }
 
 function Confirm-ExakitSchemaExists {
     param([Parameter(Mandatory)][string]$Schema)
-    $schemaUc = $Schema.ToUpperInvariant()
+    $schemaUc = ConvertTo-UpperInvariantString $Schema
     if (-not $schemaUc) { return $false }
     $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS"
     $check = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
@@ -559,7 +559,7 @@ function Invoke-ExakitSampleDataLoad {
     $dataDir = Join-Path $KitRoot "data"
     $csvFiles = @(Get-ChildItem -Path $dataDir -Filter "*.csv" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 })
     foreach ($csv in $csvFiles) {
-        $table = ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name)).ToUpperInvariant()
+        $table = ConvertTo-UpperInvariantString ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name))
         Invoke-ExapumpUpload $csv.FullName "$schema.$table" | Out-Null
     }
     if ($csvFiles.Count -eq 0) {
@@ -598,7 +598,7 @@ function Invoke-ExakitSampleDataLoad {
     # 5. row-count summary + manifest flags
     Info "Row counts:"
     foreach ($csv in $csvFiles) {
-        $table = ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name)).ToUpperInvariant()
+        $table = ConvertTo-UpperInvariantString ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name))
         $rows = Get-ExapumpRowCount "$schema.$table"
         $line = "   {0,-30} {1} rows" -f "$schema.$table", $(if ($rows) { $rows } else { "?" })
         Write-Host $line
