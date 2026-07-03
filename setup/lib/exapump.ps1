@@ -15,6 +15,55 @@ $script:ExapumpProfile = if ($env:EXAKIT_EXAPUMP_PROFILE) { $env:EXAKIT_EXAPUMP_
 $script:ExapumpBinPath = Join-Path $script:BinDir "exapump.exe"
 $script:ExapumpConfigPath = Join-Path $HOME ".exapump\config.toml"
 
+# Test-ExapumpSucceeded - decide whether an exapump invocation succeeded.
+#
+# The Windows exapump.exe build can return a NON-ZERO exit code even when the
+# statement executed successfully (observed: `SELECT 1` returns "[1/1]
+# SELECT 1 1 rows" and exits non-zero), so exit code alone is not a reliable
+# success signal on Windows. macOS/Linux exapump exits 0 on success, so exit
+# code 0 is still trusted as the fast path; a non-zero exit is only treated
+# as failure when the *output* actually looks like an error. This keeps
+# behavior identical where exit codes are reliable and recovers correctly
+# where they are not, while still catching genuine failures (auth, refused
+# connection, syntax errors) which always print error text.
+function Test-ExapumpSucceeded {
+    param([int]$ExitCode, [AllowEmptyString()][string]$Output)
+    if ($ExitCode -eq 0) { return $true }
+    $text = "$Output"
+    if ($text -match '(?im)\b(error|exception|failed|failure|denied|refused|unable|cannot|could not|not found|no such|timeout|timed out|syntax error|invalid|unauthorized|authentication)\b') {
+        return $false
+    }
+    if ($text -match '\[\d+/\d+\]' -or $text -match '(?im)\b\d+\s+rows?\b') {
+        return $true
+    }
+    return $false
+}
+
+# Invoke-Exapump - run one exapump invocation, capturing combined output and
+# the (unreliable-on-Windows) exit code, and return a structured result whose
+# .Success is computed by Test-ExapumpSucceeded. Every exapump call site goes
+# through this so success detection is consistent and the exit-code quirk is
+# handled in exactly one place.
+#
+# Arguments are passed as an explicit array (NOT ValueFromRemainingArguments):
+# exapump's own flags include "-p", which PowerShell's parameter binder would
+# otherwise try to resolve against this function's common parameters
+# (-ProgressAction / -PipelineVariable) and fail with an "ambiguous parameter"
+# error before the args ever reach exapump.
+function Invoke-Exapump {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+    $out = ""
+    $code = 1
+    try {
+        $out = & (Get-ExapumpCli) @Arguments 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } catch {
+        $out = "$_"
+    }
+    if ($script:LogFile) { "exapump $($Arguments -join ' ')" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
+    return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
+}
+
 function Get-ExapumpAssetName {
     switch ($env:PROCESSOR_ARCHITECTURE) {
         "AMD64" { return "exapump-$($script:ExapumpVersion)-windows-x86_64.exe" }
@@ -192,15 +241,9 @@ function Test-ExapumpConnection {
     Info "Validating the database connection (SELECT 1)"
     $lastOutput = ""
     for ($tries = 0; $tries -lt 6; $tries++) {
-        $code = 1
-        try {
-            $lastOutput = & (Get-ExapumpCli) sql -p $script:ExapumpProfile "SELECT 1" 2>&1 | Out-String
-            $code = $LASTEXITCODE
-        } catch {
-            $lastOutput = "$_"
-        }
-        if ($script:LogFile) { $lastOutput | Add-Content -Path $script:LogFile }
-        if ($code -eq 0) {
+        $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT 1")
+        $lastOutput = $result.Output
+        if ($result.Success) {
             Ok "Connection works"
             Set-ExakitManifestValue "components.exapump.validated" $true
             return
@@ -230,14 +273,21 @@ function Invoke-ExapumpSqlFile {
     }
     Info "Running $Description"
     $exitCode = 1
+    $sqlOut = ""
     try {
-        $sqlOut = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1
+        $sqlOut = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
         $exitCode = $LASTEXITCODE
     } catch {
         $sqlOut = "$_"
     }
     if ($script:LogFile) { $sqlOut | Add-Content -Path $script:LogFile }
-    if ($exitCode -ne 0) { Fail "SQL file failed: $Path (see log)" }
+    if (-not (Test-ExapumpSucceeded -ExitCode $exitCode -Output $sqlOut)) {
+        if ("$sqlOut".Trim()) {
+            Write-Host "  exapump output:" -ForegroundColor Yellow
+            "$sqlOut".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
+        }
+        Fail "SQL file failed: $Path (see log)"
+    }
     Ok "$Description done"
     return $true
 }
@@ -250,25 +300,33 @@ function Invoke-ExapumpUpload {
         return $false
     }
     Info "Loading $(Split-Path $Path -Leaf) into $Target"
-    $code = Invoke-ExakitLogged (Get-ExapumpCli) "upload" $Path "--table" $Target "-p" $script:ExapumpProfile
-    if ($code -ne 0) { Fail "Upload failed: $Path -> $Target (see log)" }
+    $result = Invoke-Exapump @("upload", $Path, "--table", $Target, "-p", $script:ExapumpProfile)
+    if (-not $result.Success) {
+        if ("$($result.Output)".Trim()) {
+            Write-Host "  exapump output:" -ForegroundColor Yellow
+            "$($result.Output)".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
+        }
+        Fail "Upload failed: $Path -> $Target (see log)"
+    }
     Ok "$(Split-Path $Path -Leaf) loaded"
     return $true
 }
 
-# Get-ExapumpRowCount <schema.table> - row count, or $null if it could not be read.
+# Get-ExapumpRowCount <schema.table> - row count, or $null if it could not be
+# read. Best-effort only: the row-count summary it feeds is cosmetic (shows
+# "?" on failure) and the real load validation is 03_verify_setup.sql.
 function Get-ExapumpRowCount {
     param([Parameter(Mandatory)][string]$Target)
-    try {
-        $out = & (Get-ExapumpCli) sql -p $script:ExapumpProfile "SELECT COUNT(*) FROM $Target" 2>$null
-        if ($LASTEXITCODE -ne 0) { return $null }
-    } catch {
-        return $null
-    }
-    $lastLine = ($out | Select-Object -Last 1)
-    $digits = ($lastLine -replace '[^0-9]', '')
-    if (-not $digits) { return $null }
-    return $digits
+    $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT COUNT(*) FROM $Target")
+    if (-not $result.Success) { return $null }
+    $lines = "$($result.Output)" -split "`n" | ForEach-Object { $_.Trim() }
+    # The result value prints as a line that is just the number; prefer that
+    # over exapump's "[1/1] ... N rows" progress line (which also has digits).
+    $pure = $lines | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
+    if ($pure) { return $pure }
+    $anyDigits = ($lines | Where-Object { $_ -match '\d' } | Select-Object -Last 1) -replace '[^0-9]', ''
+    if ($anyDigits) { return $anyDigits }
+    return $null
 }
 
 function Get-ExakitTableName {
@@ -311,16 +369,11 @@ function Confirm-ExakitSchemaExists {
     $schemaUc = $Schema.ToUpperInvariant()
     if (-not $schemaUc) { return $false }
     $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS"
-    $out = ""
-    try {
-        $out = & (Get-ExapumpCli) sql -p $script:ExapumpProfile $sql 2>>$script:LogFile
-    } catch {
-        if ($script:LogFile) { "schema check failed: $_" | Add-Content -Path $script:LogFile }
-    }
-    if (($out -join "`n") -match "EXAKIT_SCHEMA_PRESENT") { return $true }
+    $check = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
+    if ("$($check.Output)" -match "EXAKIT_SCHEMA_PRESENT") { return $true }
     Info "Creating schema $schemaUc"
-    $code = Invoke-ExakitLogged (Get-ExapumpCli) "sql" "-p" $script:ExapumpProfile "CREATE SCHEMA $schemaUc"
-    if ($code -ne 0) { Fail "Could not create schema $schemaUc" }
+    $create = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "CREATE SCHEMA $schemaUc")
+    if (-not $create.Success) { Fail "Could not create schema $schemaUc" }
     return $true
 }
 
@@ -525,15 +578,19 @@ function Invoke-ExakitSampleDataLoad {
     if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
         Info "Verification (03_verify_setup.sql):"
         $verifyStatus = 1
+        $verifyOut = ""
         try {
-            $verifyOut = Get-Content $verifySql -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1
+            $verifyOut = Get-Content $verifySql -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
             $verifyStatus = $LASTEXITCODE
         } catch {
             $verifyOut = "$_"
         }
-        $verifyOut | ForEach-Object { Write-Host $_ }
+        "$verifyOut".Trim() -split "`n" | ForEach-Object { Write-Host $_ }
         if ($script:LogFile) { $verifyOut | Add-Content -Path $script:LogFile }
-        if ($verifyStatus -ne 0 -or (($verifyOut -join "`n") -match "(?i)FAIL")) {
+        # Two independent conditions: the query itself must have run (exapump
+        # success, exit-code-quirk-aware), AND no verification check may have
+        # emitted a STATUS = 'FAIL' row.
+        if ((-not (Test-ExapumpSucceeded -ExitCode $verifyStatus -Output $verifyOut)) -or ("$verifyOut" -match "(?im)\bFAIL\b")) {
             Fail "Verification failed (query error or a FAIL row) - see $script:LogFile. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
         }
     }

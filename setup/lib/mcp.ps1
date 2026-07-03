@@ -188,13 +188,14 @@ function Invoke-ExapumpAdminSql {
     $previous = $env:EXAPUMP_CONFIG
     try {
         $env:EXAPUMP_CONFIG = $ConfigPath
-        $out = & $bin sql -p $Profile $Sql 2>&1
-        return @{ Output = ($out -join "`n"); ExitCode = $LASTEXITCODE }
+        $out = (& $bin sql -p $Profile $Sql 2>&1 | Out-String)
+        $code = $LASTEXITCODE
+        return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
     } catch {
         # A native command's stderr write can surface here as an exception
         # instead of a non-zero exit code; every caller expects this shape
-        # back regardless, and checks ExitCode itself.
-        return @{ Output = "$_"; ExitCode = 1 }
+        # back regardless, and checks .Success / .ExitCode itself.
+        return @{ Output = "$_"; ExitCode = 1; Success = $false }
     } finally {
         if ($null -ne $previous) { $env:EXAPUMP_CONFIG = $previous } else { Remove-Item Env:\EXAPUMP_CONFIG -ErrorAction SilentlyContinue }
     }
@@ -204,7 +205,10 @@ function Test-ExapumpSqlHasToken {
     param([Parameter(Mandatory)][string]$ConfigPath, [Parameter(Mandatory)][string]$Profile, [Parameter(Mandatory)][string]$Sql, [Parameter(Mandatory)][string]$Token)
     $result = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile $Profile -Sql $Sql
     if ($script:LogFile) { $result.Output | Add-Content -Path $script:LogFile }
-    if ($result.ExitCode -ne 0) { return $false }
+    # These are sentinel-token status queries: the token's presence in the
+    # output IS the ground-truth success signal, so match on it directly
+    # rather than gating on exapump's (Windows-unreliable) exit code. A real
+    # failure would print an error and never contain the sentinel.
     return $result.Output -match [regex]::Escape($Token)
 }
 
@@ -266,7 +270,11 @@ function Assert-McpReadonlyPosture {
         $schemaUc = $schema.ToUpperInvariant()
         $probe = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "mcp_readonly" -Sql "CREATE TABLE $schemaUc.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)"
         if ($script:LogFile) { $probe.Output | Add-Content -Path $script:LogFile }
-        if ($probe.ExitCode -eq 0) {
+        # This write MUST fail for a correctly-scoped read-only user. .Success
+        # (exit-code-quirk-aware) rather than raw ExitCode: if the CREATE
+        # actually went through, that is a real least-privilege violation and
+        # we must catch it regardless of exapump's exit-code behavior.
+        if ($probe.Success) {
             $cleanup = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "admin" -Sql "DROP TABLE $schemaUc.EXAKIT_MCP_PERMISSION_PROBE"
             if ($script:LogFile) { $cleanup.Output | Add-Content -Path $script:LogFile }
             Fail "The MCP read-only user unexpectedly succeeded in a write operation on schema $schemaUc."
@@ -311,16 +319,16 @@ function Set-McpReadonlyAccess {
         Info "Creating the dedicated MCP read-only database user ($readonlyUser)"
         $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE USER $identifierUser IDENTIFIED BY $readonlyPassword"
         if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-        if ($r.ExitCode -ne 0) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not create the MCP read-only database user." }
+        if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not create the MCP read-only database user." }
     }
 
     $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "ALTER USER $identifierUser IDENTIFIED BY $readonlyPassword"
     if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-    if ($r.ExitCode -ne 0) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not refresh the MCP read-only database password." }
+    if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not refresh the MCP read-only database password." }
 
     $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT CREATE SESSION TO $identifierUser"
     if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-    if ($r.ExitCode -ne 0) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not grant CREATE SESSION to the MCP read-only database user." }
+    if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not grant CREATE SESSION to the MCP read-only database user." }
 
     $schemaTokens = @($readonlySchemas -split '[,\s]+' | Where-Object { $_ })
     foreach ($schema in $schemaTokens) {
@@ -331,11 +339,11 @@ function Set-McpReadonlyAccess {
             Info "Creating starter schema $schemaUc for MCP-safe querying"
             $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE SCHEMA $schemaUc"
             if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-            if ($r.ExitCode -ne 0) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not create schema $schemaUc for MCP access." }
+            if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not create schema $schemaUc for MCP access." }
         }
         $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT SELECT ON SCHEMA $schemaUc TO $identifierUser"
         if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-        if ($r.ExitCode -ne 0) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not grant read-only access on schema $schemaUc." }
+        if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not grant read-only access on schema $schemaUc." }
     }
 
     Info "Validating dedicated MCP read-only login"
