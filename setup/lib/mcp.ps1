@@ -200,7 +200,8 @@ function Invoke-ExapumpAdminSql {
     $previous = $env:EXAPUMP_CONFIG
     try {
         $env:EXAPUMP_CONFIG = $ConfigPath
-        $out = (& $bin sql -p $Profile $Sql 2>&1 | Out-String)
+        # Capture both output and exit code: run command, then immediately check exit code
+        $out = @(& $bin sql -p $Profile $Sql 2>&1) -join "`n"
         $code = $LASTEXITCODE
         return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
     } catch {
