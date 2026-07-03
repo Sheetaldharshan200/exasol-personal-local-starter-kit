@@ -442,6 +442,24 @@ function Copy-ExakitAsset {
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
+function Ensure-ExakitOnPath {
+    param([Parameter(Mandatory)][string]$Dir)
+    $path = $env:Path -split ";"
+    if ($path -notcontains $Dir) {
+        # Update current session
+        $env:Path = "$Dir;$env:Path"
+        # Update permanent user-level environment variable
+        $userPath = [System.Environment]::GetEnvironmentVariable("PATH", [System.EnvironmentVariableTarget]::User)
+        if ($userPath -notlike "$Dir;*" -and $userPath -notlike "*;$Dir;*" -and $userPath -notlike "*;$Dir") {
+            $newPath = "$Dir;$userPath"
+            [System.Environment]::SetEnvironmentVariable("PATH", $newPath, [System.EnvironmentVariableTarget]::User)
+            Ok "Added $Dir to PATH (user environment variable - permanent)"
+        } else {
+            Ok "Added $Dir to current session PATH"
+        }
+    }
+}
+
 function Confirm-ExakitOnPath {
     param([Parameter(Mandatory)][string]$Dir)
     $path = $env:Path -split ";"

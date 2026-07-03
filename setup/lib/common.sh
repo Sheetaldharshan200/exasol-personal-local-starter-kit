@@ -689,6 +689,19 @@ _exakit_assert_mcp_readonly_posture() {
 # Runs the (die()-on-failure) assertion in a subshell so a posture failure
 # is reported back to the caller instead of aborting the whole CLI.
 _exakit_reassert_mcp_readonly_posture() {
+    # Ensure exapump is on PATH (both current session and permanently)
+    _exapump_bin="$(exakit_exapump_bin 2>/dev/null)" || true
+    if [ -n "$_exapump_bin" ]; then
+        _exapump_dir="$(dirname "$_exapump_bin")"
+        case ":$PATH:" in
+            *":$_exapump_dir:"*) ;;
+            *)
+                PATH="$_exapump_dir:$PATH"
+                _exakit_add_bin_to_shell_rc "$_exapump_dir"
+                ;;
+        esac
+    fi
+    
     _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
     _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
     _readonly_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
@@ -754,8 +767,60 @@ _exakit_generate_sql_password_token() {
     printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9_' < /dev/urandom | head -c 23)"
 }
 
+# _exakit_add_bin_to_shell_rc <bin-directory>
+# Adds the bin directory to shell startup files for persistent PATH updates
+# across future shell sessions. Works for bash, zsh, and sh.
+_exakit_add_bin_to_shell_rc() {
+    _bin_dir="$1"
+    _export_line="export PATH=\"$_bin_dir:\$PATH\""
+    
+    # Prefer ~/.bashrc (most common for interactive bash shells)
+    if [ -f "$HOME/.bashrc" ]; then
+        if ! grep -Fq "$_bin_dir" "$HOME/.bashrc" 2>/dev/null; then
+            printf '\n%s\n' "$_export_line" >> "$HOME/.bashrc"
+            ok "Added $_bin_dir to PATH in $HOME/.bashrc"
+        fi
+        return 0
+    fi
+    
+    # Fall back to ~/.profile (POSIX shell / login shells)
+    if [ -f "$HOME/.profile" ]; then
+        if ! grep -Fq "$_bin_dir" "$HOME/.profile" 2>/dev/null; then
+            printf '\n%s\n' "$_export_line" >> "$HOME/.profile"
+            ok "Added $_bin_dir to PATH in $HOME/.profile"
+        fi
+        return 0
+    fi
+    
+    # For macOS or when ~/.bashrc doesn't exist, try ~/.zshrc
+    if [ -f "$HOME/.zshrc" ]; then
+        if ! grep -Fq "$_bin_dir" "$HOME/.zshrc" 2>/dev/null; then
+            printf '\n%s\n' "$_export_line" >> "$HOME/.zshrc"
+            ok "Added $_bin_dir to PATH in $HOME/.zshrc"
+        fi
+        return 0
+    fi
+    
+    # If no startup file exists yet, create ~/.profile
+    if ! grep -Fq "$_bin_dir" "$HOME/.profile" 2>/dev/null; then
+        printf '%s\n' "$_export_line" >> "$HOME/.profile"
+        ok "Added $_bin_dir to PATH in new $HOME/.profile"
+    fi
+}
+
 exakit_configure_mcp_readonly_access() {
     require_python3
+    # Ensure exapump is on PATH (both current session and permanently)
+    _exapump_bin="$(exakit_exapump_bin)" || die "exapump is required for MCP read-only setup but was not found."
+    _exapump_dir="$(dirname "$_exapump_bin")"
+    case ":$PATH:" in
+        *":$_exapump_dir:"*) ;;
+        *)
+            PATH="$_exapump_dir:$PATH"
+            _exakit_add_bin_to_shell_rc "$_exapump_dir"
+            ;;
+    esac
+    
     _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
     _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
     [ -n "$_runtime_user" ] || die "runtime.user is missing; cannot prepare the MCP read-only database user."
@@ -789,10 +854,15 @@ exakit_configure_mcp_readonly_access() {
         "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$(_exakit_sql_literal "$_identifier_user")') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" \
         "EXAKIT_MCP_USER_PRESENT"; then
         info "Creating the dedicated MCP read-only database user ($_readonly_user)"
-        _exakit_run_exapump_sql \
+        _create_user_output="$(_exakit_run_exapump_sql \
             "$_temp_config" "admin" \
-            "CREATE USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" \
-            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create the MCP read-only database user."
+            "CREATE USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" 2>&1)"
+        if [ $? -ne 0 ]; then
+            _exakit_log_file "ERROR_DETAIL $_create_user_output"
+            error "CREATE USER details: $_create_user_output"
+            die "Could not create the MCP read-only database user."
+        fi
+        [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_create_user_output" >> "$EXAKIT_LOG_FILE"
     fi
 
     _exakit_run_exapump_sql \

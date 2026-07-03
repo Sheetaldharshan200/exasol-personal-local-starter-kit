@@ -298,6 +298,13 @@ function Assert-McpReadonlyPosture {
 # database user, grant SELECT on every configured schema, validate its
 # login, and assert least-privilege posture. Safe to re-run.
 function Set-McpReadonlyAccess {
+    # Ensure exapump is on PATH for this session
+    $exapumpBin = Get-ExakitExapumpBin
+    if ($exapumpBin) {
+        $binDir = Split-Path -Parent $exapumpBin
+        Ensure-ExakitOnPath $binDir
+    }
+    
     $runtimeUser = Get-ExakitManifestValue "runtime.user"
     $runtimePwFile = Get-ExakitManifestValue "runtime.password_file"
     if (-not $runtimeUser) { Fail "runtime.user is missing; cannot prepare the MCP read-only database user." }
