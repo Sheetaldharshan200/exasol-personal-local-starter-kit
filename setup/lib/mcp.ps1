@@ -190,6 +190,11 @@ function Invoke-ExapumpAdminSql {
         $env:EXAPUMP_CONFIG = $ConfigPath
         $out = & $bin sql -p $Profile $Sql 2>&1
         return @{ Output = ($out -join "`n"); ExitCode = $LASTEXITCODE }
+    } catch {
+        # A native command's stderr write can surface here as an exception
+        # instead of a non-zero exit code; every caller expects this shape
+        # back regardless, and checks ExitCode itself.
+        return @{ Output = "$_"; ExitCode = 1 }
     } finally {
         if ($null -ne $previous) { $env:EXAPUMP_CONFIG = $previous } else { Remove-Item Env:\EXAPUMP_CONFIG -ErrorAction SilentlyContinue }
     }
@@ -409,6 +414,8 @@ function Invoke-McpModule {
             $out = & $uv run --python $script:ManagedPythonVersion --no-project python -m mcp @ModuleArgs 2>&1
         }
         return @{ Output = ($out -join "`n"); ExitCode = $LASTEXITCODE }
+    } catch {
+        return @{ Output = "$_"; ExitCode = 1 }
     } finally {
         if ($null -ne $previousPythonPath) { $env:PYTHONPATH = $previousPythonPath } else { Remove-Item Env:\PYTHONPATH -ErrorAction SilentlyContinue }
         Pop-Location

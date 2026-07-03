@@ -15,12 +15,24 @@ $script:NanoMinRamGb  = if ($env:EXAKIT_NANO_MIN_RAM_GB) { [int]$env:EXAKIT_NANO
 $script:NanoReadyTimeout = if ($env:EXAKIT_NANO_READY_TIMEOUT) { [int]$env:EXAKIT_NANO_READY_TIMEOUT } else { 600 }
 
 # Get-NanoEngine - the usable container engine, cached after first call.
+#
+# `docker info` fails loudly (writes to stderr) when Docker Desktop is
+# installed but not running - exactly the case Test-NanoRequirements exists
+# to give a friendly message for. Under $ErrorActionPreference = 'Stop'
+# (set globally by every entry point) a native command's stderr write can
+# surface as an uncaught exception instead of a plain non-zero exit code, so
+# this is wrapped: a thrown error here means "this candidate isn't usable",
+# not "the whole script should die with a raw stack trace".
 function Get-NanoEngine {
     if ($script:NanoEngineCache) { return $script:NanoEngineCache }
     foreach ($candidate in @("docker", "podman")) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
-            & $candidate info *> $null
-            if ($LASTEXITCODE -eq 0) { $script:NanoEngineCache = $candidate; return $candidate }
+            try {
+                & $candidate info *> $null
+                if ($LASTEXITCODE -eq 0) { $script:NanoEngineCache = $candidate; return $candidate }
+            } catch {
+                Write-ExakitLog "WARN" "$candidate info failed: $_"
+            }
         }
     }
     return $null
@@ -59,13 +71,21 @@ function Test-NanoRequirements {
 function Get-NanoImageRef { return "docker.io/$($script:NanoImage):$($script:NanoTag)" }
 
 function Test-NanoContainerExists {
-    & (Get-NanoEngine) container inspect $script:NanoContainer *> $null
-    return ($LASTEXITCODE -eq 0)
+    try {
+        & (Get-NanoEngine) container inspect $script:NanoContainer *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
 }
 
 function Test-NanoContainerRunning {
-    $state = & (Get-NanoEngine) container inspect -f "{{.State.Running}}" $script:NanoContainer 2>$null
-    return ($state -eq "true")
+    try {
+        $state = & (Get-NanoEngine) container inspect -f "{{.State.Running}}" $script:NanoContainer 2>$null
+        return ($state -eq "true")
+    } catch {
+        return $false
+    }
 }
 
 # Test-NanoReadyInLogs - ready marker from the CURRENT boot only. Container
@@ -73,10 +93,14 @@ function Test-NanoContainerRunning {
 # line from a previous boot; scoping to StartedAt also keeps each poll cheap.
 function Test-NanoReadyInLogs {
     $engine = Get-NanoEngine
-    $started = & $engine container inspect -f "{{.State.StartedAt}}" $script:NanoContainer 2>$null
-    if (-not $started) { $started = "1970-01-01T00:00:00Z" }
-    $logs = & $engine logs --since $started $script:NanoContainer 2>&1
-    return (($logs -join "`n") -match "Database is now up and running!")
+    try {
+        $started = & $engine container inspect -f "{{.State.StartedAt}}" $script:NanoContainer 2>$null
+        if (-not $started) { $started = "1970-01-01T00:00:00Z" }
+        $logs = & $engine logs --since $started $script:NanoContainer 2>&1
+        return (($logs -join "`n") -match "Database is now up and running!")
+    } catch {
+        return $false
+    }
 }
 
 # Install-Nano - pull the pinned image and start the container (first run
@@ -143,8 +167,12 @@ function Wait-NanoReady {
     $waited = 0
     while ($waited -lt $script:NanoReadyTimeout) {
         if (-not (Test-NanoContainerRunning)) {
-            $tail = & $engine logs --tail 30 $script:NanoContainer 2>&1
-            if ($script:LogFile) { $tail | Add-Content -Path $script:LogFile }
+            try {
+                $tail = & $engine logs --tail 30 $script:NanoContainer 2>&1
+                if ($script:LogFile) { $tail | Add-Content -Path $script:LogFile }
+            } catch {
+                if ($script:LogFile) { "Could not read container logs: $_" | Add-Content -Path $script:LogFile }
+            }
             Fail "Nano container stopped unexpectedly (see log)"
         }
         if (Test-NanoReadyInLogs) { Ok "Database is up (took ~${waited}s)"; return }
@@ -215,8 +243,12 @@ function Remove-Nano {
         Warn2 "No container named '$($script:NanoContainer)' found - nothing to remove (was it created under a different name?)"
     }
     if ($Data) {
-        & $engine volume inspect $script:NanoVolume *> $null
-        if ($LASTEXITCODE -eq 0) {
+        $volumeExists = $false
+        try {
+            & $engine volume inspect $script:NanoVolume *> $null
+            $volumeExists = ($LASTEXITCODE -eq 0)
+        } catch { }
+        if ($volumeExists) {
             Info "Removing data volume $($script:NanoVolume)"
             $code = Invoke-ExakitLogged $engine "volume" "rm" $script:NanoVolume
             if ($code -ne 0) { Warn2 "Volume removal failed" }

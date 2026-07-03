@@ -60,9 +60,15 @@ function Install-Exapump {
     $existing = Get-ExapumpCli
     if (Test-Path $existing) {
         # Trust the existing binary only if it actually runs - an interrupted
-        # earlier download can leave a broken file at the same path.
-        & $existing --version *> $null
-        if ($LASTEXITCODE -eq 0) {
+        # earlier download can leave a broken file at the same path. Wrapped:
+        # a broken binary's stderr write must mean "reinstall", not an
+        # uncaught exception under $ErrorActionPreference = 'Stop'.
+        $existingWorks = $false
+        try {
+            & $existing --version *> $null
+            $existingWorks = ($LASTEXITCODE -eq 0)
+        } catch { }
+        if ($existingWorks) {
             Ok "exapump already installed: $existing"
             Set-ExapumpManifest
             return
@@ -207,9 +213,15 @@ function Invoke-ExapumpSqlFile {
         return $false
     }
     Info "Running $Description"
-    $code = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Tee-Object -Variable sqlOut
+    $exitCode = 1
+    try {
+        $sqlOut = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1
+        $exitCode = $LASTEXITCODE
+    } catch {
+        $sqlOut = "$_"
+    }
     if ($script:LogFile) { $sqlOut | Add-Content -Path $script:LogFile }
-    if ($LASTEXITCODE -ne 0) { Fail "SQL file failed: $Path (see log)" }
+    if ($exitCode -ne 0) { Fail "SQL file failed: $Path (see log)" }
     Ok "$Description done"
     return $true
 }
@@ -231,8 +243,12 @@ function Invoke-ExapumpUpload {
 # Get-ExapumpRowCount <schema.table> - row count, or $null if it could not be read.
 function Get-ExapumpRowCount {
     param([Parameter(Mandatory)][string]$Target)
-    $out = & (Get-ExapumpCli) sql -p $script:ExapumpProfile "SELECT COUNT(*) FROM $Target" 2>$null
-    if ($LASTEXITCODE -ne 0) { return $null }
+    try {
+        $out = & (Get-ExapumpCli) sql -p $script:ExapumpProfile "SELECT COUNT(*) FROM $Target" 2>$null
+        if ($LASTEXITCODE -ne 0) { return $null }
+    } catch {
+        return $null
+    }
     $lastLine = ($out | Select-Object -Last 1)
     $digits = ($lastLine -replace '[^0-9]', '')
     if (-not $digits) { return $null }
@@ -279,7 +295,12 @@ function Confirm-ExakitSchemaExists {
     $schemaUc = $Schema.ToUpperInvariant()
     if (-not $schemaUc) { return $false }
     $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS"
-    $out = & (Get-ExapumpCli) sql -p $script:ExapumpProfile $sql 2>>$script:LogFile
+    $out = ""
+    try {
+        $out = & (Get-ExapumpCli) sql -p $script:ExapumpProfile $sql 2>>$script:LogFile
+    } catch {
+        if ($script:LogFile) { "schema check failed: $_" | Add-Content -Path $script:LogFile }
+    }
     if (($out -join "`n") -match "EXAKIT_SCHEMA_PRESENT") { return $true }
     Info "Creating schema $schemaUc"
     $code = Invoke-ExakitLogged (Get-ExapumpCli) "sql" "-p" $script:ExapumpProfile "CREATE SCHEMA $schemaUc"
@@ -487,8 +508,13 @@ function Invoke-ExakitSampleDataLoad {
     $verifySql = Join-Path $KitRoot "sql\03_verify_setup.sql"
     if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
         Info "Verification (03_verify_setup.sql):"
-        $verifyOut = Get-Content $verifySql -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1
-        $verifyStatus = $LASTEXITCODE
+        $verifyStatus = 1
+        try {
+            $verifyOut = Get-Content $verifySql -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1
+            $verifyStatus = $LASTEXITCODE
+        } catch {
+            $verifyOut = "$_"
+        }
         $verifyOut | ForEach-Object { Write-Host $_ }
         if ($script:LogFile) { $verifyOut | Add-Content -Path $script:LogFile }
         if ($verifyStatus -ne 0 -or (($verifyOut -join "`n") -match "(?i)FAIL")) {

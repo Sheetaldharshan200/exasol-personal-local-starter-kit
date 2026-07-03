@@ -80,15 +80,32 @@ function Fail([string]$Msg) {
 
 # Run a command, sending its output to the log file only. $Cmd is invoked via
 # the call operator; args come from $Args (positional after $Cmd).
+#
+# A native command that writes to stderr can, under $ErrorActionPreference =
+# 'Stop' (set globally by every entry point), surface as an uncaught
+# terminating exception instead of just a non-zero exit code - this is a
+# real, well-documented PowerShell quirk (worse on Windows PowerShell 5.1
+# than on 7+) and is exactly what happened when Docker Desktop wasn't
+# running: the friendly "Docker is installed but not running" message never
+# ran because the underlying `docker info` call threw past it. Every caller
+# of this function already checks the *returned exit code* and calls Fail()
+# itself with a proper message, so any exception here is converted to a
+# synthetic non-zero code instead of being allowed to escape - Fail() still
+# happens, just from the caller, with the message it was meant to show.
 function Invoke-ExakitLogged {
     param([Parameter(Mandatory)][string]$Cmd, [Parameter(ValueFromRemainingArguments)]$CmdArgs)
     Write-ExakitLog "CMD" "$Cmd $($CmdArgs -join ' ')"
-    if ($script:LogFile) {
-        & $Cmd @CmdArgs *>> $script:LogFile
-    } else {
-        & $Cmd @CmdArgs | Out-Null
+    try {
+        if ($script:LogFile) {
+            & $Cmd @CmdArgs *>> $script:LogFile
+        } else {
+            & $Cmd @CmdArgs | Out-Null
+        }
+        return $LASTEXITCODE
+    } catch {
+        Write-ExakitLog "ERROR" "$Cmd threw instead of returning an exit code: $_"
+        return 1
     }
-    return $LASTEXITCODE
 }
 
 # Confirm-ExakitPrompt "Question?" [DefaultYes] - non-interactive runs
