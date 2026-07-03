@@ -15,14 +15,24 @@
 
 $script:McpHttpPort = if ($env:EXAKIT_MCP_HTTP_PORT) { $env:EXAKIT_MCP_HTTP_PORT } else { "8123" }
 
+# Get-UvxPath - resolve the uvx launcher to a full path. uv installs uvx into
+# ~/.local/bin (or $BinDir), which is NOT on the current process's PATH right
+# after install, so a bare "uvx" invocation fails during setup even though uv
+# is present. Always prefer the resolved path.
+function Get-UvxPath {
+    $cmd = Get-Command uvx -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($dir in @($script:BinDir, (Join-Path $HOME ".local\bin"))) {
+        $candidate = Join-Path $dir "uvx.exe"
+        if (Test-Path $candidate) { return $candidate }
+    }
+    return "uvx"
+}
+
 function Get-McpCommandPath {
     $manifestCommand = Get-ExakitManifestValue "components.mcp_server.command"
     if ($manifestCommand) { return $manifestCommand }
-    $cmd = Get-Command uvx -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    $candidate = Join-Path $HOME ".local\bin\uvx.exe"
-    if (Test-Path $candidate) { return $candidate }
-    return "uvx"
+    return (Get-UvxPath)
 }
 
 function Get-McpSslCertValidation {
@@ -36,7 +46,9 @@ function Get-McpSslCertValidation {
 function Install-Mcp {
     Install-ExakitUv | Out-Null
     Info "Priming $($script:McpPackage)@$($script:McpVersion) (downloads on first use)"
-    $code = Invoke-ExakitLogged "uvx" "$($script:McpPackage)@$($script:McpVersion)" "--help"
+    # Use the resolved uvx path, not a bare "uvx" - uv was just installed to
+    # a dir that isn't on this process's PATH yet.
+    $code = Invoke-ExakitLogged (Get-UvxPath) "$($script:McpPackage)@$($script:McpVersion)" "--help"
     if ($code -ne 0) { Warn2 "Could not prime the MCP server package (it will download on first client start)" }
     $uvBin = Get-ExakitUvBin
     if ($uvBin) { Set-ExakitManifestValue "components.mcp_server.uv_path" $uvBin }
@@ -410,6 +422,21 @@ function Confirm-McpReadonlyPosture {
 # Config generation / operations (shell out to the OS-agnostic Python mcp
 # package - the same code macOS/Linux/WSL use, invoked the same way)
 # ---------------------------------------------------------------------------
+# Test-ExakitSystemPythonForMcp - the mcp package requires Python 3.11+ (it
+# imports the stdlib `tomllib`, added in 3.11, at module load time via the
+# Codex adapter). A system `python` that's older - or the Windows "App
+# execution alias" stub that resolves as `python` but isn't a real
+# interpreter - must NOT be used to run the module, or it fails on import.
+function Test-ExakitSystemPythonForMcp {
+    if (-not (Test-ExakitSystemPython)) { return $false }
+    try {
+        $v = & python -c "import sys; print(1 if sys.version_info >= (3, 11) else 0)" 2>$null
+        return (("$v").Trim() -eq "1")
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-McpModule {
     param([Parameter(Mandatory)][string[]]$ModuleArgs)
     $repoRoot = Get-ExakitRepoRoot
@@ -418,13 +445,16 @@ function Invoke-McpModule {
     $previousPythonPath = $env:PYTHONPATH
     try {
         $env:PYTHONPATH = if ($previousPythonPath) { "$repoRoot;$previousPythonPath" } else { $repoRoot }
-        if (Test-ExakitSystemPython) {
-            $out = & python -m mcp @ModuleArgs 2>&1
+        if (Test-ExakitSystemPythonForMcp) {
+            $out = & python -m mcp @ModuleArgs 2>&1 | Out-String
         } else {
+            # Fall back to the managed uv Python (pinned to 3.12), which is
+            # guaranteed to satisfy the 3.11+ requirement. uv is already a
+            # hard dependency here (the MCP server itself runs via uvx).
             $uv = Install-ExakitUv
-            $out = & $uv run --python $script:ManagedPythonVersion --no-project python -m mcp @ModuleArgs 2>&1
+            $out = & $uv run --python $script:ManagedPythonVersion --no-project python -m mcp @ModuleArgs 2>&1 | Out-String
         }
-        return @{ Output = ($out -join "`n"); ExitCode = $LASTEXITCODE }
+        return @{ Output = $out; ExitCode = $LASTEXITCODE }
     } catch {
         return @{ Output = "$_"; ExitCode = 1 }
     } finally {
@@ -436,11 +466,29 @@ function Invoke-McpModule {
 function Update-ExakitMcpConfigs {
     $repoRoot = Get-ExakitRepoRoot
     if (-not $repoRoot) { Warn2 "Could not find the MCP package source to generate client configs."; return $false }
-    try { Set-McpReadonlyAccess } catch { return $false }
+    # Set-McpReadonlyAccess Fails (throws) with its own "x ..." message on a
+    # real problem; don't swallow it silently - re-surface it so the reason
+    # is visible, not just a generic "generation failed" downstream.
+    try {
+        Set-McpReadonlyAccess
+    } catch [ExakitFailException] {
+        Warn2 "Could not provision the read-only MCP database user: $($_.Exception.Message)"
+        return $false
+    }
     Info "Generating ready-made MCP client configs"
     $result = Invoke-McpModule @("export-runtime-configs", "--runtime-root", $script:ExakitHome)
     if ($script:LogFile) { $result.Output | Add-Content -Path $script:LogFile }
-    if ($result.ExitCode -ne 0) { Warn2 "MCP config generation failed (see log)."; return $false }
+    if ($result.ExitCode -ne 0) {
+        Warn2 "MCP config generation failed."
+        # Surface the actual Python/module error inline instead of hiding it
+        # in the log - that text (missing module, import error, bad runtime
+        # root) is what's needed to fix it.
+        if ("$($result.Output)".Trim()) {
+            Write-Host "  Details:" -ForegroundColor Yellow
+            "$($result.Output)".Trim() -split "`n" | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+        }
+        return $false
+    }
     Set-ExakitStepDone "mcp_configs"
     Ok "MCP client configs are ready in $script:McpDir"
     return $true

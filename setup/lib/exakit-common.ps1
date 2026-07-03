@@ -413,6 +413,27 @@ function Get-ExakitCredential {
     return (Get-Content $path -Raw -ErrorAction SilentlyContinue)
 }
 
+# Copy-ExakitAsset - copy a file or directory to $Destination, but skip the
+# copy entirely when the source already IS the destination. The Windows
+# installer (install.ps1) downloads the kit straight into
+# ~\.exasol-starter-kit\kit and runs setup from there, so the "keep a copy of
+# the kit next to the state" step would otherwise try to copy a directory
+# onto itself and crash ("Cannot overwrite the item ... with itself"). When
+# the paths differ (a standalone checkout elsewhere), any stale destination
+# is removed first so a re-run can't produce a nested lib\lib copy.
+function Copy-ExakitAsset {
+    param([Parameter(Mandatory)][string]$Source, [Parameter(Mandatory)][string]$Destination)
+    if (-not (Test-Path $Source)) { return }
+    $srcFull = (Resolve-Path $Source).Path.TrimEnd('\', '/')
+    $dstFull = $Destination.TrimEnd('\', '/')
+    if (Test-Path $Destination) { $dstFull = (Resolve-Path $Destination).Path.TrimEnd('\', '/') }
+    if ([string]::Equals($srcFull, $dstFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return  # already in place (installer ran from the kit copy itself)
+    }
+    if (Test-Path $Destination) { Remove-Item -Recurse -Force $Destination }
+    Copy-Item -Recurse -Force $Source $Destination
+}
+
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------

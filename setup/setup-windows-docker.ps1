@@ -87,15 +87,17 @@ try {
         Set-Content -Path $shimPath -Value $shimContent -NoNewline
 
         # Keep a copy of the kit library (and the mcp/, sql/, data/ packages
-        # Get-ExakitRepoRoot depends on, plus load-data equivalents) next to
-        # the state so exakit finds them even when this checkout disappears.
+        # Get-ExakitRepoRoot depends on) next to the state so exakit finds
+        # them even when this checkout disappears. Copy-ExakitAsset skips any
+        # copy whose source already IS the destination - which is the case
+        # when install.ps1 downloaded the kit straight into
+        # ~\.exasol-starter-kit\kit and ran setup from there.
         $kitSetupDir = Join-Path $script:ExakitHome "kit\setup"
         New-Item -ItemType Directory -Force -Path $kitSetupDir | Out-Null
-        Copy-Item -Recurse -Force $LibDir (Join-Path $kitSetupDir "lib")
-        Copy-Item -Force (Join-Path $ScriptDir "exakit.ps1") (Join-Path $kitSetupDir "exakit.ps1")
+        Copy-ExakitAsset -Source $LibDir -Destination (Join-Path $kitSetupDir "lib")
+        Copy-ExakitAsset -Source (Join-Path $ScriptDir "exakit.ps1") -Destination (Join-Path $kitSetupDir "exakit.ps1")
         foreach ($dir in @("mcp", "sql", "data")) {
-            $src = Join-Path $KitRoot $dir
-            if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $script:ExakitHome "kit\$dir") }
+            Copy-ExakitAsset -Source (Join-Path $KitRoot $dir) -Destination (Join-Path $script:ExakitHome "kit\$dir")
         }
         Confirm-ExakitOnPath $script:BinDir
         Set-ExakitStepDone "exakit_helper"
