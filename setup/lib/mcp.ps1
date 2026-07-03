@@ -329,12 +329,14 @@ function Set-McpReadonlyAccess {
     $identifierLit = ConvertTo-SqlLiteral $identifierUser
     if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$identifierLit') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" "EXAKIT_MCP_USER_PRESENT")) {
         Info "Creating the dedicated MCP read-only database user ($readonlyUser)"
-        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE USER $identifierUser IDENTIFIED BY $readonlyPassword"
+        $passwordLit = ConvertTo-SqlLiteral $readonlyPassword
+        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE USER $identifierUser IDENTIFIED BY '$passwordLit'"
         if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
         if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not create the MCP read-only database user." }
     }
 
-    $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "ALTER USER $identifierUser IDENTIFIED BY $readonlyPassword"
+    $passwordLit = ConvertTo-SqlLiteral $readonlyPassword
+    $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "ALTER USER $identifierUser IDENTIFIED BY '$passwordLit'"
     if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
     if (-not $r.Success) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Could not refresh the MCP read-only database password." }
 

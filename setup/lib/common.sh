@@ -791,13 +791,13 @@ exakit_configure_mcp_readonly_access() {
         info "Creating the dedicated MCP read-only database user ($_readonly_user)"
         _exakit_run_exapump_sql \
             "$_temp_config" "admin" \
-            "CREATE USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
+            "CREATE USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" \
             >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create the MCP read-only database user."
     fi
 
     _exakit_run_exapump_sql \
         "$_temp_config" "admin" \
-        "ALTER USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
+        "ALTER USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" \
         >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not refresh the MCP read-only database password."
     _exakit_run_exapump_sql \
         "$_temp_config" "admin" \
