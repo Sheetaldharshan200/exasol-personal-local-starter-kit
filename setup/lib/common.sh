@@ -756,7 +756,7 @@ _exakit_validate_identifier() {
 
 _exakit_validate_sql_password_token() {
     case "$1" in
-        ""|[!A-Z]*|*[!A-Z0-9_]*)
+        ""|[!A-Z]*|*[!A-Z0-9]*)
             return 1
             ;;
     esac
@@ -764,7 +764,9 @@ _exakit_validate_sql_password_token() {
 }
 
 _exakit_generate_sql_password_token() {
-    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9_' < /dev/urandom | head -c 23)"
+    # Generate alphanumeric password (A-Z, 0-9 only, no underscores) for maximum SQL compatibility
+    # Format: A followed by 23 random uppercase/digits
+    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9' < /dev/urandom | head -c 23)"
 }
 
 # _exakit_add_bin_to_shell_rc <bin-directory>
