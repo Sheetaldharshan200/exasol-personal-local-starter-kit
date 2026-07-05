@@ -95,7 +95,13 @@ function Fail([string]$Msg) {
 function Invoke-ExakitLogged {
     param([Parameter(Mandatory)][string]$Cmd, [Parameter(ValueFromRemainingArguments)]$CmdArgs)
     Write-ExakitLog "CMD" "$Cmd $($CmdArgs -join ' ')"
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
+        # Native tools such as uvx and Docker can write progress/status to
+        # stderr while still succeeding. With ErrorActionPreference = Stop,
+        # Windows PowerShell can turn that stderr into a terminating error
+        # before we can inspect the real process exit code.
+        $ErrorActionPreference = "Continue"
         if ($script:LogFile) {
             & $Cmd @CmdArgs *>> $script:LogFile
         } else {
@@ -105,9 +111,10 @@ function Invoke-ExakitLogged {
     } catch {
         Write-ExakitLog "ERROR" "$Cmd threw instead of returning an exit code: $_"
         return 1
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
     }
 }
-
 # Confirm-ExakitPrompt "Question?" [DefaultYes] - non-interactive runs
 # (no console input available, e.g. piped install) take the default.
 function Confirm-ExakitPrompt {

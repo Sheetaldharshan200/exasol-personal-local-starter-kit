@@ -810,6 +810,15 @@ _exakit_add_bin_to_shell_rc() {
     fi
 }
 
+_exakit_redact_mcp_secret_output() {
+    _text="$1"
+    _secret="$2"
+    if [ -n "$_secret" ]; then
+        _text="${_text//$_secret/<redacted>}"
+    fi
+    printf '%s\n' "$_text" | sed -E "s/(IDENTIFIED BY )('[^']*'|[A-Z][A-Z0-9]*(\.\.\.)?)/\1<redacted>/g"
+}
+
 exakit_configure_mcp_readonly_access() {
     require_python3
     # Ensure exapump is on PATH (both current session and permanently)
@@ -858,19 +867,28 @@ exakit_configure_mcp_readonly_access() {
         info "Creating the dedicated MCP read-only database user ($_readonly_user)"
         _create_user_output="$(_exakit_run_exapump_sql \
             "$_temp_config" "admin" \
-            "CREATE USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" 2>&1)"
+            "CREATE USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" 2>&1)"
         if [ $? -ne 0 ]; then
-            _exakit_log_file "ERROR_DETAIL $_create_user_output"
-            error "CREATE USER details: $_create_user_output"
+            _create_user_redacted="$(_exakit_redact_mcp_secret_output "$_create_user_output" "$_readonly_password")"
+            _exakit_log_file "ERROR_DETAIL $_create_user_redacted"
+            error "CREATE USER details: $_create_user_redacted"
             die "Could not create the MCP read-only database user."
         fi
-        [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_create_user_output" >> "$EXAKIT_LOG_FILE"
+        _create_user_redacted="$(_exakit_redact_mcp_secret_output "$_create_user_output" "$_readonly_password")"
+        [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_create_user_redacted" >> "$EXAKIT_LOG_FILE"
     fi
 
-    _exakit_run_exapump_sql \
+    _alter_user_output="$(_exakit_run_exapump_sql \
         "$_temp_config" "admin" \
-        "ALTER USER ${_identifier_user} IDENTIFIED BY '$(_exakit_sql_literal "$_readonly_password")'" \
-        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not refresh the MCP read-only database password."
+        "ALTER USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" 2>&1)"
+    if [ $? -ne 0 ]; then
+        _alter_user_redacted="$(_exakit_redact_mcp_secret_output "$_alter_user_output" "$_readonly_password")"
+        _exakit_log_file "ERROR_DETAIL $_alter_user_redacted"
+        error "ALTER USER details: $_alter_user_redacted"
+        die "Could not refresh the MCP read-only database password."
+    fi
+    _alter_user_redacted="$(_exakit_redact_mcp_secret_output "$_alter_user_output" "$_readonly_password")"
+    [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_alter_user_redacted" >> "$EXAKIT_LOG_FILE"
     _exakit_run_exapump_sql \
         "$_temp_config" "admin" \
         "GRANT CREATE SESSION TO ${_identifier_user}" \

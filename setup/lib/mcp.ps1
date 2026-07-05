@@ -171,6 +171,18 @@ function ConvertTo-SqlLiteral {
     return $Value.Replace("'", "''")
 }
 
+function ConvertTo-McpRedactedText {
+    param([AllowEmptyString()][string]$Text, [string[]]$Secrets = @())
+    $redacted = "$Text"
+    foreach ($secret in $Secrets) {
+        if (-not [string]::IsNullOrEmpty($secret)) {
+            $redacted = $redacted -replace [regex]::Escape($secret), "<redacted>"
+        }
+    }
+    $redacted = $redacted -replace '(?i)(IDENTIFIED\s+BY\s+)(''[^'']*''|[A-Z][A-Z0-9]*(?:\.\.\.)?)', '$1<redacted>'
+    return $redacted
+}
+
 function Get-RuntimeHost {
     $dsn = Get-ExakitManifestValue "runtime.dsn"
     if (-not $dsn) { return "" }
@@ -185,7 +197,7 @@ function Get-RuntimePort {
 
 function Get-FirstSchema {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Schemas)
-    $tokens = $Schemas -split '[,\s]+' | Where-Object { $_ }
+    $tokens = @($Schemas -split '[,\s]+' | Where-Object { $_ })
     if ($tokens.Count -eq 0) { return "STARTER_KIT" }
     return $tokens[0]
 }
@@ -198,9 +210,13 @@ function Invoke-ExapumpAdminSql {
     $bin = Get-ExakitExapumpBin
     if (-not $bin) { Fail "exapump is required for MCP read-only setup but was not found." }
     $previous = $env:EXAPUMP_CONFIG
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
         $env:EXAPUMP_CONFIG = $ConfigPath
-        # Capture both output and exit code: run command, then immediately check exit code
+        # Native exapump can write successful query summaries to stderr on
+        # Windows. Do not let PowerShell convert that into a terminating
+        # exception before Test-ExapumpSucceeded can evaluate the output.
+        $ErrorActionPreference = "Continue"
         $out = @(& $bin sql -p $Profile $Sql 2>&1) -join "`n"
         $code = $LASTEXITCODE
         return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
@@ -208,8 +224,10 @@ function Invoke-ExapumpAdminSql {
         # A native command's stderr write can surface here as an exception
         # instead of a non-zero exit code; every caller expects this shape
         # back regardless, and checks .Success / .ExitCode itself.
-        return @{ Output = "$_"; ExitCode = 1; Success = $false }
+        $out = "$_"
+        return @{ Output = $out; ExitCode = 1; Success = (Test-ExapumpSucceeded -ExitCode 1 -Output $out) }
     } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         if ($null -ne $previous) { $env:EXAPUMP_CONFIG = $previous } else { Remove-Item Env:\EXAPUMP_CONFIG -ErrorAction SilentlyContinue }
     }
 }
@@ -341,8 +359,9 @@ function Set-McpReadonlyAccess {
     }
     Write-ExakitLog "DEBUG" "TOML config created at: $tempConfig"
     if ($script:LogFile) {
-        Write-ExakitLog "DEBUG" "TOML config contents:"
-        Get-Content $tempConfig -Raw | Add-Content -Path $script:LogFile
+        Write-ExakitLog "DEBUG" "TOML config contents (passwords redacted):"
+        $redactedConfig = (Get-Content $tempConfig -Raw) -replace '(?m)^(password\s*=\s*").*(")\s*$', '$1<redacted>$2'
+        $redactedConfig | Add-Content -Path $script:LogFile
     }
 
     # Test basic connectivity before attempting user creation
@@ -360,29 +379,29 @@ function Set-McpReadonlyAccess {
     $identifierLit = ConvertTo-SqlLiteral $identifierUser
     if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$identifierLit') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" "EXAKIT_MCP_USER_PRESENT")) {
         Info "Creating the dedicated MCP read-only database user ($readonlyUser)"
-        $passwordLit = ConvertTo-SqlLiteral $readonlyPassword
-        $createUserSql = "CREATE USER $identifierUser IDENTIFIED BY '$passwordLit'"
-        Write-ExakitLog "SQL" $createUserSql
+        $createUserSql = "CREATE USER $identifierUser IDENTIFIED BY $readonlyPassword"
+        Write-ExakitLog "SQL" "CREATE USER $identifierUser IDENTIFIED BY <redacted>"
         $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql $createUserSql
-        if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
+        $redactedOutput = ConvertTo-McpRedactedText -Text $r.Output -Secrets @($readonlyPassword, $adminPassword)
+        if ($script:LogFile) { $redactedOutput | Add-Content -Path $script:LogFile }
         if (-not $r.Success) {
-            Write-ExakitLog "ERROR_DETAIL" "CREATE USER failed with exit code $($r.ExitCode): $($r.Output)"
+            Write-ExakitLog "ERROR_DETAIL" "CREATE USER failed with exit code $($r.ExitCode): $redactedOutput"
             Write-Host "  ! CREATE USER error details:" -ForegroundColor Red
-            Write-Host "$($r.Output)" -ForegroundColor Red
+            Write-Host "$redactedOutput" -ForegroundColor Red
             Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
             Fail "Could not create the MCP read-only database user."
         }
     }
 
-    $passwordLit = ConvertTo-SqlLiteral $readonlyPassword
-    $alterUserSql = "ALTER USER $identifierUser IDENTIFIED BY '$passwordLit'"
-    Write-ExakitLog "SQL" $alterUserSql
+    $alterUserSql = "ALTER USER $identifierUser IDENTIFIED BY $readonlyPassword"
+    Write-ExakitLog "SQL" "ALTER USER $identifierUser IDENTIFIED BY <redacted>"
     $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql $alterUserSql
-    if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
+    $redactedOutput = ConvertTo-McpRedactedText -Text $r.Output -Secrets @($readonlyPassword, $adminPassword)
+    if ($script:LogFile) { $redactedOutput | Add-Content -Path $script:LogFile }
     if (-not $r.Success) {
-        Write-ExakitLog "ERROR_DETAIL" "ALTER USER failed with exit code $($r.ExitCode): $($r.Output)"
+        Write-ExakitLog "ERROR_DETAIL" "ALTER USER failed with exit code $($r.ExitCode): $redactedOutput"
         Write-Host "  ! ALTER USER error details:" -ForegroundColor Red
-        Write-Host "$($r.Output)" -ForegroundColor Red
+        Write-Host "$redactedOutput" -ForegroundColor Red
         Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
         Fail "Could not refresh the MCP read-only database password."
     }
@@ -586,7 +605,7 @@ function Invoke-McpOperationCli {
     if ($Operation -in @("validate", "repair", "doctor")) {
         try { Set-McpReadonlyAccess } catch { return $null }
     }
-    $args = @($Operation, "--runtime-root", $script:ExakitHome)
+    $args = @("run-runtime-operation", $Operation, "--runtime-root", $script:ExakitHome)
     if ($SnapshotId) { $args += @("--snapshot-id", $SnapshotId) }
     $args += "--clients"
     $args += $Clients
