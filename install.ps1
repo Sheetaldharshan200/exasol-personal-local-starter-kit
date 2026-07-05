@@ -84,11 +84,14 @@ if ($env:EXAKIT_DRY_RUN -eq "1") {
     Write-Host "    Inspect the scripts under $KitDir, then run:"
     Write-Host "      powershell -File `"$KitDir\setup\setup-windows-docker.ps1`""
     Write-Host ""
-    exit 0
+    return
 }
 
 # --- 4. hand off -----------------------------------------------------------------
 Write-Host "==> Starting setup: setup\setup-windows-docker.ps1" -ForegroundColor Blue
 Write-Host ""
 & powershell -ExecutionPolicy Bypass -File (Join-Path $KitDir "setup\setup-windows-docker.ps1")
-exit $LASTEXITCODE
+$setupExitCode = $LASTEXITCODE
+if ($setupExitCode -ne 0) {
+    throw "Setup failed with exit code $setupExitCode."
+}
