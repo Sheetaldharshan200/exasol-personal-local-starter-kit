@@ -39,6 +39,16 @@ function Test-ExapumpSucceeded {
     return $false
 }
 
+# Write-ExapumpOutput - print captured exapump output indented under a header,
+# skipping empty output. Centralizes the "yellow header + indented lines" block
+# that several loaders used to inline so the presentation stays consistent.
+function Write-ExapumpOutput {
+    param([AllowEmptyString()][string]$Output, [string]$Header = "exapump output:")
+    if (-not "$Output".Trim()) { return }
+    Write-Host "  $Header" -ForegroundColor Yellow
+    "$Output".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
+}
+
 # Invoke-Exapump - run one exapump invocation, capturing combined output and
 # the (unreliable-on-Windows) exit code, and return a structured result whose
 # .Success is computed by Test-ExapumpSucceeded. Every exapump call site goes
@@ -254,16 +264,32 @@ function Test-ExapumpConnection {
     # exapump/database error text (auth failure vs. connection refused vs.
     # TLS handshake error) is exactly what's needed to diagnose this, and
     # making someone go dig through a log file for it is not production-grade.
-    if ($lastOutput.Trim()) {
-        Write-Host "  Last attempt's output:" -ForegroundColor Yellow
-        $lastOutput.Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
-    }
+    Write-ExapumpOutput -Output $lastOutput -Header "Last attempt's output:"
     Fail "SELECT 1 failed through profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
 }
 
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.
 # Returns $true/$false instead of dying so callers (Invoke-ExakitSampleDataLoad)
 # can decide whether a missing/empty file is fatal.
+# Invoke-ExapumpSqlFileCapture <file> - pipe a SQL file to exapump and return a
+# structured result ({ Output; ExitCode; Success }) matching Invoke-Exapump's
+# shape, logging the invocation. Shared by Invoke-ExapumpSqlFile (needs only
+# pass/fail) and the sample-data verification step (also scans output for FAIL
+# rows), so the stdin-pipe + quirk-aware success detection lives in one place.
+function Invoke-ExapumpSqlFileCapture {
+    param([Parameter(Mandatory)][string]$Path)
+    $out = ""
+    $code = 1
+    try {
+        $out = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } catch {
+        $out = "$_"
+    }
+    if ($script:LogFile) { "exapump sql -p $($script:ExapumpProfile) < $Path" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
+    return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
+}
+
 function Invoke-ExapumpSqlFile {
     param([Parameter(Mandatory)][string]$Path, [string]$Description = "")
     if (-not $Description) { $Description = Split-Path $Path -Leaf }
@@ -272,20 +298,9 @@ function Invoke-ExapumpSqlFile {
         return $false
     }
     Info "Running $Description"
-    $exitCode = 1
-    $sqlOut = ""
-    try {
-        $sqlOut = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
-        $exitCode = $LASTEXITCODE
-    } catch {
-        $sqlOut = "$_"
-    }
-    if ($script:LogFile) { $sqlOut | Add-Content -Path $script:LogFile }
-    if (-not (Test-ExapumpSucceeded -ExitCode $exitCode -Output $sqlOut)) {
-        if ("$sqlOut".Trim()) {
-            Write-Host "  exapump output:" -ForegroundColor Yellow
-            "$sqlOut".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
-        }
+    $result = Invoke-ExapumpSqlFileCapture $Path
+    if (-not $result.Success) {
+        Write-ExapumpOutput -Output $result.Output
         Fail "SQL file failed: $Path (see log)"
     }
     Ok "$Description done"
@@ -302,10 +317,7 @@ function Invoke-ExapumpUpload {
     Info "Loading $(Split-Path $Path -Leaf) into $Target"
     $result = Invoke-Exapump @("upload", $Path, "--table", $Target, "-p", $script:ExapumpProfile)
     if (-not $result.Success) {
-        if ("$($result.Output)".Trim()) {
-            Write-Host "  exapump output:" -ForegroundColor Yellow
-            "$($result.Output)".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
-        }
+        Write-ExapumpOutput -Output $result.Output
         Fail "Upload failed: $Path -> $Target (see log)"
     }
     Ok "$(Split-Path $Path -Leaf) loaded"
@@ -576,20 +588,12 @@ function Invoke-ExakitSampleDataLoad {
     $verifySql = Join-Path $KitRoot "sql\03_verify_setup.sql"
     if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
         Info "Verification (03_verify_setup.sql):"
-        $verifyStatus = 1
-        $verifyOut = ""
-        try {
-            $verifyOut = Get-Content $verifySql -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
-            $verifyStatus = $LASTEXITCODE
-        } catch {
-            $verifyOut = "$_"
-        }
-        "$verifyOut".Trim() -split "`n" | ForEach-Object { Write-Host $_ }
-        if ($script:LogFile) { $verifyOut | Add-Content -Path $script:LogFile }
+        $verify = Invoke-ExapumpSqlFileCapture $verifySql
+        "$($verify.Output)".Trim() -split "`n" | ForEach-Object { Write-Host $_ }
         # Two independent conditions: the query itself must have run (exapump
         # success, exit-code-quirk-aware), AND no verification check may have
         # emitted a STATUS = 'FAIL' row.
-        if ((-not (Test-ExapumpSucceeded -ExitCode $verifyStatus -Output $verifyOut)) -or ("$verifyOut" -match "(?im)\bFAIL\b")) {
+        if ((-not $verify.Success) -or ("$($verify.Output)" -match "(?im)\bFAIL\b")) {
             Fail "Verification failed (query error or a FAIL row) - see $script:LogFile. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
         }
     }

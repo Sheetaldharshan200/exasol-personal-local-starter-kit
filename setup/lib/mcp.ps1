@@ -232,6 +232,27 @@ function Invoke-ExapumpAdminSql {
     }
 }
 
+# Assert-ExapumpResult - log an exapump admin-SQL result and abort (Fail) if it
+# did not succeed. Collapses the repeated "log ERROR_DETAIL + red Write-Host +
+# Fail" block that followed every admin SQL step. Pass -Secrets to redact
+# credentials from the output before it is logged or printed.
+function Assert-ExapumpResult {
+    param(
+        [Parameter(Mandatory)][hashtable]$Result,
+        [Parameter(Mandatory)][string]$Label,
+        [Parameter(Mandatory)][string]$FailMessage,
+        [string[]]$Secrets = @()
+    )
+    $text = if ($Secrets.Count) { ConvertTo-McpRedactedText -Text $Result.Output -Secrets $Secrets } else { $Result.Output }
+    if ($script:LogFile) { $text | Add-Content -Path $script:LogFile }
+    if (-not $Result.Success) {
+        Write-ExakitLog "ERROR_DETAIL" "$Label failed with exit code $($Result.ExitCode): $text"
+        Write-Host "  ! $Label error details:" -ForegroundColor Red
+        Write-Host "$text" -ForegroundColor Red
+        Fail $FailMessage
+    }
+}
+
 function Test-ExapumpSqlHasToken {
     param([Parameter(Mandatory)][string]$ConfigPath, [Parameter(Mandatory)][string]$Profile, [Parameter(Mandatory)][string]$Sql, [Parameter(Mandatory)][string]$Token)
     $result = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile $Profile -Sql $Sql
@@ -350,120 +371,77 @@ function Set-McpReadonlyAccess {
     if (-not (Test-ExakitIdentifier $identifierUser)) { Fail "Invalid EXAKIT_MCP_READONLY_USER: $readonlyUser" }
 
     $tempConfig = Join-Path ([System.IO.Path]::GetTempPath()) "exakit-exapump-$([guid]::NewGuid().ToString('N')).toml"
-    Set-ExapumpTomlSection -ConfigPath $tempConfig -Profile "admin" -Host_ $dbHost -Port $dbPort -User $runtimeUser -Password $adminPassword
-    Set-ExapumpTomlSection -ConfigPath $tempConfig -Profile "mcp_readonly" -Host_ $dbHost -Port $dbPort -User $readonlyUser -Password $readonlyPassword -Schema $defaultSchemaUc
+    # try/finally guarantees the credential-bearing temp TOML is deleted on
+    # every exit path - success, a thrown Fail, or any other exception - so no
+    # individual step has to remember to clean it up.
+    try {
+        Set-ExapumpTomlSection -ConfigPath $tempConfig -Profile "admin" -Host_ $dbHost -Port $dbPort -User $runtimeUser -Password $adminPassword
+        Set-ExapumpTomlSection -ConfigPath $tempConfig -Profile "mcp_readonly" -Host_ $dbHost -Port $dbPort -User $readonlyUser -Password $readonlyPassword -Schema $defaultSchemaUc
 
-    # Verify the TOML config was created and is readable
-    if (-not (Test-Path $tempConfig)) {
-        Fail "Failed to create temporary exapump configuration file: $tempConfig"
-    }
-    Write-ExakitLog "DEBUG" "TOML config created at: $tempConfig"
-    if ($script:LogFile) {
-        Write-ExakitLog "DEBUG" "TOML config contents (passwords redacted):"
-        $redactedConfig = (Get-Content $tempConfig -Raw) -replace '(?m)^(password\s*=\s*").*(")\s*$', '$1<redacted>$2'
-        $redactedConfig | Add-Content -Path $script:LogFile
-    }
-
-    # Test basic connectivity before attempting user creation
-    Info "Testing database connectivity with admin user"
-    $connTestResult = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "SELECT 1 AS connection_test"
-    if (-not $connTestResult.Success) {
-        Write-ExakitLog "ERROR_DETAIL" "Database connection test failed: $($connTestResult.Output)"
-        Write-Host "  ! Database connection test failed:" -ForegroundColor Red
-        Write-Host "$($connTestResult.Output)" -ForegroundColor Red
-        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-        Fail "Cannot connect to database with admin credentials. Check database status and credentials."
-    }
-    Ok "Database connection successful"
-
-    $identifierLit = ConvertTo-SqlLiteral $identifierUser
-    if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$identifierLit') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" "EXAKIT_MCP_USER_PRESENT")) {
-        Info "Creating the dedicated MCP read-only database user ($readonlyUser)"
-        $createUserSql = "CREATE USER $identifierUser IDENTIFIED BY $readonlyPassword"
-        Write-ExakitLog "SQL" "CREATE USER $identifierUser IDENTIFIED BY <redacted>"
-        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql $createUserSql
-        $redactedOutput = ConvertTo-McpRedactedText -Text $r.Output -Secrets @($readonlyPassword, $adminPassword)
-        if ($script:LogFile) { $redactedOutput | Add-Content -Path $script:LogFile }
-        if (-not $r.Success) {
-            Write-ExakitLog "ERROR_DETAIL" "CREATE USER failed with exit code $($r.ExitCode): $redactedOutput"
-            Write-Host "  ! CREATE USER error details:" -ForegroundColor Red
-            Write-Host "$redactedOutput" -ForegroundColor Red
-            Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-            Fail "Could not create the MCP read-only database user."
+        # Verify the TOML config was created and is readable
+        if (-not (Test-Path $tempConfig)) {
+            Fail "Failed to create temporary exapump configuration file: $tempConfig"
         }
-    }
+        Write-ExakitLog "DEBUG" "TOML config created at: $tempConfig"
+        if ($script:LogFile) {
+            Write-ExakitLog "DEBUG" "TOML config contents (passwords redacted):"
+            $redactedConfig = (Get-Content $tempConfig -Raw) -replace '(?m)^(password\s*=\s*").*(")\s*$', '$1<redacted>$2'
+            $redactedConfig | Add-Content -Path $script:LogFile
+        }
 
-    $alterUserSql = "ALTER USER $identifierUser IDENTIFIED BY $readonlyPassword"
-    Write-ExakitLog "SQL" "ALTER USER $identifierUser IDENTIFIED BY <redacted>"
-    $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql $alterUserSql
-    $redactedOutput = ConvertTo-McpRedactedText -Text $r.Output -Secrets @($readonlyPassword, $adminPassword)
-    if ($script:LogFile) { $redactedOutput | Add-Content -Path $script:LogFile }
-    if (-not $r.Success) {
-        Write-ExakitLog "ERROR_DETAIL" "ALTER USER failed with exit code $($r.ExitCode): $redactedOutput"
-        Write-Host "  ! ALTER USER error details:" -ForegroundColor Red
-        Write-Host "$redactedOutput" -ForegroundColor Red
-        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-        Fail "Could not refresh the MCP read-only database password."
-    }
+        # Test basic connectivity before attempting user creation
+        Info "Testing database connectivity with admin user"
+        $connTestResult = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "SELECT 1 AS connection_test"
+        Assert-ExapumpResult -Result $connTestResult -Label "Database connection test" -FailMessage "Cannot connect to database with admin credentials. Check database status and credentials."
+        Ok "Database connection successful"
 
-    $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT CREATE SESSION TO $identifierUser"
-    if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-    if (-not $r.Success) {
-        Write-ExakitLog "ERROR_DETAIL" "GRANT CREATE SESSION failed with exit code $($r.ExitCode): $($r.Output)"
-        Write-Host "  ! GRANT CREATE SESSION error details:" -ForegroundColor Red
-        Write-Host "$($r.Output)" -ForegroundColor Red
-        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-        Fail "Could not grant CREATE SESSION to the MCP read-only database user."
-    }
+        $identifierLit = ConvertTo-SqlLiteral $identifierUser
+        if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$identifierLit') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" "EXAKIT_MCP_USER_PRESENT")) {
+            Info "Creating the dedicated MCP read-only database user ($readonlyUser)"
+            Write-ExakitLog "SQL" "CREATE USER $identifierUser IDENTIFIED BY <redacted>"
+            $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE USER $identifierUser IDENTIFIED BY $readonlyPassword"
+            Assert-ExapumpResult -Result $r -Label "CREATE USER" -FailMessage "Could not create the MCP read-only database user." -Secrets @($readonlyPassword, $adminPassword)
+        }
 
-    $schemaTokens = @($readonlySchemas -split '[,\s]+' | Where-Object { $_ })
-    foreach ($schema in $schemaTokens) {
-        $schemaUc = ConvertTo-UpperInvariantString $schema
-        if (-not (Test-ExakitIdentifier $schemaUc)) { Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue; Fail "Invalid MCP schema name: $schema" }
-        $schemaLit = ConvertTo-SqlLiteral $schemaUc
-        if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaLit') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" "EXAKIT_SCHEMA_PRESENT")) {
-            Info "Creating starter schema $schemaUc for MCP-safe querying"
-            $createSchemaSql = "CREATE SCHEMA $schemaUc"
-            Write-ExakitLog "SQL" $createSchemaSql
-            $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql $createSchemaSql
-            if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-            if (-not $r.Success) {
-                Write-ExakitLog "ERROR_DETAIL" "CREATE SCHEMA failed with exit code $($r.ExitCode): $($r.Output)"
-                Write-Host "  ! CREATE SCHEMA $schemaUc error details:" -ForegroundColor Red
-                Write-Host "$($r.Output)" -ForegroundColor Red
-                Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-                Fail "Could not create schema $schemaUc for MCP access."
+        Write-ExakitLog "SQL" "ALTER USER $identifierUser IDENTIFIED BY <redacted>"
+        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "ALTER USER $identifierUser IDENTIFIED BY $readonlyPassword"
+        Assert-ExapumpResult -Result $r -Label "ALTER USER" -FailMessage "Could not refresh the MCP read-only database password." -Secrets @($readonlyPassword, $adminPassword)
+
+        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT CREATE SESSION TO $identifierUser"
+        Assert-ExapumpResult -Result $r -Label "GRANT CREATE SESSION" -FailMessage "Could not grant CREATE SESSION to the MCP read-only database user."
+
+        $schemaTokens = @($readonlySchemas -split '[,\s]+' | Where-Object { $_ })
+        foreach ($schema in $schemaTokens) {
+            $schemaUc = ConvertTo-UpperInvariantString $schema
+            if (-not (Test-ExakitIdentifier $schemaUc)) { Fail "Invalid MCP schema name: $schema" }
+            $schemaLit = ConvertTo-SqlLiteral $schemaUc
+            if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaLit') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" "EXAKIT_SCHEMA_PRESENT")) {
+                Info "Creating starter schema $schemaUc for MCP-safe querying"
+                Write-ExakitLog "SQL" "CREATE SCHEMA $schemaUc"
+                $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE SCHEMA $schemaUc"
+                Assert-ExapumpResult -Result $r -Label "CREATE SCHEMA $schemaUc" -FailMessage "Could not create schema $schemaUc for MCP access."
             }
+            Write-ExakitLog "SQL" "GRANT SELECT ON SCHEMA $schemaUc TO $identifierUser"
+            $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT SELECT ON SCHEMA $schemaUc TO $identifierUser"
+            Assert-ExapumpResult -Result $r -Label "GRANT SELECT ON SCHEMA $schemaUc" -FailMessage "Could not grant read-only access on schema $schemaUc."
         }
-        $grantSelectSql = "GRANT SELECT ON SCHEMA $schemaUc TO $identifierUser"
-        Write-ExakitLog "SQL" $grantSelectSql
-        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql $grantSelectSql
-        if ($script:LogFile) { $r.Output | Add-Content -Path $script:LogFile }
-        if (-not $r.Success) {
-            Write-ExakitLog "ERROR_DETAIL" "GRANT SELECT failed with exit code $($r.ExitCode): $($r.Output)"
-            Write-Host "  ! GRANT SELECT ON SCHEMA $schemaUc error details:" -ForegroundColor Red
-            Write-Host "$($r.Output)" -ForegroundColor Red
-            Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-            Fail "Could not grant read-only access on schema $schemaUc."
+
+        Info "Validating dedicated MCP read-only login"
+        if (-not (Test-ExapumpSqlHasToken $tempConfig "mcp_readonly" "SELECT CURRENT_USER AS EXAKIT_CURRENT_USER" $identifierUser)) {
+            Fail "The MCP read-only user could not log in with the generated credentials."
         }
-    }
+        if (-not (Test-ExapumpSqlHasToken $tempConfig "mcp_readonly" "SELECT 'EXAKIT_MCP_READONLY_OK' AS STATUS" "EXAKIT_MCP_READONLY_OK")) {
+            Fail "The MCP read-only user did not pass the validation query."
+        }
+        Assert-McpReadonlyPosture -ConfigPath $tempConfig -ReadonlyUser $readonlyUser -Schemas $readonlySchemas
 
-    Info "Validating dedicated MCP read-only login"
-    if (-not (Test-ExapumpSqlHasToken $tempConfig "mcp_readonly" "SELECT CURRENT_USER AS EXAKIT_CURRENT_USER" $identifierUser)) {
+        Set-ExakitManifestValue "components.mcp_server.connection.user" $readonlyUser
+        Set-ExakitManifestValue "components.mcp_server.connection.password_file" (Join-Path $script:CredsDir "mcp_readonly_password")
+        Set-ExakitManifestValue "components.mcp_server.connection.schemas" $schemaTokens
+        Set-ExakitManifestValue "components.mcp_server.connection.validated" $true
+    } finally {
         Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-        Fail "The MCP read-only user could not log in with the generated credentials."
     }
-    if (-not (Test-ExapumpSqlHasToken $tempConfig "mcp_readonly" "SELECT 'EXAKIT_MCP_READONLY_OK' AS STATUS" "EXAKIT_MCP_READONLY_OK")) {
-        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
-        Fail "The MCP read-only user did not pass the validation query."
-    }
-    Assert-McpReadonlyPosture -ConfigPath $tempConfig -ReadonlyUser $readonlyUser -Schemas $readonlySchemas
-
-    Set-ExakitManifestValue "components.mcp_server.connection.user" $readonlyUser
-    Set-ExakitManifestValue "components.mcp_server.connection.password_file" (Join-Path $script:CredsDir "mcp_readonly_password")
-    Set-ExakitManifestValue "components.mcp_server.connection.schemas" $schemaTokens
-    Set-ExakitManifestValue "components.mcp_server.connection.validated" $true
-    Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
     Ok "Dedicated MCP read-only access is configured and validated"
 }
 
@@ -498,13 +476,13 @@ function Confirm-McpReadonlyPosture {
     Info "Re-checking MCP read-only grant posture against the database"
     try {
         Assert-McpReadonlyPosture -ConfigPath $tempConfig -ReadonlyUser $readonlyUser -Schemas $schemasCsv
-        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
         Ok "MCP read-only grant posture is still correct"
         return $true
     } catch {
-        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
         Warn2 "MCP read-only grant posture has drifted from least-privilege (see log). Run 'exakit mcp-repair' or review grants manually."
         return $false
+    } finally {
+        Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
     }
 }
 
