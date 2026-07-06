@@ -120,6 +120,39 @@ nano_ready_in_logs() {
     esac
 }
 
+# nano_has_first_deploy_args — the container was created with the
+# first-deploy-only 'init sys_password_file=...' arguments. Nano refuses to
+# boot with them once /exa is initialized, so such a container cannot simply
+# be restarted — it must be recreated without them (the data volume carries
+# the database and its password forward).
+nano_has_first_deploy_args() {
+    "$(nano_engine)" container inspect -f '{{join .Config.Cmd " "}}' "$EXAKIT_NANO_CONTAINER" 2>/dev/null | \
+        grep -q "sys_password_file"
+}
+
+# nano_start_existing — bring a stopped container back up, recreating it
+# first when it still carries the single-use first-deploy arguments.
+nano_start_existing() {
+    _engine="$(nano_engine)"
+    if nano_has_first_deploy_args; then
+        _image="$("$_engine" container inspect -f '{{.Config.Image}}' "$EXAKIT_NANO_CONTAINER" 2>/dev/null)"
+        [ -n "$_image" ] || _image="$(nano_image_ref)"
+        info "Recreating the Nano container (first-deploy options are single-use; the data volume is kept)"
+        run_logged "$_engine" rm -f "$EXAKIT_NANO_CONTAINER" || die "Could not replace the old container (see log)"
+        run_logged "$_engine" run -d \
+            --name "$EXAKIT_NANO_CONTAINER" \
+            --shm-size=512mb \
+            --pids-limit=-1 \
+            -p "127.0.0.1:${EXAKIT_DB_PORT}:8563" \
+            -v "${EXAKIT_NANO_VOLUME}:/exa" \
+            "$_image" || die "Container failed to start (see log)"
+    else
+        run_logged "$_engine" start "$EXAKIT_NANO_CONTAINER" || \
+            die "Could not start existing container $EXAKIT_NANO_CONTAINER (see log)"
+    fi
+    nano_wait_ready
+}
+
 # nano_install — pull the pinned image and start the container (first run
 # deploys the database with a generated SYS password). Idempotent.
 nano_install() {
@@ -134,9 +167,7 @@ nano_install() {
 
     if nano_container_exists && ! nano_container_running; then
         info "Found existing Nano container — starting it"
-        run_logged "$_engine" start "$EXAKIT_NANO_CONTAINER" || \
-            die "Could not start existing container $EXAKIT_NANO_CONTAINER (see log)"
-        nano_wait_ready
+        nano_start_existing
         nano_record_manifest
         return 0
     fi
@@ -253,8 +284,7 @@ nano_start() {
         ok "Nano container is already running"
         return 0
     fi
-    run_logged "$(nano_engine)" start "$EXAKIT_NANO_CONTAINER" || die "Failed to start container"
-    nano_wait_ready
+    nano_start_existing
     ok "Nano started"
 }
 
