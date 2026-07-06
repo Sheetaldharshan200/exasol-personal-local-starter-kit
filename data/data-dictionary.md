@@ -6,14 +6,11 @@ Reference for every table and column in this folder. Use it to write correct SQL
 **Notes on the files**
 - CSV, comma-delimited, one header row, standard TPC-H lowercase column names.
 - Fields containing a comma are double-quoted (e.g. `"Customer#000000001"`, comment text).
-- CSV itself is untyped text; the *logical* types below are exactly what
-  [`sql/01_create_schema.sql`](../sql/01_create_schema.sql) declares. Money is `DECIMAL(15,2)`,
+- CSV itself is untyped text; the *logical* types below are what the columns represent
+  (and what `sql/01_create_schema.sql` should declare when defined). Money is `DECIMAL(15,2)`,
   dates are `DATE` (`YYYY-MM-DD`).
 - Loaded by `setup/load-data.sh` into schema `STARTER_KIT`, one table per file
-  (`lineitem.csv` → `STARTER_KIT.LINEITEM`), using
-  [`sql/01_create_schema.sql`](../sql/01_create_schema.sql) to create the tables and
-  [`sql/03_verify_setup.sql`](../sql/03_verify_setup.sql) to check row counts and
-  referential integrity after the load.
+  (`lineitem.csv` → `STARTER_KIT.LINEITEM`).
 
 ## Relationships & keys
 

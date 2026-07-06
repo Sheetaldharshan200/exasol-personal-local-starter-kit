@@ -37,7 +37,7 @@ $script:McpReadonlySchemas = if ($env:EXAKIT_MCP_READONLY_SCHEMAS) { $env:EXAKIT
 # Pinned component versions (override via environment)
 # ---------------------------------------------------------------------------
 $script:NanoImage       = "exasol/nano"
-$script:NanoTag         = if ($env:EXAKIT_NANO_TAG) { $env:EXAKIT_NANO_TAG } else { "latest" }
+$script:NanoTag         = if ($env:EXAKIT_NANO_TAG) { $env:EXAKIT_NANO_TAG } else { "2026.2.0-nano.2" }
 $script:ExapumpVersion  = if ($env:EXAKIT_EXAPUMP_VERSION) { $env:EXAKIT_EXAPUMP_VERSION } else { "0.11.2" }
 $script:ExapumpRepo     = "exasol-labs/exapump"
 $script:McpPackage      = if ($env:EXAKIT_MCP_PACKAGE) { $env:EXAKIT_MCP_PACKAGE } else { "exasol-mcp-server" }
@@ -373,11 +373,22 @@ function Get-ExakitFile {
     param([Parameter(Mandatory)][string]$Url, [Parameter(Mandatory)][string]$Dest)
     New-Item -ItemType Directory -Force -Path (Split-Path $Dest -Parent) | Out-Null
     Write-ExakitLog "GET" "$Url -> $Dest"
-    try {
-        Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
-    } catch {
-        Remove-Item -Force $Dest -ErrorAction SilentlyContinue
-        Fail "Download failed: $Url ($_)"
+    # Retry transient failures, mirroring the bash side's curl --retry 3
+    # --connect-timeout policy: one network blip must not abort the install.
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing -TimeoutSec 120
+            break
+        } catch {
+            Remove-Item -Force $Dest -ErrorAction SilentlyContinue
+            if ($attempt -ge 3) {
+                Fail "Download failed after $attempt attempts: $Url ($_)"
+            }
+            Warn2 "Download attempt $attempt failed - retrying in $(5 * $attempt)s"
+            Start-Sleep -Seconds (5 * $attempt)
+        }
     }
 }
 

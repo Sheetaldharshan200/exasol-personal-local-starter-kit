@@ -29,7 +29,7 @@ EXAKIT_MCP_READONLY_SCHEMAS="${EXAKIT_MCP_READONLY_SCHEMAS:-STARTER_KIT}"
 # Pinned component versions (override via environment)
 # ---------------------------------------------------------------------------
 EXAKIT_PERSONAL_VERSION="${EXAKIT_PERSONAL_VERSION:-2.0.0-rc4}"
-EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-latest}"
+EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-2026.2.0-nano.2}"
 EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-0.11.2}"
 EXAKIT_MCP_PACKAGE="${EXAKIT_MCP_PACKAGE:-exasol-mcp-server}"
 EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-1.10.1}"

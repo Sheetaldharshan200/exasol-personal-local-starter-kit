@@ -5,7 +5,7 @@ Goal: a local Exasol database on your machine, an AI assistant connected to it, 
 ## 1. Check your machine (optional, 10 seconds)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
 All ✓? Continue. Any ✗ tells you exactly what to fix.
@@ -15,16 +15,16 @@ All ✓? Continue. Any ✗ tells you exactly what to fix.
 **macOS / Linux / WSL:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment takes 10–20 minutes (one-time); container platforms are up in a few minutes. The `exakit`/`exapump` commands below work the same way on native Windows PowerShell as on macOS/Linux/WSL (see the [Windows Docker quickstart](quickstarts/windows-docker.md) for Windows-specific notes).
+What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment takes 10–20 minutes (one-time); container platforms are up in a few minutes. The `exakit`/`exapump` commands below work the same way on native Windows PowerShell as on macOS/Linux/WSL — except Windows-on-ARM, which gets the database container only (see the [Windows Docker quickstart](quickstarts/windows-docker.md) for Windows-specific notes).
 
 > Prefer to read the scripts first? Add `EXAKIT_DRY_RUN=1` before `sh` — the kit is downloaded to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup script yourself.
 

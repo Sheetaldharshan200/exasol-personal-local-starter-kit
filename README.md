@@ -16,7 +16,7 @@
 [![Quickstart](https://img.shields.io/badge/first%20AI%20query-~15%20minutes-orange)](QUICKSTART.md)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 </div>
@@ -54,7 +54,7 @@ At the end you get your connection details on screen, a managed runtime state un
 Not sure? This checks everything and installs **nothing**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
 Every ✗ tells you exactly what to fix.
@@ -63,15 +63,15 @@ Every ✗ tells you exactly what to fix.
 
 **macOS / Linux / WSL**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 ```powershell
-irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, and MCP server, the same on native Windows PowerShell as on macOS/Linux/WSL. On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, and MCP server, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
@@ -102,7 +102,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 
-Prefer your own data? Run `exakit data-load` for a guided load-and-verify menu covering local CSV/text files, remote CSV/text URLs, import SQL from another database or Exasol, direct Exapump commands, and SQL scripts. By default it loads the bundled `data/` folder into `STARTER_KIT`; file loads verify row counts before returning.
+Prefer your own data? `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit` and ask about that instead.
 
 ### Day-to-day
 

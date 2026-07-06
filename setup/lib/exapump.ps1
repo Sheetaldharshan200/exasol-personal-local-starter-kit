@@ -345,7 +345,9 @@ function Get-ExakitTableName {
     param([Parameter(Mandatory)][string]$Path)
     $base = (Split-Path $Path -Leaf) -replace '\?.*$', ''
     $base = [System.IO.Path]::GetFileNameWithoutExtension($base)
-    $table = (ConvertTo-UpperInvariantString $base -replace '[^A-Z0-9_]', '_')
+    # Parentheses required: without them "-replace" binds as a parameter of
+    # ConvertTo-UpperInvariantString instead of acting as the operator.
+    $table = ((ConvertTo-UpperInvariantString $base) -replace '[^A-Z0-9_]', '_')
     $table = ($table -replace '^_+', '') -replace '_+$', ''
     $table = $table -replace '_{2,}', '_'
     if (-not $table) { return "MY_TABLE" }

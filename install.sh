@@ -1,7 +1,7 @@
 #!/bin/sh
 # install.sh — Exasol Personal Local Starter Kit, one-command installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 #
 # What it does, in order:
 #   1. detects your OS and hardware
@@ -29,7 +29,7 @@ set -u
 
 main() {
     EXAKIT_HOME="${EXAKIT_HOME:-$HOME/.exasol-starter-kit}"
-    EXAKIT_REPO="${EXAKIT_REPO:-Sheetaldharshan200/exasol-personal-local-starter-kit}"
+    EXAKIT_REPO="${EXAKIT_REPO:-ranjanm-chn/exasol-personal-local-starter-kit}"
     EXAKIT_REF="${EXAKIT_REF:-main}"
     kit_dir="$EXAKIT_HOME/kit"
 
