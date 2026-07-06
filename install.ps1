@@ -1,6 +1,6 @@
 # install.ps1 - Exasol Personal Local Starter Kit, one-command installer (Windows).
 #
-#   irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 #
 # IMPORTANT: this file must NOT have a UTF-8 BOM. It is only ever executed
 # via `irm | iex` (as a fetched string, never read from disk with -File), and
@@ -32,7 +32,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $ExakitHome = if ($env:EXAKIT_HOME) { $env:EXAKIT_HOME } else { Join-Path $HOME ".exasol-starter-kit" }
-$Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "Sheetaldharshan200/exasol-personal-local-starter-kit" }
+$Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "ranjanm-chn/exasol-personal-local-starter-kit" }
 $Ref        = if ($env:EXAKIT_REF)  { $env:EXAKIT_REF }  else { "main" }
 $KitDir     = Join-Path $ExakitHome "kit"
 

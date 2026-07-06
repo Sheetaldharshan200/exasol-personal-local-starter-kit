@@ -16,7 +16,7 @@
 [![Quickstart](https://img.shields.io/badge/first%20AI%20query-~15%20minutes-orange)](QUICKSTART.md)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 </div>
@@ -54,7 +54,7 @@ At the end you get your connection details on screen, a managed runtime state un
 Not sure? This checks everything and installs **nothing**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
 Every ✗ tells you exactly what to fix.
@@ -63,12 +63,12 @@ Every ✗ tells you exactly what to fix.
 
 **macOS / Linux / WSL**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 ```powershell
-irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
 The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, and MCP server, the same on native Windows PowerShell as on macOS/Linux/WSL. On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.

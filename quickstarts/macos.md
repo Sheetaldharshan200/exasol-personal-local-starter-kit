@@ -11,7 +11,7 @@ Gets you from a bare Mac to a local Exasol database with an AI assistant connect
 Check before you start (installs nothing):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | EXAKIT_PREFLIGHT=1 sh
 ```
 
 If `python3` is missing, that's fine: the installer can bootstrap its own managed Python runtime automatically.
@@ -19,7 +19,7 @@ If `python3` is missing, that's fine: the installer can bootstrap its own manage
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
 What happens, in order:
