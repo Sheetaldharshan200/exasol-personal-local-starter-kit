@@ -329,15 +329,20 @@ function Invoke-ExapumpUpload {
 # "?" on failure) and the real load validation is 03_verify_setup.sql.
 function Get-ExapumpRowCount {
     param([Parameter(Mandatory)][string]$Target)
-    $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT COUNT(*) FROM $Target")
+    # Wrap the count in a unique delimited token (EXAKIT_RC[<n>]) so it can be
+    # recovered from exapump's output no matter how the value is laid out - grid
+    # vs compact, interactive TTY vs the piped, non-TTY install run. Scraping the
+    # bare number was unreliable: during install exapump prints only a
+    # "[1/1] ... 1 rows" status line, and the old digit-stripping fallback
+    # collapsed that to "111" for EVERY table (from "[1/1]" + the single row a
+    # COUNT(*) always returns). The token can't collide with that status line,
+    # and the echoed query literal ("EXAKIT_RC[' || ...") never forms
+    # "EXAKIT_RC[<digits>]", so only the actual result value matches.
+    $sql = "SELECT 'EXAKIT_RC[' || CAST(COUNT(*) AS VARCHAR(40)) || ']' AS EXAKIT_RC FROM $Target"
+    $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
     if (-not $result.Success) { return $null }
-    $lines = "$($result.Output)" -split "`n" | ForEach-Object { $_.Trim() }
-    # The result value prints as a line that is just the number; prefer that
-    # over exapump's "[1/1] ... N rows" progress line (which also has digits).
-    $pure = $lines | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
-    if ($pure) { return $pure }
-    $anyDigits = ($lines | Where-Object { $_ -match '\d' } | Select-Object -Last 1) -replace '[^0-9]', ''
-    if ($anyDigits) { return $anyDigits }
+    $m = [regex]::Match("$($result.Output)", 'EXAKIT_RC\[(\d+)\]')
+    if ($m.Success) { return $m.Groups[1].Value }
     return $null
 }
 

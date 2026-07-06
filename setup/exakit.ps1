@@ -22,6 +22,7 @@
 #   teardown [-Data]      remove the runtime; -Data also deletes database
 #                         content (Nano volume)
 #   logs                  print the path of the latest setup log
+#   catalog [search]      browse/search every exakit, exapump & exasol command
 #   help                  this text
 #
 # Installed to %USERPROFILE%\.local\bin by setup-windows-docker.ps1; also
@@ -163,6 +164,73 @@ function Invoke-CmdMcpRestore {
     if (-not (Invoke-McpRestore -SnapshotId $SnapshotId)) { Fail "Could not restore managed MCP configuration" }
 }
 
+function Invoke-CmdCatalog {
+    param([string]$Search = "")
+    $catalogPath = Join-Path $libDir "catalog.tsv"
+    if (-not (Test-Path $catalogPath)) { Fail "Catalog data not found: $catalogPath" }
+
+    # Let the box-drawing / bullet glyphs render on the Windows console, which
+    # defaults to a non-UTF-8 code page; restore the previous encoding after.
+    $prevEnc = [Console]::OutputEncoding
+    try {
+        try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+        $q = $Search.ToLowerInvariant()
+        $rule = "$([char]0x2501)" * 49   # heavy horizontal line
+
+        Write-Host ""
+        Write-Host "  $rule" -ForegroundColor Cyan
+        Write-Host "   $([char]0x25B8) EXASOL" -ForegroundColor Cyan -NoNewline
+        Write-Host "  $([char]0x00B7)  starter kit"
+        if ($q) {
+            Write-Host "     command catalog - results for `"$q`"" -ForegroundColor DarkGray
+        } else {
+            Write-Host "     command catalog $([char]0x00B7) exakit $([char]0x00B7) exapump $([char]0x00B7) exasol" -ForegroundColor DarkGray
+        }
+        Write-Host "  $rule" -ForegroundColor Cyan
+        Write-Host ""
+
+        $rows = Import-Csv -Path $catalogPath -Delimiter "`t"
+        $labels = [ordered]@{
+            exakit  = "exakit   - kit lifecycle & MCP management"
+            exapump = "exapump  - data loading CLI"
+            exasol  = "exasol   - database & AI (MCP) bridge"
+        }
+        $found = $false
+        foreach ($tool in $labels.Keys) {
+            $entries = @($rows | Where-Object {
+                $_.tool -eq $tool -and (
+                    -not $q -or "$($_.tool) $($_.command) $($_.options) $($_.description)".ToLowerInvariant().Contains($q)
+                )
+            })
+            if ($entries.Count -eq 0) { continue }
+            $found = $true
+            Write-Host "  $($labels[$tool])" -ForegroundColor Green
+            foreach ($e in $entries) {
+                $name = if ($tool -eq "exasol") { $e.command } else { "$tool $($e.command)" }
+                if ($e.options) {
+                    Write-Host "    $name " -ForegroundColor White -NoNewline
+                    Write-Host $e.options -ForegroundColor DarkGray
+                } else {
+                    Write-Host "    $name" -ForegroundColor White
+                }
+                Write-Host "        $($e.description)"
+            }
+            Write-Host ""
+        }
+
+        if (-not $found) {
+            Write-Host "  No commands match `"$q`".  Try: exakit catalog mcp" -ForegroundColor DarkGray
+            Write-Host ""
+            return
+        }
+        Write-Host "  Tip: " -ForegroundColor DarkGray -NoNewline
+        Write-Host "exakit catalog <search>   e.g. exakit catalog data $([char]0x00B7) exakit catalog mcp"
+    } finally {
+        try { [Console]::OutputEncoding = $prevEnc } catch { }
+    }
+}
+
 function Show-ExakitUsage {
     # Print every leading comment line (from line 2 on) up to the first
     # non-comment line - avoids a hard-coded line count going stale whenever
@@ -195,6 +263,7 @@ try {
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
         "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
         "logs"         { Invoke-CmdLogs }
+        "catalog"      { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }
         { $_ -in @("help", "-h", "--help") } { Show-ExakitUsage }
         default {
             Write-Host "exakit: unknown command '$Command'" -ForegroundColor Red

@@ -210,10 +210,17 @@ exapump_upload() {
     ok "$(basename "$1") loaded"
 }
 
-# exapump_count <schema.table> — row count (prints the number).
+# exapump_count <schema.table> — row count (prints the number, empty on failure).
+# Wrap the count in a unique delimited token (EXAKIT_RC[<n>]) and recover it with
+# a regex instead of scraping the last line for digits. The old "tail -1 |
+# tr -dc 0-9" collapsed exapump's "[1/1] ... 1 rows" status line to "111" for
+# every table in non-TTY installs (where exapump prints no separate value line).
+# The echoed query literal never forms "EXAKIT_RC[<digits>]", so only the real
+# result matches.
 exapump_count() {
-    "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" "SELECT COUNT(*) FROM $1" 2>/dev/null | \
-        tail -1 | tr -dc '0-9'
+    _sql="SELECT 'EXAKIT_RC[' || CAST(COUNT(*) AS VARCHAR(40)) || ']' AS EXAKIT_RC FROM $1"
+    "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" "$_sql" 2>/dev/null | \
+        grep -oE 'EXAKIT_RC\[[0-9]+\]' | head -1 | tr -dc '0-9'
 }
 
 exapump_record_manifest() {
