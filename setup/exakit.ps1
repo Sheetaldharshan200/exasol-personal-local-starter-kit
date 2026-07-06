@@ -263,7 +263,7 @@ try {
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
         "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
         "logs"         { Invoke-CmdLogs }
-        "catalog"      { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }
+        { $_ -in @("catalog", "catlog") } { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }
         { $_ -in @("help", "-h", "--help") } { Show-ExakitUsage }
         default {
             Write-Host "exakit: unknown command '$Command'" -ForegroundColor Red

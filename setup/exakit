@@ -207,7 +207,11 @@ cmd_skills_install() {
 }
 
 usage() {
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    # Print the leading comment block (from line 2) up to the first non-comment
+    # line — no hardcoded range, so new command lines (catalog, skills-install,
+    # …) always appear instead of being silently truncated. Mirrors the
+    # PowerShell Show-ExakitUsage behavior.
+    awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"
 }
 
 # cmd_catalog [search] — render the searchable command catalog from the shared
@@ -291,7 +295,7 @@ case "${1:-help}" in
     skills-install) cmd_skills_install ;;
     teardown) shift; cmd_teardown "${1:-}" ;;
     logs)     cmd_logs ;;
-    catalog)  shift; cmd_catalog "${1:-}" ;;
+    catalog|catlog)  shift; cmd_catalog "${1:-}" ;;
     help|-h|--help) usage ;;
     *) echo "exakit: unknown command '${1}'" >&2; usage >&2; exit 2 ;;
 esac
