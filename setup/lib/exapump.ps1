@@ -39,6 +39,16 @@ function Test-ExapumpSucceeded {
     return $false
 }
 
+# Write-ExapumpOutput - print captured exapump output indented under a header,
+# skipping empty output. Centralizes the "yellow header + indented lines" block
+# that several loaders used to inline so the presentation stays consistent.
+function Write-ExapumpOutput {
+    param([AllowEmptyString()][string]$Output, [string]$Header = "exapump output:")
+    if (-not "$Output".Trim()) { return }
+    Write-Host "  $Header" -ForegroundColor Yellow
+    "$Output".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
+}
+
 # Invoke-Exapump - run one exapump invocation, capturing combined output and
 # the (unreliable-on-Windows) exit code, and return a structured result whose
 # .Success is computed by Test-ExapumpSucceeded. Every exapump call site goes
@@ -174,6 +184,16 @@ function New-ExapumpProfile {
         return
     }
 
+    # If the runtime password wasn't already on file (mirrors exapump.sh: an
+    # adopted deployment with unreadable secrets, so the password came from the
+    # prompt above), remember it so Test-ExapumpConnection can persist it AFTER
+    # confirming it works. The MCP step needs runtime.password_file, but saving
+    # a mistyped password before validation would make the next run reuse it
+    # instead of re-prompting.
+    if (-not $pwFile -or -not (Test-Path $pwFile)) {
+        $script:PendingRuntimePassword = $password
+    }
+
     New-Item -ItemType Directory -Force -Path (Split-Path $script:ExapumpConfigPath -Parent) | Out-Null
     Set-ExapumpTomlSection -ConfigPath $script:ExapumpConfigPath -Profile $script:ExapumpProfile -Host_ $host_ -Port $port -User $user -Password $password
     Protect-ExakitFile $script:ExapumpConfigPath
@@ -246,6 +266,14 @@ function Test-ExapumpConnection {
         if ($result.Success) {
             Ok "Connection works"
             Set-ExakitManifestValue "components.exapump.validated" $true
+            # Now that the password is proven to work, persist it as the runtime
+            # password if the runtime step could not (adopted deployment with
+            # unreadable secrets) - the MCP step needs runtime.password_file.
+            if ($script:PendingRuntimePassword) {
+                Set-ExakitCredential "runtime_sys_password" $script:PendingRuntimePassword
+                Set-ExakitManifestValue "runtime.password_file" (Join-Path $script:CredsDir "runtime_sys_password")
+                $script:PendingRuntimePassword = $null
+            }
             return
         }
         Start-Sleep -Seconds 5
@@ -254,16 +282,32 @@ function Test-ExapumpConnection {
     # exapump/database error text (auth failure vs. connection refused vs.
     # TLS handshake error) is exactly what's needed to diagnose this, and
     # making someone go dig through a log file for it is not production-grade.
-    if ($lastOutput.Trim()) {
-        Write-Host "  Last attempt's output:" -ForegroundColor Yellow
-        $lastOutput.Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
-    }
+    Write-ExapumpOutput -Output $lastOutput -Header "Last attempt's output:"
     Fail "SELECT 1 failed through profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
 }
 
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.
 # Returns $true/$false instead of dying so callers (Invoke-ExakitSampleDataLoad)
 # can decide whether a missing/empty file is fatal.
+# Invoke-ExapumpSqlFileCapture <file> - pipe a SQL file to exapump and return a
+# structured result ({ Output; ExitCode; Success }) matching Invoke-Exapump's
+# shape, logging the invocation. Shared by Invoke-ExapumpSqlFile (needs only
+# pass/fail) and the sample-data verification step (also scans output for FAIL
+# rows), so the stdin-pipe + quirk-aware success detection lives in one place.
+function Invoke-ExapumpSqlFileCapture {
+    param([Parameter(Mandatory)][string]$Path)
+    $out = ""
+    $code = 1
+    try {
+        $out = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } catch {
+        $out = "$_"
+    }
+    if ($script:LogFile) { "exapump sql -p $($script:ExapumpProfile) < $Path" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
+    return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
+}
+
 function Invoke-ExapumpSqlFile {
     param([Parameter(Mandatory)][string]$Path, [string]$Description = "")
     if (-not $Description) { $Description = Split-Path $Path -Leaf }
@@ -272,20 +316,9 @@ function Invoke-ExapumpSqlFile {
         return $false
     }
     Info "Running $Description"
-    $exitCode = 1
-    $sqlOut = ""
-    try {
-        $sqlOut = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
-        $exitCode = $LASTEXITCODE
-    } catch {
-        $sqlOut = "$_"
-    }
-    if ($script:LogFile) { $sqlOut | Add-Content -Path $script:LogFile }
-    if (-not (Test-ExapumpSucceeded -ExitCode $exitCode -Output $sqlOut)) {
-        if ("$sqlOut".Trim()) {
-            Write-Host "  exapump output:" -ForegroundColor Yellow
-            "$sqlOut".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
-        }
+    $result = Invoke-ExapumpSqlFileCapture $Path
+    if (-not $result.Success) {
+        Write-ExapumpOutput -Output $result.Output
         Fail "SQL file failed: $Path (see log)"
     }
     Ok "$Description done"
@@ -302,10 +335,7 @@ function Invoke-ExapumpUpload {
     Info "Loading $(Split-Path $Path -Leaf) into $Target"
     $result = Invoke-Exapump @("upload", $Path, "--table", $Target, "-p", $script:ExapumpProfile)
     if (-not $result.Success) {
-        if ("$($result.Output)".Trim()) {
-            Write-Host "  exapump output:" -ForegroundColor Yellow
-            "$($result.Output)".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
-        }
+        Write-ExapumpOutput -Output $result.Output
         Fail "Upload failed: $Path -> $Target (see log)"
     }
     Ok "$(Split-Path $Path -Leaf) loaded"
@@ -315,17 +345,37 @@ function Invoke-ExapumpUpload {
 # Get-ExapumpRowCount <schema.table> - row count, or $null if it could not be
 # read. Best-effort only: the row-count summary it feeds is cosmetic (shows
 # "?" on failure) and the real load validation is 03_verify_setup.sql.
+# Get-ExapumpProfilePassword <profile> - the password stored in an exapump
+# profile ($script:ExapumpConfigPath), or $null. Symmetric with the writer in
+# Set-ExapumpTomlSection. Lets the MCP step recover the admin password when the
+# runtime step could not record runtime.password_file.
+function Get-ExapumpProfilePassword {
+    param([Parameter(Mandatory)][string]$Profile)
+    if (-not (Test-Path $script:ExapumpConfigPath)) { return $null }
+    $content = Get-Content $script:ExapumpConfigPath -Raw
+    $section = [regex]::Match($content, "(?s)\[$([regex]::Escape($Profile))\](.*?)(?:\n\[|\z)")
+    if (-not $section.Success) { return $null }
+    $pw = [regex]::Match($section.Groups[1].Value, '(?m)^\s*password\s*=\s*"(.*)"\s*$')
+    if (-not $pw.Success) { return $null }
+    return $pw.Groups[1].Value
+}
+
 function Get-ExapumpRowCount {
     param([Parameter(Mandatory)][string]$Target)
-    $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT COUNT(*) FROM $Target")
+    # Wrap the count in a unique delimited token (EXAKIT_RC[<n>]) so it can be
+    # recovered from exapump's output no matter how the value is laid out - grid
+    # vs compact, interactive TTY vs the piped, non-TTY install run. Scraping the
+    # bare number was unreliable: during install exapump prints only a
+    # "[1/1] ... 1 rows" status line, and the old digit-stripping fallback
+    # collapsed that to "111" for EVERY table (from "[1/1]" + the single row a
+    # COUNT(*) always returns). The token can't collide with that status line,
+    # and the echoed query literal ("EXAKIT_RC[' || ...") never forms
+    # "EXAKIT_RC[<digits>]", so only the actual result value matches.
+    $sql = "SELECT 'EXAKIT_RC[' || CAST(COUNT(*) AS VARCHAR(40)) || ']' AS EXAKIT_RC FROM $Target"
+    $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
     if (-not $result.Success) { return $null }
-    $lines = "$($result.Output)" -split "`n" | ForEach-Object { $_.Trim() }
-    # The result value prints as a line that is just the number; prefer that
-    # over exapump's "[1/1] ... N rows" progress line (which also has digits).
-    $pure = $lines | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
-    if ($pure) { return $pure }
-    $anyDigits = ($lines | Where-Object { $_ -match '\d' } | Select-Object -Last 1) -replace '[^0-9]', ''
-    if ($anyDigits) { return $anyDigits }
+    $m = [regex]::Match("$($result.Output)", 'EXAKIT_RC\[(\d+)\]')
+    if ($m.Success) { return $m.Groups[1].Value }
     return $null
 }
 
@@ -578,25 +628,12 @@ function Invoke-ExakitSampleDataLoad {
     $verifySql = Join-Path $KitRoot "sql\03_verify_setup.sql"
     if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
         Info "Verification (03_verify_setup.sql):"
-        $verifyStatus = 1
-        $verifyOut = ""
-        try {
-            $verifyOut = Get-Content $verifySql -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
-            $verifyStatus = $LASTEXITCODE
-        } catch {
-            $verifyOut = "$_"
-        }
-        "$verifyOut".Trim() -split "`n" | ForEach-Object { Write-Host $_ }
-        if ($script:LogFile) { $verifyOut | Add-Content -Path $script:LogFile }
+        $verify = Invoke-ExapumpSqlFileCapture $verifySql
+        "$($verify.Output)".Trim() -split "`n" | ForEach-Object { Write-Host $_ }
         # Two independent conditions: the query itself must have run (exapump
         # success, exit-code-quirk-aware), AND no verification check may have
-        # emitted a STATUS = 'FAIL' row. The FAIL scan must skip exapump's
-        # "[n/N] <statement> N rows" progress lines: they echo the executed
-        # SQL, whose CASE ... ELSE 'FAIL' END expressions would otherwise
-        # match even when every result row is OK. (Test-ExapumpSucceeded still
-        # sees the full merged output — it needs the progress markers.)
-        $verifyRows = ("$verifyOut" -split "`n" | Where-Object { $_ -notmatch '^\s*\[\d+/\d+\]' }) -join "`n"
-        if ((-not (Test-ExapumpSucceeded -ExitCode $verifyStatus -Output $verifyOut)) -or ($verifyRows -match "(?im)\bFAIL\b")) {
+        # emitted a STATUS = 'FAIL' row.
+        if ((-not $verify.Success) -or ("$($verify.Output)" -match "(?im)\bFAIL\b")) {
             Fail "Verification failed (query error or a FAIL row) - see $script:LogFile. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
         }
     }

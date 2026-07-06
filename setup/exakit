@@ -24,6 +24,7 @@
 #   teardown [--data]   remove the runtime; --data also deletes database
 #                       content (Nano volume / Personal deployment)
 #   logs                print the path of the latest setup log
+#   catalog [search]    browse/search every exakit, exapump & exasol command
 #   help                this text
 #
 # Installed to ~/.local/bin by the setup scripts; also runs straight from a
@@ -206,7 +207,72 @@ cmd_skills_install() {
 }
 
 usage() {
-    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+    # Print the leading comment block (from line 2) up to the first non-comment
+    # line — no hardcoded range, so new command lines (catalog, skills-install,
+    # …) always appear instead of being silently truncated. Mirrors the
+    # PowerShell Show-ExakitUsage behavior.
+    awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"
+}
+
+# cmd_catalog [search] — render the searchable command catalog from the shared
+# catalog.tsv (one source of truth for both the bash and PowerShell CLIs).
+cmd_catalog() {
+    _search="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+    _catalog="$_lib_dir/catalog.tsv"
+    [ -f "$_catalog" ] || die "Catalog data not found: $_catalog"
+
+    if [ -t 1 ]; then
+        _cy=$'\033[36m'; _cyb=$'\033[1;36m'; _dim=$'\033[2m'; _b=$'\033[1m'; _gn=$'\033[1;32m'; _r=$'\033[0m'
+    else
+        _cy=; _cyb=; _dim=; _b=; _gn=; _r=
+    fi
+    _rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+
+    printf '\n  %s%s%s\n' "$_cy" "$_rule" "$_r"
+    printf '   %s▸ EXASOL%s  %s·%s  starter kit\n' "$_cyb" "$_r" "$_dim" "$_r"
+    if [ -n "$_search" ]; then
+        printf '     %scommand catalog — results for "%s"%s\n' "$_dim" "$_search" "$_r"
+    else
+        printf '     %scommand catalog · exakit · exapump · exasol%s\n' "$_dim" "$_r"
+    fi
+    printf '  %s%s%s\n\n' "$_cy" "$_rule" "$_r"
+
+    _found=0
+    for _tool in exakit exapump exasol; do
+        # Emit fields separated by US (0x1f), a non-whitespace char: `read` with
+        # a tab IFS collapses the empty options field (tab is IFS-whitespace),
+        # which would merge no-option commands onto their description line.
+        _rows="$(awk -F'\t' -v tool="$_tool" -v q="$_search" '
+            NR==1 {next}
+            $1==tool {
+                hay=tolower($1" "$2" "$3" "$4)
+                if (q=="" || index(hay,q)>0) print $2"\037"$3"\037"$4
+            }' "$_catalog")"
+        [ -z "$_rows" ] && continue
+        _found=1
+        case "$_tool" in
+            exakit)  _label='exakit   — kit lifecycle & MCP management' ;;
+            exapump) _label='exapump  — data loading CLI' ;;
+            exasol)  _label='exasol   — database & AI (MCP) bridge' ;;
+        esac
+        printf '  %s%s%s\n' "$_gn" "$_label" "$_r"
+        printf '%s\n' "$_rows" | while IFS=$(printf '\037') read -r _cmd _opt _desc; do
+            if [ "$_tool" = "exasol" ]; then _name="$_cmd"; else _name="$_tool $_cmd"; fi
+            if [ -n "$_opt" ]; then
+                printf '    %s%s%s %s%s%s\n' "$_b" "$_name" "$_r" "$_dim" "$_opt" "$_r"
+            else
+                printf '    %s%s%s\n' "$_b" "$_name" "$_r"
+            fi
+            printf '        %s\n' "$_desc"
+        done
+        printf '\n'
+    done
+
+    if [ "$_found" -eq 0 ]; then
+        printf '  %sNo commands match "%s".%s  Try: exakit catalog mcp\n\n' "$_dim" "$_search" "$_r"
+        return 0
+    fi
+    printf '  %sTip:%s exakit catalog <search>   e.g. exakit catalog data · exakit catalog mcp\n\n' "$_dim" "$_r"
 }
 
 case "${1:-help}" in
@@ -229,6 +295,7 @@ case "${1:-help}" in
     skills-install) cmd_skills_install ;;
     teardown) shift; cmd_teardown "${1:-}" ;;
     logs)     cmd_logs ;;
+    catalog|catlog)  shift; cmd_catalog "${1:-}" ;;
     help|-h|--help) usage ;;
     *) echo "exakit: unknown command '${1}'" >&2; usage >&2; exit 2 ;;
 esac
