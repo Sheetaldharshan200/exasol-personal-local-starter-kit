@@ -58,6 +58,8 @@ Your ready-made configs are at `~/.exasol-starter-kit/mcp/` for Claude Desktop, 
 
 For Claude Desktop: **Settings → Developer → Edit Config**, merge the file's contents into `claude_desktop_config.json` (on macOS that file lives at `~/Library/Application Support/Claude/claude_desktop_config.json`), restart the app.
 
+**Using Claude Code or Codex CLI?** Run `exakit skills-install`, then say **"setup starter kit"** in a fresh session — the kit's AI skill drives setup and the first query for you. See [`skills/README.md`](../skills/README.md).
+
 Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 
 ## macOS-specific notes

@@ -92,8 +92,32 @@ nano_container_running() {
 nano_ready_in_logs() {
     _engine="$(nano_engine)"
     _started="$("$_engine" container inspect -f '{{.State.StartedAt}}' "$EXAKIT_NANO_CONTAINER" 2>/dev/null)"
-    "$_engine" logs --since "${_started:-1970-01-01T00:00:00Z}" "$EXAKIT_NANO_CONTAINER" 2>&1 | \
-        grep -q "Database is now up and running!"
+    # Normalize StartedAt to an epoch that `logs --since` accepts on both
+    # engines. docker emits RFC3339 ("2026-07-06T05:46:47.33Z"); podman emits
+    # Go's default String() form ("2026-07-06 05:46:47.33 +0000 UTC"), which
+    # podman's own --since cannot parse — left as-is it silently returns no
+    # logs, the marker never matches, and readiness polling loops until timeout.
+    _since=""
+    if [ -n "$_started" ]; then
+        _norm="$(printf '%s' "$_started" | sed -E 's/\.[0-9]+//; s/ UTC$//; s/T/ /')"
+        _since="$(date -d "$_norm" +%s 2>/dev/null || true)"
+    fi
+    # Capture then match, rather than `logs | grep -q`. Under `set -o pipefail`
+    # (which exakit and the setup scripts enable), `grep -q` closing the pipe on
+    # first match makes `logs` exit with SIGPIPE, and pipefail reports the whole
+    # pipeline as failed — so a genuinely-ready DB is misread as "starting".
+    if [ -n "$_since" ]; then
+        _out="$("$_engine" logs --since "$_since" "$EXAKIT_NANO_CONTAINER" 2>&1)"
+    else
+        # Fallback: if the timestamp could not be parsed, scan full history
+        # rather than loop forever. Risks matching a stale marker from a prior
+        # boot, but a false-ready beats a guaranteed timeout.
+        _out="$("$_engine" logs "$EXAKIT_NANO_CONTAINER" 2>&1)"
+    fi
+    case "$_out" in
+        *"Database is now up and running!"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # nano_install — pull the pinned image and start the container (first run

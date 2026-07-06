@@ -49,6 +49,8 @@ Prefer to do it by hand? The kit generates ready-made config fragments under `~\
 
 Restart your AI client, then continue with the [first workflow](../demo/first-revenue-analysis.md).
 
+**Using Claude Code or Codex CLI?** Run `exakit skills-install`, then say **"setup starter kit"** in a fresh session — the kit's AI skill drives setup and the first query for you. See [`skills/README.md`](../skills/README.md).
+
 ## Load or manage sample data
 
 ```powershell

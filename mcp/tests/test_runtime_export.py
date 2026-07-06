@@ -87,6 +87,8 @@ class RuntimeExportTests(unittest.TestCase):
         self.assertEqual(claude["mcpServers"]["exasol"]["args"], ["exasol-mcp-server@1.10.1"])
         self.assertEqual(claude["mcpServers"]["exasol"]["env"]["EXA_DSN"], "127.0.0.1:8563")
         self.assertEqual(claude["mcpServers"]["exasol"]["env"]["EXA_USER"], "mcp_readonly")
+        # The local runtime uses a self-signed TLS cert; without this the MCP
+        # server rejects every tool call with CERTIFICATE_VERIFY_FAILED.
         self.assertEqual(
             claude["mcpServers"]["exasol"]["env"]["EXA_SSL_CERT_VALIDATION"],
             "no",
