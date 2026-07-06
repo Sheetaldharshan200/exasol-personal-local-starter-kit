@@ -1,8 +1,8 @@
--- 03_verify_setup.sql — post-load verification for the sample dataset.
+-- 03_verify_setup.sql - post-load verification for the sample dataset.
 -- Run by setup/load-data.sh (via exapump) right after the CSV load and any
 -- 02_load_data.sql transform. Every row below should read STATUS = 'OK'.
 -- A 'FAIL' row means the load is incomplete or the data is not
--- self-consistent — do not treat the kit's sample data as ready until every
+-- self-consistent - do not treat the kit's sample data as ready until every
 -- row here passes; check the load-data-*.log under
 -- ~/.exasol-starter-kit/logs for the failing step.
 --

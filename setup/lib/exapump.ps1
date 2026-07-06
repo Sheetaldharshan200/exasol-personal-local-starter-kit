@@ -28,8 +28,16 @@ $script:ExapumpConfigPath = Join-Path $HOME ".exapump\config.toml"
 # connection, syntax errors) which always print error text.
 function Test-ExapumpSucceeded {
     param([int]$ExitCode, [AllowEmptyString()][string]$Output)
-    if ($ExitCode -eq 0) { return $true }
     $text = "$Output"
+    # exapump prints an authoritative per-run summary: "<n> statement(s)
+    # executed, <m> failed". Trust it FIRST - the exit code is unreliable on
+    # Windows (non-zero even on success), and that summary line itself contains
+    # the word "failed" ("0 failed"), which the generic error scan below would
+    # otherwise treat as a failure. m == 0 means every statement succeeded.
+    if ($text -match '(?im)(\d+)\s+statements?\s+executed,\s*(\d+)\s+failed') {
+        return ([int]$Matches[2] -eq 0)
+    }
+    if ($ExitCode -eq 0) { return $true }
     if ($text -match '(?im)\b(error|exception|failed|failure|denied|refused|unable|cannot|could not|not found|no such|timeout|timed out|syntax error|invalid|unauthorized|authentication)\b') {
         return $false
     }
