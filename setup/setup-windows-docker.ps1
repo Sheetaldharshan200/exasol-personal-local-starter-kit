@@ -89,7 +89,19 @@ try {
     }
 
     # --- step 5: exakit helper command ------------------------------------------
-    if (Begin-ExakitStep "exakit_helper" "Step 4/5  exakit helper command") {
+    # The step flag alone is not trusted: if the shim was removed (cleanup,
+    # testing, older builds), a re-run must reinstall it rather than skip —
+    # and the PATH check must run either way, since the PATH entry can be
+    # missing even when the step is marked done.
+    $helperNeeded = Begin-ExakitStep "exakit_helper" "Step 4/5  exakit helper command"
+    if (-not $helperNeeded -and -not (Test-Path (Join-Path $script:BinDir "exakit.cmd"))) {
+        Info "exakit command is missing - reinstalling it"
+        $helperNeeded = $true
+    }
+    if (-not $helperNeeded) {
+        Confirm-ExakitOnPath $script:BinDir
+    }
+    if ($helperNeeded) {
         New-Item -ItemType Directory -Force -Path $script:BinDir | Out-Null
 
         # Keep a copy of the kit library (and the mcp/, sql/, data/ packages
