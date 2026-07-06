@@ -872,6 +872,31 @@ _exakit_redact_mcp_secret_output() {
     printf '%s\n' "$_text" | sed -E "s/(IDENTIFIED BY )('[^']*'|[A-Z][A-Z0-9]*(\.\.\.)?)/\1<redacted>/g"
 }
 
+# _exakit_read_exapump_profile_password <profile> — print the password stored
+# in the given exapump profile (EXAPUMP_CONFIG / ~/.exapump/config.toml), or
+# nothing (non-zero) if it can't be read. Symmetric with how the profile is
+# written in exapump.sh (an unescaped `password = "..."` line).
+_exakit_read_exapump_profile_password() {
+    _cfg="${EXAPUMP_CONFIG:-$HOME/.exapump/config.toml}"
+    [ -f "$_cfg" ] || return 1
+    require_python3
+    run_python - "$_cfg" "$1" <<'PY'
+import re, sys
+path, profile = sys.argv[1], sys.argv[2]
+try:
+    content = open(path).read()
+except OSError:
+    sys.exit(1)
+m = re.search(r"\[" + re.escape(profile) + r"\](.*?)(?:\n\[|\Z)", content, re.S)
+if not m:
+    sys.exit(1)
+pw = re.search(r'(?m)^\s*password\s*=\s*"(.*)"\s*$', m.group(1))
+if not pw:
+    sys.exit(1)
+sys.stdout.write(pw.group(1))
+PY
+}
+
 exakit_configure_mcp_readonly_access() {
     require_python3
     # Ensure exapump is on PATH (both current session and permanently)
@@ -886,11 +911,26 @@ exakit_configure_mcp_readonly_access() {
     esac
     
     _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
-    _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
     [ -n "$_runtime_user" ] || die "runtime.user is missing; cannot prepare the MCP read-only database user."
-    [ -n "$_runtime_password_file" ] || die "runtime.password_file is missing; cannot prepare the MCP read-only database user."
-    [ -f "$_runtime_password_file" ] || die "The runtime password file does not exist: $_runtime_password_file"
-    _admin_password="$(cat "$_runtime_password_file")"
+    _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
+    _admin_password=""
+    if [ -n "$_runtime_password_file" ] && [ -f "$_runtime_password_file" ]; then
+        _admin_password="$(cat "$_runtime_password_file")"
+    fi
+    # Fallback: recover the admin password from the exapump profile that the
+    # data step already wrote and validated. Covers installs where the runtime
+    # step could not record runtime.password_file (an adopted deployment with
+    # unreadable secrets) — including re-runs, where the exapump step is skipped
+    # as "already done" and so cannot record it either. Persist it forward so
+    # later runs and mcp-doctor find it directly.
+    if [ -z "$_admin_password" ]; then
+        _admin_password="$(_exakit_read_exapump_profile_password "$EXAKIT_EXAPUMP_PROFILE" 2>/dev/null || true)"
+        if [ -n "$_admin_password" ]; then
+            store_credential runtime_sys_password "$_admin_password"
+            manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/runtime_sys_password"
+        fi
+    fi
+    [ -n "$_admin_password" ] || die "No runtime database password is available (runtime.password_file is missing and the exapump '$EXAKIT_EXAPUMP_PROFILE' profile has none). Set it with 'exapump profile init $EXAKIT_EXAPUMP_PROFILE', then re-run."
     _host="$(_exakit_parse_runtime_host)"
     _port="$(_exakit_parse_runtime_port)"
     [ -n "$_host" ] || die "runtime.dsn is missing a host; cannot prepare the MCP read-only database user."

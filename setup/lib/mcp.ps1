@@ -347,11 +347,24 @@ function Set-McpReadonlyAccess {
     }
     
     $runtimeUser = Get-ExakitManifestValue "runtime.user"
-    $runtimePwFile = Get-ExakitManifestValue "runtime.password_file"
     if (-not $runtimeUser) { Fail "runtime.user is missing; cannot prepare the MCP read-only database user." }
-    if (-not $runtimePwFile) { Fail "runtime.password_file is missing; cannot prepare the MCP read-only database user." }
-    if (-not (Test-Path $runtimePwFile)) { Fail "The runtime password file does not exist: $runtimePwFile" }
-    $adminPassword = (Get-Content $runtimePwFile -Raw).TrimEnd("`r", "`n")
+    $runtimePwFile = Get-ExakitManifestValue "runtime.password_file"
+    $adminPassword = ""
+    if ($runtimePwFile -and (Test-Path $runtimePwFile)) {
+        $adminPassword = (Get-Content $runtimePwFile -Raw).TrimEnd("`r", "`n")
+    }
+    # Fallback (mirrors common.sh): recover the admin password from the exapump
+    # profile the data step already validated. Covers adopted deployments whose
+    # secrets couldn't be read, including re-runs where the exapump step is
+    # skipped as "already done". Persist it forward so later runs find it.
+    if (-not $adminPassword) {
+        $adminPassword = Get-ExapumpProfilePassword $script:ExapumpProfile
+        if ($adminPassword) {
+            Set-ExakitCredential "runtime_sys_password" $adminPassword
+            Set-ExakitManifestValue "runtime.password_file" (Join-Path $script:CredsDir "runtime_sys_password")
+        }
+    }
+    if (-not $adminPassword) { Fail "No runtime database password is available (runtime.password_file is missing and the exapump '$($script:ExapumpProfile)' profile has none). Set it with 'exapump profile init $($script:ExapumpProfile)', then re-run." }
     $dbHost = Get-RuntimeHost
     $dbPort = Get-RuntimePort
     if (-not $dbHost) { Fail "runtime.dsn is missing a host; cannot prepare the MCP read-only database user." }

@@ -345,6 +345,21 @@ function Invoke-ExapumpUpload {
 # Get-ExapumpRowCount <schema.table> - row count, or $null if it could not be
 # read. Best-effort only: the row-count summary it feeds is cosmetic (shows
 # "?" on failure) and the real load validation is 03_verify_setup.sql.
+# Get-ExapumpProfilePassword <profile> - the password stored in an exapump
+# profile ($script:ExapumpConfigPath), or $null. Symmetric with the writer in
+# Set-ExapumpTomlSection. Lets the MCP step recover the admin password when the
+# runtime step could not record runtime.password_file.
+function Get-ExapumpProfilePassword {
+    param([Parameter(Mandatory)][string]$Profile)
+    if (-not (Test-Path $script:ExapumpConfigPath)) { return $null }
+    $content = Get-Content $script:ExapumpConfigPath -Raw
+    $section = [regex]::Match($content, "(?s)\[$([regex]::Escape($Profile))\](.*?)(?:\n\[|\z)")
+    if (-not $section.Success) { return $null }
+    $pw = [regex]::Match($section.Groups[1].Value, '(?m)^\s*password\s*=\s*"(.*)"\s*$')
+    if (-not $pw.Success) { return $null }
+    return $pw.Groups[1].Value
+}
+
 function Get-ExapumpRowCount {
     param([Parameter(Mandatory)][string]$Target)
     # Wrap the count in a unique delimited token (EXAKIT_RC[<n>]) so it can be
