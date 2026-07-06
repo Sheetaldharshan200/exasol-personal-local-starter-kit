@@ -26,6 +26,10 @@
 #   $env:EXAKIT_REF     = "..." override the git ref to install from
 
 $ErrorActionPreference = "Stop"
+# Silence the progress stream: it hides the noisy download/extract progress
+# banners, and on Windows PowerShell 5.1 it makes Invoke-WebRequest below far
+# faster (a visible progress bar throttles it by an order of magnitude).
+$ProgressPreference = "SilentlyContinue"
 
 $ExakitHome = if ($env:EXAKIT_HOME) { $env:EXAKIT_HOME } else { Join-Path $HOME ".exasol-starter-kit" }
 $Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "Sheetaldharshan200/exasol-personal-local-starter-kit" }

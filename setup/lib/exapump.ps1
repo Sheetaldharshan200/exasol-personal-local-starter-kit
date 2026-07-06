@@ -499,29 +499,28 @@ function Show-ExakitDataLoadMenu {
     }
 
     Info "Choose a data loading option"
-    Write-Host "    1. Local CSV/Text File"
-    Write-Host "    2. Remote CSV/Text File"
-    Write-Host "    3. Import from Another Database"
-    Write-Host "    4. Import from Another Exasol"
-    Write-Host "    5. Exapump"
-    Write-Host "    6. SQL Script"
-    Write-Host "    7. Default: load bundled data/ folder (TPC-H sample)"
+    Write-Host "    1. Default: load bundled data/ folder (TPC-H sample)"
+    Write-Host "    2. Local CSV/Text File"
+    Write-Host "    3. Remote CSV/Text File"
+    Write-Host "    4. Import from Another Database"
+    Write-Host "    5. Import from Another Exasol"
+    Write-Host "    6. Exapump"
+    Write-Host "    7. SQL Script"
     Write-Host "    8. Skip for now"
-    $defaultChoice = "7"
-    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { $defaultChoice = "8" }
+    $defaultChoice = "1"
     $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
     switch ($choice) {
-        "1" { Import-ExakitLocalFile }
-        "2" { Import-ExakitRemoteFile }
-        "3" { Show-ExakitDatabaseImportGuidance "Import from Another Database" }
-        "4" { Show-ExakitDatabaseImportGuidance "Import from Another Exasol" }
-        "5" { Show-ExakitExapumpGuidance }
-        "6" { Invoke-ExakitSqlScript }
-        "7" {
+        "1" {
             $kitRoot = Get-ExakitRepoRoot
             if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
             Invoke-ExakitSampleDataLoad -KitRoot $kitRoot
         }
+        "2" { Import-ExakitLocalFile }
+        "3" { Import-ExakitRemoteFile }
+        "4" { Show-ExakitDatabaseImportGuidance "Import from Another Database" }
+        "5" { Show-ExakitDatabaseImportGuidance "Import from Another Exasol" }
+        "6" { Show-ExakitExapumpGuidance }
+        "7" { Invoke-ExakitSqlScript }
         { $_ -eq "8" -or $_ -eq "" } { Info "Skipping data load. Run it any time with: exakit data-load" }
         default { Fail "Unknown data loading option: $choice" }
     }
@@ -620,7 +619,8 @@ function Invoke-ExakitSampleDataLoad {
 function Request-ExakitDataLoadOffer {
     param([Parameter(Mandatory)][string]$KitRoot)
     if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
-        Info "Data loading is ready. Open the guided menu any time with: exakit data-load"
+        Info "Non-interactive install - loading the bundled sample data by default."
+        Invoke-ExakitSampleDataLoad -KitRoot $KitRoot
         return
     }
     Info "The database is ready for data. Loading data now lets MCP validate against real tables."

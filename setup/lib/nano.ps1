@@ -125,7 +125,7 @@ function Install-Nano {
     }
 
     if (-not (Test-NanoContainerExists)) {
-        $portBusy = Test-NetConnection -ComputerName 127.0.0.1 -Port $script:DbPort -InformationLevel Quiet -WarningAction SilentlyContinue
+        $portBusy = Test-ExakitPortInUse -Port ([int]$script:DbPort)
         if ($portBusy) {
             Fail "Port $($script:DbPort) is already in use by another application. Stop it or set EXAKIT_DB_PORT, then re-run."
         }

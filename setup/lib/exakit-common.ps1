@@ -12,6 +12,14 @@
 
 $ErrorActionPreference = "Stop"
 
+# Suppress the progress stream for the whole kit. Two reasons: (1) it removes
+# the "TCP connect to ..."-style progress banners that cmdlets like
+# Test-NetConnection / Invoke-WebRequest pin to the top of the console, which
+# users found noisy; (2) on Windows PowerShell 5.1 a visible progress bar makes
+# Invoke-WebRequest an order of magnitude slower, so silencing it speeds up
+# every download step. Callers that genuinely want progress can override.
+$ProgressPreference = "SilentlyContinue"
+
 # ---------------------------------------------------------------------------
 # State locations
 # ---------------------------------------------------------------------------
@@ -144,6 +152,26 @@ function Read-ExakitPrompt {
     $answer = Read-Host
     if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
     return $answer
+}
+
+# Test-ExakitPortInUse <port> [host] - fast, quiet "is this TCP port already
+# accepting connections?" check. Replaces Test-NetConnection, which is slow
+# (it also does ICMP/traceroute work) and pins a "TCP connect to ..." progress
+# banner to the top of the console. A raw TcpClient with a short timeout is
+# sub-second and silent. Returns $true only if something is listening.
+function Test-ExakitPortInUse {
+    param([Parameter(Mandatory)][int]$Port, [string]$ComputerName = "127.0.0.1", [int]$TimeoutMs = 700)
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $async = $client.BeginConnect($ComputerName, $Port, $null, $null)
+        if (-not $async.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+        $client.EndConnect($async)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
 }
 
 # ---------------------------------------------------------------------------

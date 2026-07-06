@@ -740,19 +740,19 @@ function Get-McpClientsFromArgs {
 
 function Invoke-McpSetup {
     Info "Choose how you want MCP set up in your AI clients"
-    Write-Host "    1. Temporary setup (copy/paste instructions only)"
-    Write-Host "    2. Permanent setup (edit selected clients now)"
+    Write-Host "    1. Default: Permanent setup (edit selected clients now)"
+    Write-Host "    2. Temporary setup (copy/paste instructions only)"
     Write-Host ""
     Write-Host "    Quick guide:"
-    Write-Host "       Choose 1 if you only want files and copy/paste steps."
-    Write-Host "       Choose 2 if you want the kit to configure the apps for you."
+    Write-Host "       Choose 1 if you want the kit to configure the apps for you."
+    Write-Host "       Choose 2 if you only want files and copy/paste steps."
     $mode = $null
     while (-not $mode) {
-        $choice = Read-ExakitPrompt "Choose setup mode (1 temporary, 2 permanent)" "1"
+        $choice = Read-ExakitPrompt "Choose setup mode (1 permanent, 2 temporary)" "1"
         switch ($choice) {
-            { $_ -in @("1", "temporary", "Temporary", "default", "Default") } { $mode = "temporary" }
-            { $_ -in @("2", "permanent", "Permanent") } { $mode = "permanent" }
-            default { Warn2 "Please enter 1 for temporary or 2 for permanent." }
+            { $_ -in @("1", "permanent", "Permanent", "default", "Default") } { $mode = "permanent" }
+            { $_ -in @("2", "temporary", "Temporary") } { $mode = "temporary" }
+            default { Warn2 "Please enter 1 for permanent or 2 for temporary." }
         }
     }
 
@@ -805,7 +805,14 @@ function Invoke-McpRestore {
 # follow-up command and continue.
 function Request-ExakitMcpSetupOffer {
     if ((Get-ExakitManifestValue "components.mcp_server.client_setup.completed") -eq $true) { return }
-    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { return }
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+        Info "Non-interactive install - setting up MCP in your AI client(s) by default."
+        if (-not (Invoke-McpSetup)) {
+            Warn2 "Your local runtime is installed, but MCP client setup did not finish cleanly."
+            Warn2 "Retry any time with: exakit mcp-setup"
+        }
+        return
+    }
     Info "The Exasol runtime and MCP server are ready."
     if (-not (Confirm-ExakitPrompt "Set up MCP in your AI client(s) now?" $true)) {
         Info "Skipping live MCP client setup for now. You can run: exakit mcp-setup"

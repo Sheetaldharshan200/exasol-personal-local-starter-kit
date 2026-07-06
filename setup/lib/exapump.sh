@@ -389,28 +389,27 @@ exakit_data_load_menu() {
         die "No exapump connection profile is recorded — re-run the installer, then retry."
 
     info "Choose a data loading option"
-    printf '    1. Local CSV/Text File\n'
-    printf '    2. Remote CSV/Text File\n'
-    printf '    3. Import from Another Database\n'
-    printf '    4. Import from Another Exasol\n'
-    printf '    5. Exapump\n'
-    printf '    6. SQL Script\n'
-    printf '    7. Default: load bundled data/ folder (TPC-H sample)\n'
+    printf '    1. Default: load bundled data/ folder (TPC-H sample)\n'
+    printf '    2. Local CSV/Text File\n'
+    printf '    3. Remote CSV/Text File\n'
+    printf '    4. Import from Another Database\n'
+    printf '    5. Import from Another Exasol\n'
+    printf '    6. Exapump\n'
+    printf '    7. SQL Script\n'
     printf '    8. Skip for now\n'
-    _default_choice="7"
-    [ -n "$(_exakit_prompt_tty)" ] || _default_choice="8"
+    _default_choice="1"
     _choice="$(prompt_text "Choose data option" "$_default_choice")"
     case "$_choice" in
-        1) exakit_load_local_file ;;
-        2) exakit_load_remote_file ;;
-        3) exakit_show_database_import_guidance "Import from Another Database" ;;
-        4) exakit_show_database_import_guidance "Import from Another Exasol" ;;
-        5) exakit_show_exapump_guidance ;;
-        6) exakit_run_sql_script ;;
-        7)
+        1)
             _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
             exakit_load_sample_data "$_kit_root"
             ;;
+        2) exakit_load_local_file ;;
+        3) exakit_load_remote_file ;;
+        4) exakit_show_database_import_guidance "Import from Another Database" ;;
+        5) exakit_show_database_import_guidance "Import from Another Exasol" ;;
+        6) exakit_show_exapump_guidance ;;
+        7) exakit_run_sql_script ;;
         8|"") info "Skipping data load. Run it any time with: exakit data-load" ;;
         *) die "Unknown data loading option: $_choice" ;;
     esac

@@ -1185,18 +1185,18 @@ exakit_parse_mcp_client_selection() {
 
 exakit_mcp_setup() {
     info "Choose how you want MCP set up in your AI clients"
-    printf '    1. Temporary setup (copy/paste instructions only)\n'
-    printf '    2. Permanent setup (edit selected clients now)\n'
+    printf '    1. Default: Permanent setup (edit selected clients now)\n'
+    printf '    2. Temporary setup (copy/paste instructions only)\n'
     printf '\n'
     printf '    Quick guide:\n'
-    printf '       Choose 1 if you only want files and copy/paste steps.\n'
-    printf '       Choose 2 if you want the kit to configure the apps for you.\n'
+    printf '       Choose 1 if you want the kit to configure the apps for you.\n'
+    printf '       Choose 2 if you only want files and copy/paste steps.\n'
     while :; do
-        _mode_choice="$(prompt_text "Choose setup mode (1 temporary, 2 permanent)" "1")"
+        _mode_choice="$(prompt_text "Choose setup mode (1 permanent, 2 temporary)" "1")"
         case "$_mode_choice" in
-            1|temporary|Temporary|default|Default) _mode="temporary"; break ;;
-            2|permanent|Permanent) _mode="permanent"; break ;;
-            *) warn "Please enter 1 for temporary or 2 for permanent." ;;
+            1|permanent|Permanent|default|Default) _mode="permanent"; break ;;
+            2|temporary|Temporary) _mode="temporary"; break ;;
+            *) warn "Please enter 1 for permanent or 2 for temporary." ;;
         esac
     done
 
@@ -1281,7 +1281,14 @@ exakit_mcp_restore() {
 exakit_maybe_offer_mcp_setup() {
     _already_done="$(manifest_get components.mcp_server.client_setup.completed 2>/dev/null || true)"
     [ "$_already_done" = "true" ] && return 0
-    [ -n "$(_exakit_prompt_tty)" ] || return 0
+    if [ -z "$(_exakit_prompt_tty)" ]; then
+        info "Non-interactive install - setting up MCP in your AI client(s) by default."
+        if ! exakit_mcp_setup; then
+            warn "Your local runtime is installed, but MCP client setup did not finish cleanly."
+            warn "Retry any time with: exakit mcp-setup"
+        fi
+        return 0
+    fi
     info "The Exasol runtime and MCP server are ready."
     if ! confirm "Set up MCP in your AI client(s) now?" y; then
         info "Skipping live MCP client setup for now. You can run: exakit mcp-setup"
@@ -1302,10 +1309,13 @@ exakit_maybe_offer_data_load() {
     : "$_kit_root"
     command -v exakit_data_load_menu >/dev/null 2>&1 || return 0
 
-    [ -n "$(_exakit_prompt_tty)" ] || {
-        info "Data loading is ready. Open the guided menu any time with: exakit data-load"
+    if [ -z "$(_exakit_prompt_tty)" ]; then
+        info "Non-interactive install - loading the bundled sample data by default."
+        if ! ( exakit_load_sample_data "$_kit_root" ); then
+            warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+        fi
         return 0
-    }
+    fi
 
     info "The database is ready for data. Loading data now lets MCP validate against real tables."
     if ! confirm "Load or verify data before MCP setup?" y; then
