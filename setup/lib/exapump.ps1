@@ -333,7 +333,9 @@ function Get-ExakitTableName {
     param([Parameter(Mandatory)][string]$Path)
     $base = (Split-Path $Path -Leaf) -replace '\?.*$', ''
     $base = [System.IO.Path]::GetFileNameWithoutExtension($base)
-    $table = (ConvertTo-UpperInvariantString $base -replace '[^A-Z0-9_]', '_')
+    # Parentheses required: without them "-replace" binds as a parameter of
+    # ConvertTo-UpperInvariantString instead of acting as the operator.
+    $table = ((ConvertTo-UpperInvariantString $base) -replace '[^A-Z0-9_]', '_')
     $table = ($table -replace '^_+', '') -replace '_+$', ''
     $table = $table -replace '_{2,}', '_'
     if (-not $table) { return "MY_TABLE" }
@@ -588,8 +590,13 @@ function Invoke-ExakitSampleDataLoad {
         if ($script:LogFile) { $verifyOut | Add-Content -Path $script:LogFile }
         # Two independent conditions: the query itself must have run (exapump
         # success, exit-code-quirk-aware), AND no verification check may have
-        # emitted a STATUS = 'FAIL' row.
-        if ((-not (Test-ExapumpSucceeded -ExitCode $verifyStatus -Output $verifyOut)) -or ("$verifyOut" -match "(?im)\bFAIL\b")) {
+        # emitted a STATUS = 'FAIL' row. The FAIL scan must skip exapump's
+        # "[n/N] <statement> N rows" progress lines: they echo the executed
+        # SQL, whose CASE ... ELSE 'FAIL' END expressions would otherwise
+        # match even when every result row is OK. (Test-ExapumpSucceeded still
+        # sees the full merged output — it needs the progress markers.)
+        $verifyRows = ("$verifyOut" -split "`n" | Where-Object { $_ -notmatch '^\s*\[\d+/\d+\]' }) -join "`n"
+        if ((-not (Test-ExapumpSucceeded -ExitCode $verifyStatus -Output $verifyOut)) -or ($verifyRows -match "(?im)\bFAIL\b")) {
             Fail "Verification failed (query error or a FAIL row) - see $script:LogFile. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
         }
     }

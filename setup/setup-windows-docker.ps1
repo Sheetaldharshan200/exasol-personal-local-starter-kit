@@ -45,8 +45,18 @@ try {
         Install-Nano
     }
 
+    # exapump publishes Windows binaries for x86_64 only. On other
+    # architectures (e.g. Windows-on-ARM) the exapump/data/MCP steps are
+    # skipped gracefully instead of aborting an install whose database
+    # container is already up and fully usable.
+    $exapumpSupported = ($env:PROCESSOR_ARCHITECTURE -eq "AMD64")
+    if (-not $exapumpSupported) {
+        Warn2 "exapump publishes Windows builds for x86_64 only (detected: $($env:PROCESSOR_ARCHITECTURE))."
+        Info "Skipping exapump, sample-data loading and MCP client setup - the database container itself is fully supported. Details: quickstarts/windows-docker.md"
+    }
+
     # --- step 3: exapump (data loading CLI) ------------------------------------
-    if (Begin-ExakitStep "exapump" "Step 2/5  exapump (data loading CLI)") {
+    if ($exapumpSupported -and (Begin-ExakitStep "exapump" "Step 2/5  exapump (data loading CLI)")) {
         Install-Exapump
         New-ExapumpProfile
         Test-ExapumpConnection
@@ -59,14 +69,16 @@ try {
     # that already holds the sample tables - and the AI client has data to
     # query the moment it connects. Wrapped so a failed/declined load never
     # aborts the rest of setup (mirrors kit_shared_steps' `|| true` in bash).
-    try {
-        Request-ExakitDataLoadOffer -KitRoot $KitRoot
-    } catch [ExakitFailException] {
-        Warn2 "Sample data load did not finish cleanly. Retry any time with: exakit data-load"
+    if ($exapumpSupported) {
+        try {
+            Request-ExakitDataLoadOffer -KitRoot $KitRoot
+        } catch [ExakitFailException] {
+            Warn2 "Sample data load did not finish cleanly. Retry any time with: exakit data-load"
+        }
     }
 
     # --- step 4: MCP server (AI agent bridge) ----------------------------------
-    if (Begin-ExakitStep "mcp" "Step 3/5  MCP server (AI agent bridge)") {
+    if ($exapumpSupported -and (Begin-ExakitStep "mcp" "Step 3/5  MCP server (AI agent bridge)")) {
         Install-Mcp
         if (Update-ExakitMcpConfigs) {
             Test-McpServer
