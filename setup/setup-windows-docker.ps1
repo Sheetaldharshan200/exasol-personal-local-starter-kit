@@ -89,14 +89,20 @@ try {
     }
 
     # --- step 5: exakit helper command ------------------------------------------
-    if (Begin-ExakitStep "exakit_helper" "Step 4/5  exakit helper command") {
+    # The step flag alone is not trusted: if the shim was removed (cleanup,
+    # testing, older builds), a re-run must reinstall it rather than skip —
+    # and the PATH check must run either way, since the PATH entry can be
+    # missing even when the step is marked done.
+    $helperNeeded = Begin-ExakitStep "exakit_helper" "Step 4/5  exakit helper command"
+    if (-not $helperNeeded -and -not (Test-Path (Join-Path $script:BinDir "exakit.cmd"))) {
+        Info "exakit command is missing - reinstalling it"
+        $helperNeeded = $true
+    }
+    if (-not $helperNeeded) {
+        Confirm-ExakitOnPath $script:BinDir
+    }
+    if ($helperNeeded) {
         New-Item -ItemType Directory -Force -Path $script:BinDir | Out-Null
-        Copy-Item -Force (Join-Path $ScriptDir "exakit.ps1") (Join-Path $script:BinDir "exakit.ps1")
-        # A .cmd shim so a bare `exakit` works from both cmd.exe and
-        # PowerShell (PATHEXT resolves .cmd by default; .ps1 is not in it).
-        $shimPath = Join-Path $script:BinDir "exakit.cmd"
-        $shimContent = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0exakit.ps1`" %*`r`n"
-        Set-Content -Path $shimPath -Value $shimContent -NoNewline
 
         # Keep a copy of the kit library (and the mcp/, sql/, data/ packages
         # Get-ExakitRepoRoot depends on) next to the state so exakit finds
@@ -111,6 +117,20 @@ try {
         foreach ($dir in @("mcp", "sql", "data")) {
             Copy-ExakitAsset -Source (Join-Path $KitRoot $dir) -Destination (Join-Path $script:ExakitHome "kit\$dir")
         }
+
+        # The bare `exakit` command must be ONLY the .cmd shim. The .ps1 is
+        # deliberately NOT placed in the bin dir: when both sit on PATH,
+        # PowerShell resolves the .ps1 ahead of the .cmd, which routes
+        # `exakit` around the shim's -ExecutionPolicy Bypass and fails on
+        # default-policy systems with "running scripts is disabled". The
+        # shim targets the kit's copy by absolute path instead.
+        # (Remove-Item also self-heals installs made before this fix.)
+        Remove-Item -Force (Join-Path $script:BinDir "exakit.ps1") -ErrorAction SilentlyContinue
+        $psTarget = Join-Path $kitSetupDir "exakit.ps1"
+        $shimPath = Join-Path $script:BinDir "exakit.cmd"
+        $shimContent = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$psTarget`" %*`r`n"
+        Set-Content -Path $shimPath -Value $shimContent -NoNewline
+
         Confirm-ExakitOnPath $script:BinDir
         Set-ExakitStepDone "exakit_helper"
         Ok "exakit installed ($(Join-Path $script:BinDir 'exakit.cmd'))"

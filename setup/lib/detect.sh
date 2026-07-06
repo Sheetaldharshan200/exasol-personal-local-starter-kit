@@ -86,6 +86,16 @@ port_in_use() {
     return 1
 }
 
+# wsl_docker_desktop_on_windows — inside WSL, use Windows interop to detect
+# the classic half-configured state: Docker Desktop IS running on the
+# Windows side (docker.exe answers) while this distro cannot reach it,
+# i.e. WSL integration is not enabled for this distro.
+wsl_docker_desktop_on_windows() {
+    [ "$(detect_os)" = "wsl" ] || return 1
+    command -v docker.exe >/dev/null 2>&1 || return 1
+    docker.exe info >/dev/null 2>&1
+}
+
 # preflight_report — check every requirement for this machine and print a
 # pass/fail line for each, with the remedy inline. Returns non-zero when a
 # hard requirement is missing. Installs nothing; safe to run any time.
@@ -147,7 +157,12 @@ preflight_report() {
         case "$(detect_container_runtime_detail)" in
             docker)         _pf_ok "Container runtime: docker (running)" ;;
             podman)         _pf_ok "Container runtime: podman (running)" ;;
-            docker-stopped) _pf_bad "Docker is installed but not running — start Docker (e.g. Docker Desktop), then re-run" ;;
+            docker-stopped)
+                if wsl_docker_desktop_on_windows; then
+                    _pf_bad "Docker Desktop is running on Windows but not connected to this WSL distro — Docker Desktop > Settings > Resources > WSL integration > enable this distro, Apply & restart"
+                else
+                    _pf_bad "Docker is installed but not running — start Docker (e.g. Docker Desktop), then re-run"
+                fi ;;
             podman-stopped) _pf_bad "Podman is installed but not running — try: podman machine start" ;;
             none)           _pf_bad "No container runtime — install Docker (docs.docker.com/get-docker) or Podman (podman.io)" ;;
         esac
