@@ -184,6 +184,16 @@ function New-ExapumpProfile {
         return
     }
 
+    # If the runtime password wasn't already on file (mirrors exapump.sh: an
+    # adopted deployment with unreadable secrets, so the password came from the
+    # prompt above), remember it so Test-ExapumpConnection can persist it AFTER
+    # confirming it works. The MCP step needs runtime.password_file, but saving
+    # a mistyped password before validation would make the next run reuse it
+    # instead of re-prompting.
+    if (-not $pwFile -or -not (Test-Path $pwFile)) {
+        $script:PendingRuntimePassword = $password
+    }
+
     New-Item -ItemType Directory -Force -Path (Split-Path $script:ExapumpConfigPath -Parent) | Out-Null
     Set-ExapumpTomlSection -ConfigPath $script:ExapumpConfigPath -Profile $script:ExapumpProfile -Host_ $host_ -Port $port -User $user -Password $password
     Protect-ExakitFile $script:ExapumpConfigPath
@@ -256,6 +266,14 @@ function Test-ExapumpConnection {
         if ($result.Success) {
             Ok "Connection works"
             Set-ExakitManifestValue "components.exapump.validated" $true
+            # Now that the password is proven to work, persist it as the runtime
+            # password if the runtime step could not (adopted deployment with
+            # unreadable secrets) - the MCP step needs runtime.password_file.
+            if ($script:PendingRuntimePassword) {
+                Set-ExakitCredential "runtime_sys_password" $script:PendingRuntimePassword
+                Set-ExakitManifestValue "runtime.password_file" (Join-Path $script:CredsDir "runtime_sys_password")
+                $script:PendingRuntimePassword = $null
+            }
             return
         }
         Start-Sleep -Seconds 5

@@ -133,6 +133,17 @@ exapump_create_profile() {
         return 0
     fi
 
+    # If the runtime password wasn't already on file (e.g. we adopted a running
+    # deployment whose secrets we couldn't read, so the password came from the
+    # prompt above), remember it so exapump_validate_connection can persist it
+    # AFTER confirming it works. The MCP step reads runtime.password_file to
+    # provision the read-only user, so it must be recorded — but only once the
+    # password is validated, otherwise a mistyped password would be saved and
+    # the next run would reuse it instead of re-prompting.
+    if [ -z "$_pwfile" ] || [ ! -f "$_pwfile" ]; then
+        _EXAKIT_PENDING_RUNTIME_PASSWORD="$_password"
+    fi
+
     require_python3
     mkdir -p "$(dirname "$EXAPUMP_CONFIG")"
     run_python - "$EXAPUMP_CONFIG" "$EXAKIT_EXAPUMP_PROFILE" "$_host" "$_port" "$_user" "$_password" <<'PY' || die "Could not write the exapump profile"
@@ -184,6 +195,14 @@ exapump_validate_connection() {
         if run_logged "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" 'SELECT 1'; then
             ok "Connection works"
             manifest_set components.exapump.validated true
+            # Now that the password is proven to work, persist it as the runtime
+            # password if the runtime step could not (adopted deployment with
+            # unreadable secrets) — the MCP step needs runtime.password_file.
+            if [ -n "${_EXAKIT_PENDING_RUNTIME_PASSWORD:-}" ]; then
+                store_credential runtime_sys_password "$_EXAKIT_PENDING_RUNTIME_PASSWORD"
+                manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/runtime_sys_password"
+                unset _EXAKIT_PENDING_RUNTIME_PASSWORD
+            fi
             return 0
         fi
         _tries=$((_tries + 1))
