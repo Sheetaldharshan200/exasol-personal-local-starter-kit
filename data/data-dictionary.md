@@ -4,7 +4,8 @@ Reference for every table and column in this folder. Use it to write correct SQL
 (and to ground an AI assistant) without guessing what a column means.
 
 **Notes on the files**
-- CSV, comma-delimited, one header row, standard TPC-H lowercase column names.
+- CSV, comma-delimited, one header row. Headers are UPPERCASE TPC-H column names, so the loaded
+  tables have uppercase columns that plain unquoted SQL resolves (see the SQL notes at the end).
 - Fields containing a comma are double-quoted (e.g. `"Customer#000000001"`, comment text).
 - CSV itself is untyped text; the *logical* types below are what the columns represent
   (and what `sql/01_create_schema.sql` should declare when defined). Money is `DECIMAL(15,2)`,
@@ -151,3 +152,12 @@ Grain: one product line within an order. **PK:** `(l_orderkey, l_linenumber)`.
 
 *Row counts above are for scale factor 0.02. See [README.md](README.md) to regenerate at a
 different size (counts scale linearly with SF).*
+
+## Writing SQL against this data (Exasol notes)
+
+- **Column names are UPPERCASE** and resolve unquoted (`p_type`, `l_extendedprice` — Exasol folds
+  identifiers to uppercase). No double-quoting needed.
+- **Row limit:** Exasol uses `LIMIT n` (or `LIMIT n OFFSET m`) — **not** `FETCH FIRST … ROWS ONLY`
+  or `TOP n`.
+- **Revenue** (kit convention): `l_extendedprice * (1 - l_discount)` — net of line discount,
+  excludes tax, does not subtract returns. Add `WHERE l_returnflag <> 'R'` to exclude returned lines.

@@ -19,6 +19,8 @@
 #   mcp-doctor          run MCP diagnostics
 #   mcp-remove          remove managed MCP config from the supported clients
 #   mcp-restore         restore the latest (or a chosen) MCP snapshot
+#   skills-install      install the kit's AI skills for CLI agents
+#                       (~/.claude/skills, ~/.agents/skills)
 #   teardown [--data]   remove the runtime; --data also deletes database
 #                       content (Nano volume / Personal deployment)
 #   logs                print the path of the latest setup log
@@ -198,8 +200,13 @@ cmd_mcp_restore() {
     exakit_mcp_restore "${1:-}" || die "Could not restore managed MCP configuration"
 }
 
+cmd_skills_install() {
+    exakit_init_logging
+    exakit_install_skills || die "Could not install the kit's AI skills"
+}
+
 usage() {
-    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 case "${1:-help}" in
@@ -219,6 +226,7 @@ case "${1:-help}" in
     mcp-doctor) shift; cmd_mcp_doctor "$@" ;;
     mcp-remove) shift; cmd_mcp_remove "$@" ;;
     mcp-restore) shift; cmd_mcp_restore "$@" ;;
+    skills-install) cmd_skills_install ;;
     teardown) shift; cmd_teardown "${1:-}" ;;
     logs)     cmd_logs ;;
     help|-h|--help) usage ;;

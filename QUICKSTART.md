@@ -59,6 +59,16 @@ For the local Exasol Personal runtime, the generated MCP config also sets `EXA_S
 
 After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
+### Optional — let your AI agent run the kit for you
+
+The kit includes an **AI skill** that teaches Claude Code, Codex, or Cursor to drive these steps themselves. The installer offers to install it; you can also run it any time:
+
+```bash
+exakit skills-install
+```
+
+Then, in a **fresh** agent session, say **"setup starter kit"** — it checks state, connects MCP, loads data, and runs the first query with SQL shown before execution. Details: [`skills/README.md`](skills/README.md).
+
 ## 5. Ask your first question
 
 The installer offers a guided data loading menu after exapump is ready and before MCP setup. Open it any time for local files, remote files, database imports, Exapump help, or SQL scripts; the default option loads and verifies the bundled `data/` folder:

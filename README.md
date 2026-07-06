@@ -87,6 +87,16 @@ Choose `temporary` for copy/paste instructions only: files are generated in `~/.
 
 When the kit can detect the local MCP launcher path, it writes that exact path into the generated client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
 
+### Let an AI assistant drive the kit (the skill)
+
+The kit ships an **AI skill** — a `SKILL.md` recipe that teaches an agent (Claude Code, Codex, Cursor, or any tool that reads the open skill standard) to run this whole flow for you: check status, connect MCP, load data, and hold the inspect-before-run query loop. The installer offers to install it; you can also (re)install any time:
+
+```bash
+exakit skills-install
+```
+
+This copies the skill into each agent's discovery folder (`~/.claude/skills/`, `~/.agents/skills/`). Then, in a **fresh** agent session, just say **"setup starter kit"** and it takes over. See [`skills/README.md`](skills/README.md) for how it works, and [`skills/reducing-agent-prompts.md`](skills/reducing-agent-prompts.md) if the agent asks for approval too often.
+
 ### The workflow this kit teaches
 
 ```text
@@ -113,6 +123,7 @@ exakit stop
 exakit start
 exakit data-load
 exakit load-data
+exakit skills-install
 exakit mcp-status
 exakit mcp-validate
 ```

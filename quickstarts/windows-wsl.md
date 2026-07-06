@@ -60,6 +60,8 @@ Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.
 - Install `uv` on Windows too and replace `command` with the output of `(Get-Command uvx).Source`
 - Keep the same `env` block and wrap the launch as `wsl uvx exasol-mcp-server@<version>`
 
+**Using Claude Code or Codex CLI inside WSL?** Run `exakit skills-install`, then say **"setup starter kit"** in a fresh session — the kit's AI skill drives setup and the first query for you. See [`skills/README.md`](../skills/README.md).
+
 Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 
 ## WSL-specific notes
