@@ -508,11 +508,27 @@ function Ensure-ExakitOnPath {
 
 function Confirm-ExakitOnPath {
     param([Parameter(Mandatory)][string]$Dir)
-    $path = $env:Path -split ";"
-    if ($path -notcontains $Dir) {
-        Warn2 "$Dir is not on your PATH."
-        Write-Host "    Add it in Settings -> System -> About -> Advanced system settings -> Environment Variables,"
-        Write-Host "    or run: `$env:Path += `";$Dir`" (current session only)"
+    # Unlike macOS/Linux, %USERPROFILE%\.local\bin is never on the Windows
+    # PATH by default, so a hint alone leaves exakit unreachable in every
+    # new terminal. Add the directory to the USER PATH (no admin needed,
+    # idempotent) the way other user-scope installers (uv, cargo) do.
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $userEntries = ($userPath -split ";") | Where-Object { $_ }
+    if ($userEntries -notcontains $Dir) {
+        try {
+            $newUserPath = if ($userPath) { "$userPath;$Dir" } else { $Dir }
+            [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+            Ok "Added $Dir to your user PATH (new terminals pick it up automatically)"
+        } catch {
+            Warn2 "$Dir could not be added to your PATH automatically."
+            Write-Host "    Add it in Settings -> System -> About -> Advanced system settings -> Environment Variables,"
+            Write-Host "    or run: `$env:Path += `";$Dir`" (current session only)"
+        }
+    }
+    # Make it work in THIS session too (the machine-wide change only
+    # affects newly started processes).
+    if (($env:Path -split ";") -notcontains $Dir) {
+        $env:Path += ";$Dir"
     }
 }
 
