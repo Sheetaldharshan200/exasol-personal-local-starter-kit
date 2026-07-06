@@ -1,4 +1,4 @@
-o_orderkey,o_custkey,o_orderstatus,o_totalprice,o_orderdate,o_orderpriority,o_clerk,o_shippriority,o_comment
+O_ORDERKEY,O_CUSTKEY,O_ORDERSTATUS,O_TOTALPRICE,O_ORDERDATE,O_ORDERPRIORITY,O_CLERK,O_SHIPPRIORITY,O_COMMENT
 1,739,O,162079.26,1996-01-02,5-LOW,"Clerk#000000951",0,ly express platelets. deposits acc
 2,1561,O,40942.18,1996-12-01,1-URGENT,"Clerk#000000880",0,ve the furiously fluffy dependencies. carefully regular 
 3,2467,F,210702.46,1993-10-14,5-LOW,"Clerk#000000955",0, after the asymptotes. instructions cajole after the foxes. carefully unu

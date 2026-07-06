@@ -491,6 +491,59 @@ exakit_repo_root() {
     return 1
 }
 
+# exakit_install_skills — copy the kit's AI skills into the per-user discovery
+# folders so CLI agents auto-load them. Idempotent: each run replaces the
+# managed copy of every skill, so edits and deletions propagate cleanly.
+#   ~/.claude/skills/<name>/   — Claude Code
+#   ~/.agents/skills/<name>/   — Codex, Cursor, other open-standard agents
+exakit_install_skills() {
+    _repo_root="$(exakit_repo_root)" || {
+        warn "Could not locate the kit to find its skills/ directory."
+        return 1
+    }
+    _skills_src="$_repo_root/skills"
+    if [ ! -d "$_skills_src" ]; then
+        warn "No skills/ directory in this kit build yet — nothing to install."
+        return 1
+    fi
+
+    _installed=0
+    for _skill_dir in "$_skills_src"/*/; do
+        [ -f "$_skill_dir/SKILL.md" ] || continue
+        _name="$(basename "$_skill_dir")"
+        for _dest_root in "$HOME/.claude/skills" "$HOME/.agents/skills"; do
+            rm -rf "$_dest_root/$_name"
+            mkdir -p "$_dest_root/$_name"
+            cp -R "$_skill_dir". "$_dest_root/$_name/"
+        done
+        ok "Installed skill: $_name"
+        _installed=$((_installed + 1))
+    done
+
+    if [ "$_installed" -eq 0 ]; then
+        warn "No SKILL.md files found under $_skills_src — nothing to install."
+        return 1
+    fi
+    info "Skills installed for Claude Code (~/.claude/skills) and open-standard agents (~/.agents/skills)."
+    info "Restart or reload your AI client to pick them up."
+    return 0
+}
+
+# exakit_maybe_offer_skills_install — after setup, offer to place the skills
+# where CLI agents can find them. Mirrors the MCP-setup offer: tty-gated,
+# non-fatal, and idempotent.
+exakit_maybe_offer_skills_install() {
+    _repo_root="$(exakit_repo_root)" || return 0
+    ls "$_repo_root"/skills/*/SKILL.md >/dev/null 2>&1 || return 0
+    [ -n "$(_exakit_prompt_tty)" ] || return 0
+    if ! confirm "Install the kit's AI skills for your CLI agent (Claude Code / Codex)?" y; then
+        info "Skipping skills install for now. You can run: exakit skills-install"
+        return 0
+    fi
+    exakit_install_skills || \
+        warn "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
+}
+
 exakit_generate_mcp_configs() {
     require_python3
     _repo_root="$(exakit_repo_root)" || {
@@ -1397,6 +1450,7 @@ kit_shared_steps() {
     fi
 
     exakit_maybe_offer_mcp_setup || true
+    exakit_maybe_offer_skills_install || true
 }
 
 # connection_panel — the payoff screen: everything needed to connect.
