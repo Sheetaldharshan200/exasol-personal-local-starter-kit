@@ -49,6 +49,12 @@ nano_check_requirements() {
             ok "Container runtime: $_engine"
             ;;
         docker-stopped)
+            if wsl_docker_desktop_on_windows; then
+                error "Docker Desktop is running on Windows, but it is not connected to this WSL distro."
+                printf '    Enable it: Docker Desktop > Settings > Resources > WSL integration >\n' >&2
+                printf '    turn on this distro, click Apply & restart, then re-run this installer.\n' >&2
+                die "Enable Docker Desktop's WSL integration for this distro and re-run."
+            fi
             die "Docker is installed but not running. Start Docker (e.g. open Docker Desktop) and re-run."
             ;;
         podman-stopped)
