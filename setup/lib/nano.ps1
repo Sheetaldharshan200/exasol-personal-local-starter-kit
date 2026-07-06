@@ -103,6 +103,38 @@ function Test-NanoReadyInLogs {
     }
 }
 
+# The container was created with the first-deploy-only
+# 'init sys_password_file=...' arguments. Nano refuses to boot with them
+# once /exa is initialized, so such a container cannot simply be restarted.
+function Test-NanoFirstDeployArgs {
+    $cmd = & (Get-NanoEngine) container inspect -f '{{join .Config.Cmd " "}}' $script:NanoContainer 2>$null
+    return ("$cmd" -match "sys_password_file")
+}
+
+# Bring a stopped container back up, recreating it first when it still
+# carries the single-use first-deploy arguments (the data volume carries
+# the database and its password forward).
+function Start-NanoExisting {
+    $engine = Get-NanoEngine
+    if (Test-NanoFirstDeployArgs) {
+        $image = & $engine container inspect -f "{{.Config.Image}}" $script:NanoContainer 2>$null
+        if (-not $image) { $image = Get-NanoImageRef }
+        Info "Recreating the Nano container (first-deploy options are single-use; the data volume is kept)"
+        $code = Invoke-ExakitLogged $engine "rm" "-f" $script:NanoContainer
+        if ($code -ne 0) { Fail "Could not replace the old container (see log)" }
+        $code = Invoke-ExakitLogged $engine "run" "-d" "--name" $script:NanoContainer `
+            "--shm-size=512mb" "--pids-limit=-1" `
+            "-p" "127.0.0.1:$($script:DbPort):8563" `
+            "-v" "$($script:NanoVolume):/exa" `
+            $image
+        if ($code -ne 0) { Fail "Container failed to start (see log)" }
+    } else {
+        $code = Invoke-ExakitLogged $engine "start" $script:NanoContainer
+        if ($code -ne 0) { Fail "Could not start existing container $($script:NanoContainer) (see log)" }
+    }
+    Wait-NanoReady
+}
+
 # Install-Nano - pull the pinned image and start the container (first run
 # deploys the database with a generated SYS password). Idempotent.
 function Install-Nano {
@@ -117,9 +149,7 @@ function Install-Nano {
 
     if ((Test-NanoContainerExists) -and -not (Test-NanoContainerRunning)) {
         Info "Found existing Nano container - starting it"
-        $code = Invoke-ExakitLogged $engine "start" $script:NanoContainer
-        if ($code -ne 0) { Fail "Could not start existing container $($script:NanoContainer) (see log)" }
-        Wait-NanoReady
+        Start-NanoExisting
         Set-NanoManifest
         return
     }
@@ -239,9 +269,7 @@ function Start-Nano {
     Resolve-NanoNames
     if (-not (Test-NanoContainerExists)) { Fail "No Nano container found. Run the installer first." }
     if (Test-NanoContainerRunning) { Ok "Nano container is already running"; return }
-    $code = Invoke-ExakitLogged (Get-NanoEngine) "start" $script:NanoContainer
-    if ($code -ne 0) { Fail "Failed to start container" }
-    Wait-NanoReady
+    Start-NanoExisting
     Ok "Nano started"
 }
 
