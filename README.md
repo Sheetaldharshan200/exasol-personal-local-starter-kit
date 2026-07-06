@@ -112,7 +112,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 
-Prefer your own data? `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit` and ask about that instead.
+Prefer your own data? Run `exakit data-load` — a guided menu that loads the bundled sample, a **local or remote CSV**, a **SQL script**, or imports **from another database (or another Exasol)**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 ### Day-to-day
 
@@ -176,6 +176,8 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 | Does it cost anything? | No — Exasol Personal is free for personal use |
 | What sample data is included? | A ~21 MB TPC-H dataset in [`data/`](data/) — see the [data dictionary](data/data-dictionary.md) |
 | "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
+| Docker Desktop runs on Windows but WSL can't see it? | Docker Desktop → Settings → Resources → **WSL integration** → enable your distro, Apply & restart (the installer detects and says this too) |
+| `exakit` not recognized after a Windows install? | Re-run the install command — it now adds `~\.local\bin` to your user PATH and repairs the command automatically |
 | Port 8563 already taken? | `EXAKIT_DB_PORT=8564` before the install command *(Linux/Windows container path)* |
 | Behind a corporate proxy? | `export HTTPS_PROXY=...` and re-run |
 | Where's the deep-dive for my OS? | [macOS](quickstarts/macos.md) · [Windows + WSL](quickstarts/windows-wsl.md) · [Windows + Docker](quickstarts/windows-docker.md) |
