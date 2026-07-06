@@ -390,6 +390,18 @@ exakit_show_database_import_guidance() {
     printf '  2. Run this option and provide that file path.\n'
     printf '  3. Verify the target table with exapump sql -p starter-kit.\n'
     printf '\n'
+    printf '  Self-signed certificate: if the source is an Exasol with a\n'
+    printf '  self-signed cert (the kit deploys one), the CONNECTION must pin\n'
+    printf '  its TLS fingerprint in the host string:\n'
+    printf "        TO 'HOST/FINGERPRINT:PORT'\n"
+    printf '  To get the fingerprint, run the IMPORT once without it: the\n'
+    printf '  "ETL-4211 ... self-signed certificate" error prints the exact\n'
+    printf '  HOST/FINGERPRINT:PORT to paste back. Never disable cert validation.\n'
+    printf '\n'
+    printf '  Security: once CREATE CONNECTION runs, Exasol stores the password\n'
+    printf '  encrypted inside the database - do not leave a plaintext password\n'
+    printf '  in the .sql file; delete or scrub it after the connection exists.\n'
+    printf '\n'
     if confirm "Run an import SQL script now?" y; then
         exakit_run_sql_script
     else

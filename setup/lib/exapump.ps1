@@ -525,6 +525,18 @@ function Show-ExakitDatabaseImportGuidance {
     Write-Host "  2. Run this option and provide that file path."
     Write-Host "  3. Verify the target table with exapump sql -p starter-kit."
     Write-Host ""
+    Write-Host "  Self-signed certificate: if the source is an Exasol with a"
+    Write-Host "  self-signed cert (the kit deploys one), the CONNECTION must pin"
+    Write-Host "  its TLS fingerprint in the host string:"
+    Write-Host "        TO 'HOST/FINGERPRINT:PORT'"
+    Write-Host "  To get the fingerprint, run the IMPORT once without it: the"
+    Write-Host "  'ETL-4211 ... self-signed certificate' error prints the exact"
+    Write-Host "  HOST/FINGERPRINT:PORT to paste back. Never disable cert validation."
+    Write-Host ""
+    Write-Host "  Security: once CREATE CONNECTION runs, Exasol stores the password"
+    Write-Host "  encrypted inside the database - do not leave a plaintext password"
+    Write-Host "  in the .sql file; delete or scrub it after the connection exists."
+    Write-Host ""
     if (Confirm-ExakitPrompt "Run an import SQL script now?" $true) {
         Invoke-ExakitSqlScript
     } else {
