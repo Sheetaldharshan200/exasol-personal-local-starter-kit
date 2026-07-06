@@ -24,9 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-
 irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-> **Native Windows note:** the PowerShell path currently installs the database container only — the `exakit`/`exapump` commands below and the generated MCP configs come with the macOS/Linux/WSL path. On Windows, follow the [Windows Docker quickstart](quickstarts/windows-docker.md) for verification and MCP setup, or run the install inside WSL for the full experience.
-
-What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment takes 10–20 minutes (one-time); container platforms are up in a few minutes.
+What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment takes 10–20 minutes (one-time); container platforms are up in a few minutes. The `exakit`/`exapump` commands below work the same way on native Windows PowerShell as on macOS/Linux/WSL (see the [Windows Docker quickstart](quickstarts/windows-docker.md) for Windows-specific notes).
 
 > Prefer to read the scripts first? Add `EXAKIT_DRY_RUN=1` before `sh` — the kit is downloaded to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup script yourself.
 
@@ -57,14 +55,22 @@ Choose `temporary` for copy/paste instructions only: files are generated in `~/.
 
 When the kit can resolve the local MCP launcher path, it writes that exact path into the generated config instead of assuming `uvx` is available on every desktop app's PATH. That makes the same bundle more portable across macOS, Linux, and Windows clients.
 
+For the local Exasol Personal runtime, the generated MCP config also sets `EXA_SSL_CERT_VALIDATION=no`. This matches the local `127.0.0.1` self-signed certificate setup; use a trusted CA instead for a real remote or shared production database.
+
 After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
 ## 5. Ask your first question
 
-Load the sample dataset (once the kit's sample data ships — the command is safe to run any time and tells you if data isn't available yet):
+The installer offers a guided data loading menu after exapump is ready and before MCP setup. Open it any time for local files, remote files, database imports, Exapump help, or SQL scripts; the default option loads and verifies the bundled `data/` folder:
 
 ```bash
-bash ~/.exasol-starter-kit/kit/setup/load-data.sh
+exakit data-load
+```
+
+If you only want the bundled sample dataset, this command is safe to run any time and idempotent:
+
+```bash
+exakit load-data           # or: exakit load-data --force to reload
 ```
 
 Then ask your assistant something like:

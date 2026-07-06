@@ -18,6 +18,7 @@ DEFAULT_MCP_COMMAND = "uvx"
 DEFAULT_MCP_PACKAGE = "exasol-mcp-server"
 DEFAULT_MCP_VERSION = "1.10.1"
 DEFAULT_SERVER_NAME = "exasol"
+LOCAL_SELF_SIGNED_TLS_ENV = {"EXA_SSL_CERT_VALIDATION": "no"}
 
 
 @dataclass
@@ -103,16 +104,18 @@ class ExakitRuntimeLoader:
         server_name = str(
             self._environment.env.get("EXAKIT_MCP_SERVER_NAME") or DEFAULT_SERVER_NAME
         ).strip()
+        env = {
+            "EXA_DSN": dsn,
+            "EXA_USER": connection_user,
+            "EXA_PASSWORD": password,
+        }
+        env.update(self._ssl_environment(runtime, dsn))
         definition = ServerDefinition(
             transport=DeploymentMode.STDIO,
             name=server_name,
             command=command,
             args=(f"{package}@{version}",),
-            env={
-                "EXA_DSN": dsn,
-                "EXA_USER": connection_user,
-                "EXA_PASSWORD": password,
-            },
+            env=env,
         )
         return ExakitRuntimeContext(
             runtime_root=runtime_root,
@@ -222,3 +225,12 @@ class ExakitRuntimeLoader:
                 "The MCP connection must use a dedicated read-only database user, not the runtime admin user.",
             )
         return user, password_file
+
+    @staticmethod
+    def _ssl_environment(runtime: dict, dsn: str) -> dict[str, str]:
+        """Match the local Exasol Personal self-signed TLS posture."""
+        tls = str(runtime.get("tls") or "").strip().lower()
+        local_dsn = dsn.startswith(("127.0.0.1:", "localhost:", "[::1]:"))
+        if tls in {"self-signed", "self_signed", "selfsigned"} or local_dsn:
+            return dict(LOCAL_SELF_SIGNED_TLS_ENV)
+        return {}

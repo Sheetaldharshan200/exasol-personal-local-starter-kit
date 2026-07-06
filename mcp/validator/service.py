@@ -310,6 +310,10 @@ class ValidatorService:
         host, separator, port_text = raw.rpartition(":")
         if not separator:
             return None, None
+        # Bracketed IPv6 literals ("[::1]:8563") must lose the brackets
+        # before being handed to socket.create_connection.
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
         try:
             return host, int(port_text)
         except ValueError:

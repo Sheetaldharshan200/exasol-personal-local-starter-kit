@@ -61,21 +61,71 @@ class ClaudeDesktopAdapter(ClientAdapter):
                 ],
             )
         if environment.os_name == "win32":
-            appdata = environment.env.get("APPDATA")
-            if appdata:
-                path = Path(appdata) / "Claude" / "claude_desktop_config.json"
-                return LocationResult(
-                    available=True,
-                    path=path,
-                    evidence=[
-                        "Using the official Windows Claude Desktop config location.",
-                    ],
-                )
+            return self._locate_windows(environment)
         return LocationResult(
             available=False,
             path=None,
             evidence=["Claude Desktop local config is only documented for macOS and Windows."],
         )
+
+    def _locate_windows(self, environment: ExecutionEnvironment) -> LocationResult:
+        # Two Claude Desktop builds exist on Windows and they read different
+        # files:
+        #   * The direct-download (.exe) build reads %APPDATA%\Claude\...
+        #   * The Microsoft Store (MSIX) build is filesystem-virtualized: when
+        #     IT writes %APPDATA%\Claude the OS redirects the write into its
+        #     package sandbox at
+        #     %LOCALAPPDATA%\Packages\Claude_<publisher>\LocalCache\Roaming\Claude.
+        #     That redirect only applies to the packaged process itself - an
+        #     external writer like this installer hits the REAL %APPDATA%\Claude,
+        #     which the Store app never reads. So on a Store install we must
+        #     target the package's LocalCache path explicitly or the server
+        #     silently never appears in the app.
+        candidates: list[Path] = []
+        local_appdata = environment.env.get("LOCALAPPDATA")
+        if local_appdata:
+            packages = Path(local_appdata) / "Packages"
+            try:
+                # glob only yields package dirs that actually exist, so a match
+                # here is strong evidence the Store build is installed. The
+                # publisher hash is not hardcoded in case it ever changes.
+                packaged = sorted(packages.glob("Claude_*"))
+            except OSError:
+                packaged = []
+            for pkg in packaged:
+                candidates.append(
+                    pkg / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json"
+                )
+        appdata = environment.env.get("APPDATA")
+        if appdata:
+            candidates.append(Path(appdata) / "Claude" / "claude_desktop_config.json")
+
+        if not candidates:
+            return LocationResult(
+                available=False,
+                path=None,
+                evidence=[
+                    "Neither %LOCALAPPDATA% nor %APPDATA% is set, so the Claude "
+                    "Desktop config location could not be determined.",
+                ],
+            )
+
+        # Prefer a location that already has a config file, then one whose
+        # directory exists, else the first candidate (packaged before standard,
+        # so a Store install wins over the never-read %APPDATA% path).
+        chosen = next((c for c in candidates if c.exists()), None)
+        if chosen is None:
+            chosen = next((c for c in candidates if c.parent.exists()), None)
+        if chosen is None:
+            chosen = candidates[0]
+
+        is_packaged = "Packages" in chosen.parts
+        evidence = [
+            "Using the Microsoft Store (packaged) Claude Desktop config location."
+            if is_packaged
+            else "Using the official Windows Claude Desktop config location."
+        ]
+        return LocationResult(available=True, path=chosen, evidence=evidence)
 
     def detect(self, environment: ExecutionEnvironment) -> DetectionResult:
         location = self.locate(environment)

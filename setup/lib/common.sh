@@ -29,7 +29,7 @@ EXAKIT_MCP_READONLY_SCHEMAS="${EXAKIT_MCP_READONLY_SCHEMAS:-STARTER_KIT}"
 # Pinned component versions (override via environment)
 # ---------------------------------------------------------------------------
 EXAKIT_PERSONAL_VERSION="${EXAKIT_PERSONAL_VERSION:-2.0.0-rc4}"
-EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-2026.2.0-nano.2}"
+EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-latest}"
 EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-0.11.2}"
 EXAKIT_MCP_PACKAGE="${EXAKIT_MCP_PACKAGE:-exasol-mcp-server}"
 EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-1.10.1}"
@@ -614,12 +614,16 @@ _exakit_exapump_sql_has_token() {
     printf '%s\n' "$_output" | grep -Fq "$_token"
 }
 
+# _exakit_assert_mcp_readonly_posture <config> <user> <comma-or-space-separated schemas>
+# Verifies CREATE SESSION only, SELECT on every configured schema, and no
+# object privileges outside those schemas — across the *whole* schema list,
+# not just the first one, so posture checks cannot miss drift on additional
+# schemas (or false-positive on their legitimate SELECT grants).
 _exakit_assert_mcp_readonly_posture() {
     _config_path="$1"
     _readonly_user="$2"
-    _schema="$3"
+    _schemas="$3"
     _identifier_user="$(printf '%s' "$_readonly_user" | tr '[:lower:]' '[:upper:]')"
-    _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
 
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
@@ -631,26 +635,114 @@ _exakit_assert_mcp_readonly_posture() {
         "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE <> 'CREATE SESSION'" \
         "EXAKIT_SYS_PRIV_SCOPE_OK" || die "The MCP read-only user has system privileges beyond CREATE SESSION."
 
-    _exakit_exapump_sql_has_token \
-        "$_config_path" "admin" \
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
-        "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
+    _old_ifs="$IFS"
+    IFS=', '
+    set -- $_schemas
+    IFS="$_old_ifs"
+    _schema_or_clause=""
+    _schema_scope_clause=""
+    for _schema in "$@"; do
+        [ -n "$_schema" ] || continue
+        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
+        _schema_lit="$(_exakit_sql_literal "$_schema_uc")"
 
-    _exakit_exapump_sql_has_token \
-        "$_config_path" "admin" \
-        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$(_exakit_sql_literal "$_schema_uc")') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$(_exakit_sql_literal "$_schema_uc")')))" \
-        "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on schema $_schema_uc."
-
-    if _exakit_run_exapump_sql \
-        "$_config_path" "mcp_readonly" \
-        "CREATE TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
-        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
-        _exakit_run_exapump_sql \
+        _exakit_exapump_sql_has_token \
             "$_config_path" "admin" \
-            "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
-            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
-        die "The MCP read-only user unexpectedly succeeded in a write operation."
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$_schema_lit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$_schema_lit'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
+            "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
+
+        _clause="(OBJECT_SCHEMA = '$_schema_lit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$_schema_lit')"
+        if [ -z "$_schema_scope_clause" ]; then
+            _schema_scope_clause="$_clause"
+        else
+            _schema_scope_clause="$_schema_scope_clause OR $_clause"
+        fi
+    done
+    [ -n "$_schema_scope_clause" ] || die "No MCP read-only schemas were configured to assert posture against."
+
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ($_schema_scope_clause))" \
+        "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on the configured schemas ($_schemas)."
+
+    for _schema in "$@"; do
+        [ -n "$_schema" ] || continue
+        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
+        if _exakit_run_exapump_sql \
+            "$_config_path" "mcp_readonly" \
+            "CREATE TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+            _exakit_run_exapump_sql \
+                "$_config_path" "admin" \
+                "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
+                >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
+            die "The MCP read-only user unexpectedly succeeded in a write operation on schema $_schema_uc."
+        fi
+    done
+}
+
+# _exakit_reassert_mcp_readonly_posture — re-run the grant-posture check
+# against the database using the credentials already on file, without
+# re-provisioning anything. Used by `exakit mcp-doctor`/`mcp-validate` so
+# privilege drift after install (e.g. someone widening a grant by hand) is
+# actually caught, not just checked once at setup time.
+# Runs the (die()-on-failure) assertion in a subshell so a posture failure
+# is reported back to the caller instead of aborting the whole CLI.
+_exakit_reassert_mcp_readonly_posture() {
+    # Ensure exapump is on PATH (both current session and permanently)
+    _exapump_bin="$(exakit_exapump_bin 2>/dev/null)" || true
+    if [ -n "$_exapump_bin" ]; then
+        _exapump_dir="$(dirname "$_exapump_bin")"
+        case ":$PATH:" in
+            *":$_exapump_dir:"*) ;;
+            *)
+                PATH="$_exapump_dir:$PATH"
+                _exakit_add_bin_to_shell_rc "$_exapump_dir"
+                ;;
+        esac
     fi
+    
+    _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
+    _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
+    _readonly_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+    _readonly_password_file="$(manifest_get components.mcp_server.connection.password_file 2>/dev/null || true)"
+    _schemas_json="$(manifest_get components.mcp_server.connection.schemas 2>/dev/null || true)"
+
+    if [ -z "$_runtime_user" ] || [ -z "$_runtime_password_file" ] || \
+       [ -z "$_readonly_user" ] || [ -z "$_readonly_password_file" ] || [ -z "$_schemas_json" ]; then
+        return 0
+    fi
+    [ -f "$_runtime_password_file" ] || { warn "Runtime password file missing; skipping MCP grant-posture re-check."; return 1; }
+    [ -f "$_readonly_password_file" ] || { warn "MCP read-only password file missing; skipping MCP grant-posture re-check."; return 1; }
+
+    _schemas_csv="$(run_python - "$_schemas_json" <<'PY'
+import json, sys
+print(",".join(json.loads(sys.argv[1])))
+PY
+)"
+    [ -n "$_schemas_csv" ] || return 0
+
+    _admin_password="$(cat "$_runtime_password_file")"
+    _readonly_password="$(cat "$_readonly_password_file")"
+    _host="$(_exakit_parse_runtime_host)"
+    _port="$(_exakit_parse_runtime_port)"
+    _default_schema="$(_exakit_first_schema "$_schemas_csv")"
+
+    _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX")"
+    _exakit_write_exapump_config \
+        "$_temp_config" "$_host" "$_port" "$_runtime_user" "$_admin_password" \
+        "$_readonly_user" "$_readonly_password" "$_default_schema"
+
+    info "Re-checking MCP read-only grant posture against the database"
+    if ( _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_schemas_csv" ) \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        rm -f "$_temp_config"
+        ok "MCP read-only grant posture is still correct"
+        return 0
+    fi
+    rm -f "$_temp_config"
+    warn "MCP read-only grant posture has drifted from least-privilege (see log). Run 'exakit mcp-repair' or review grants manually."
+    return 1
 }
 
 _exakit_validate_identifier() {
@@ -664,7 +756,7 @@ _exakit_validate_identifier() {
 
 _exakit_validate_sql_password_token() {
     case "$1" in
-        ""|[!A-Z]*|*[!A-Z0-9_]*)
+        ""|[!A-Z]*|*[!A-Z0-9]*)
             return 1
             ;;
     esac
@@ -672,11 +764,74 @@ _exakit_validate_sql_password_token() {
 }
 
 _exakit_generate_sql_password_token() {
-    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9_' < /dev/urandom | head -c 23)"
+    # Generate alphanumeric password (A-Z, 0-9 only, no underscores) for maximum SQL compatibility
+    # Format: A followed by 23 random uppercase/digits
+    printf 'A%s\n' "$(LC_ALL=C tr -dc 'A-Z0-9' < /dev/urandom | head -c 23)"
+}
+
+# _exakit_add_bin_to_shell_rc <bin-directory>
+# Adds the bin directory to shell startup files for persistent PATH updates
+# across future shell sessions. Works for bash, zsh, and sh.
+_exakit_add_bin_to_shell_rc() {
+    _bin_dir="$1"
+    _export_line="export PATH=\"$_bin_dir:\$PATH\""
+    
+    # Prefer ~/.bashrc (most common for interactive bash shells)
+    if [ -f "$HOME/.bashrc" ]; then
+        if ! grep -Fq "$_bin_dir" "$HOME/.bashrc" 2>/dev/null; then
+            printf '\n%s\n' "$_export_line" >> "$HOME/.bashrc"
+            ok "Added $_bin_dir to PATH in $HOME/.bashrc"
+        fi
+        return 0
+    fi
+    
+    # Fall back to ~/.profile (POSIX shell / login shells)
+    if [ -f "$HOME/.profile" ]; then
+        if ! grep -Fq "$_bin_dir" "$HOME/.profile" 2>/dev/null; then
+            printf '\n%s\n' "$_export_line" >> "$HOME/.profile"
+            ok "Added $_bin_dir to PATH in $HOME/.profile"
+        fi
+        return 0
+    fi
+    
+    # For macOS or when ~/.bashrc doesn't exist, try ~/.zshrc
+    if [ -f "$HOME/.zshrc" ]; then
+        if ! grep -Fq "$_bin_dir" "$HOME/.zshrc" 2>/dev/null; then
+            printf '\n%s\n' "$_export_line" >> "$HOME/.zshrc"
+            ok "Added $_bin_dir to PATH in $HOME/.zshrc"
+        fi
+        return 0
+    fi
+    
+    # If no startup file exists yet, create ~/.profile
+    if ! grep -Fq "$_bin_dir" "$HOME/.profile" 2>/dev/null; then
+        printf '%s\n' "$_export_line" >> "$HOME/.profile"
+        ok "Added $_bin_dir to PATH in new $HOME/.profile"
+    fi
+}
+
+_exakit_redact_mcp_secret_output() {
+    _text="$1"
+    _secret="$2"
+    if [ -n "$_secret" ]; then
+        _text="${_text//$_secret/<redacted>}"
+    fi
+    printf '%s\n' "$_text" | sed -E "s/(IDENTIFIED BY )('[^']*'|[A-Z][A-Z0-9]*(\.\.\.)?)/\1<redacted>/g"
 }
 
 exakit_configure_mcp_readonly_access() {
     require_python3
+    # Ensure exapump is on PATH (both current session and permanently)
+    _exapump_bin="$(exakit_exapump_bin)" || die "exapump is required for MCP read-only setup but was not found."
+    _exapump_dir="$(dirname "$_exapump_bin")"
+    case ":$PATH:" in
+        *":$_exapump_dir:"*) ;;
+        *)
+            PATH="$_exapump_dir:$PATH"
+            _exakit_add_bin_to_shell_rc "$_exapump_dir"
+            ;;
+    esac
+    
     _runtime_user="$(_exakit_manifest_runtime_value runtime.user)"
     _runtime_password_file="$(_exakit_manifest_runtime_value runtime.password_file)"
     [ -n "$_runtime_user" ] || die "runtime.user is missing; cannot prepare the MCP read-only database user."
@@ -710,16 +865,30 @@ exakit_configure_mcp_readonly_access() {
         "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_USERS WHERE USER_NAME = '$(_exakit_sql_literal "$_identifier_user")') THEN 'EXAKIT_MCP_USER_PRESENT' ELSE 'EXAKIT_MCP_USER_MISSING' END AS STATUS" \
         "EXAKIT_MCP_USER_PRESENT"; then
         info "Creating the dedicated MCP read-only database user ($_readonly_user)"
-        _exakit_run_exapump_sql \
+        _create_user_output="$(_exakit_run_exapump_sql \
             "$_temp_config" "admin" \
-            "CREATE USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
-            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create the MCP read-only database user."
+            "CREATE USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" 2>&1)"
+        if [ $? -ne 0 ]; then
+            _create_user_redacted="$(_exakit_redact_mcp_secret_output "$_create_user_output" "$_readonly_password")"
+            _exakit_log_file "ERROR_DETAIL $_create_user_redacted"
+            error "CREATE USER details: $_create_user_redacted"
+            die "Could not create the MCP read-only database user."
+        fi
+        _create_user_redacted="$(_exakit_redact_mcp_secret_output "$_create_user_output" "$_readonly_password")"
+        [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_create_user_redacted" >> "$EXAKIT_LOG_FILE"
     fi
 
-    _exakit_run_exapump_sql \
+    _alter_user_output="$(_exakit_run_exapump_sql \
         "$_temp_config" "admin" \
-        "ALTER USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" \
-        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not refresh the MCP read-only database password."
+        "ALTER USER ${_identifier_user} IDENTIFIED BY ${_readonly_password}" 2>&1)"
+    if [ $? -ne 0 ]; then
+        _alter_user_redacted="$(_exakit_redact_mcp_secret_output "$_alter_user_output" "$_readonly_password")"
+        _exakit_log_file "ERROR_DETAIL $_alter_user_redacted"
+        error "ALTER USER details: $_alter_user_redacted"
+        die "Could not refresh the MCP read-only database password."
+    fi
+    _alter_user_redacted="$(_exakit_redact_mcp_secret_output "$_alter_user_output" "$_readonly_password")"
+    [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_alter_user_redacted" >> "$EXAKIT_LOG_FILE"
     _exakit_run_exapump_sql \
         "$_temp_config" "admin" \
         "GRANT CREATE SESSION TO ${_identifier_user}" \
@@ -754,7 +923,7 @@ exakit_configure_mcp_readonly_access() {
         "$_temp_config" "mcp_readonly" \
         "SELECT 'EXAKIT_MCP_READONLY_OK' AS STATUS" \
         "EXAKIT_MCP_READONLY_OK" || die "The MCP read-only user did not pass the validation query."
-    _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_default_schema_uc"
+    _exakit_assert_mcp_readonly_posture "$_temp_config" "$_readonly_user" "$_readonly_schemas"
 
     manifest_set components.mcp_server.connection.user "$_readonly_user"
     manifest_set components.mcp_server.connection.password_file "$EXAKIT_CREDS_DIR/mcp_readonly_password"
@@ -895,6 +1064,7 @@ exakit_print_mcp_ready_panel() {
     _mcp_package="$(manifest_get components.mcp_server.package 2>/dev/null || printf '%s' "$EXAKIT_MCP_PACKAGE")"
     _mcp_version="$(manifest_get components.mcp_server.version 2>/dev/null || printf '%s' "$EXAKIT_MCP_VERSION")"
     _mcp_command="$(manifest_get components.mcp_server.command 2>/dev/null || true)"
+    _tls="$(manifest_get runtime.tls 2>/dev/null || true)"
     [ -n "$_mcp_command" ] || _mcp_command="uvx"
 
     printf '\n'
@@ -904,6 +1074,9 @@ exakit_print_mcp_ready_panel() {
     printf '  Command:       %s %s@%s\n' "$_mcp_command" "$_mcp_package" "$_mcp_version"
     printf '  Database:      %s\n' "${_dsn:-unknown}"
     printf '  DB user:       %s (read-only)\n' "${_mcp_user:-mcp_readonly}"
+    if [ "$_tls" = "self-signed" ]; then
+        printf '  TLS:           local self-signed certificate accepted for 127.0.0.1\n'
+    fi
     printf '  Config bundle: %s\n' "$EXAKIT_MCP_DIR"
     printf '\n'
     if [ "$_mode" = "temporary" ]; then
@@ -1012,23 +1185,18 @@ exakit_parse_mcp_client_selection() {
 
 exakit_mcp_setup() {
     info "Choose how you want MCP set up in your AI clients"
-    printf '    1. Temporary setup (copy/paste instructions only)\n'
-    printf '       The kit does NOT edit Claude, Cursor, or Codex.\n'
-    printf '       It creates ready-made config files in %s.\n' "$EXAKIT_MCP_DIR"
-    printf '       You copy or merge the file yourself when you are ready.\n'
-    printf '    2. Permanent setup (edit selected clients now)\n'
-    printf '       The kit backs up and updates the selected client config files.\n'
-    printf '       Restart the selected client afterwards.\n'
+    printf '    1. Default: Permanent setup (edit selected clients now)\n'
+    printf '    2. Temporary setup (copy/paste instructions only)\n'
     printf '\n'
     printf '    Quick guide:\n'
-    printf '       Choose 1 if you only want files and copy/paste steps.\n'
-    printf '       Choose 2 if you want the kit to configure the apps for you.\n'
+    printf '       Choose 1 if you want the kit to configure the apps for you.\n'
+    printf '       Choose 2 if you only want files and copy/paste steps.\n'
     while :; do
-        _mode_choice="$(prompt_text "Choose setup mode (1 temporary, 2 permanent)" "1")"
+        _mode_choice="$(prompt_text "Choose setup mode (1 permanent, 2 temporary)" "1")"
         case "$_mode_choice" in
-            1|temporary|Temporary|default|Default) _mode="temporary"; break ;;
-            2|permanent|Permanent) _mode="permanent"; break ;;
-            *) warn "Please enter 1 for temporary or 2 for permanent." ;;
+            1|permanent|Permanent|default|Default) _mode="permanent"; break ;;
+            2|temporary|Temporary) _mode="temporary"; break ;;
+            *) warn "Please enter 1 for permanent or 2 for temporary." ;;
         esac
     done
 
@@ -1083,6 +1251,13 @@ exakit_mcp_operation() {
         exakit_print_mcp_operation_summary "$_result_file"
     fi
     rm -f "$_result_file"
+
+    case "$_operation" in
+        doctor|validate)
+            _exakit_reassert_mcp_readonly_posture || _operation_status=1
+            ;;
+    esac
+
     return "$_operation_status"
 }
 
@@ -1106,7 +1281,14 @@ exakit_mcp_restore() {
 exakit_maybe_offer_mcp_setup() {
     _already_done="$(manifest_get components.mcp_server.client_setup.completed 2>/dev/null || true)"
     [ "$_already_done" = "true" ] && return 0
-    [ -n "$(_exakit_prompt_tty)" ] || return 0
+    if [ -z "$(_exakit_prompt_tty)" ]; then
+        info "Non-interactive install - setting up MCP in your AI client(s) by default."
+        if ! exakit_mcp_setup; then
+            warn "Your local runtime is installed, but MCP client setup did not finish cleanly."
+            warn "Retry any time with: exakit mcp-setup"
+        fi
+        return 0
+    fi
     info "The Exasol runtime and MCP server are ready."
     if ! confirm "Set up MCP in your AI client(s) now?" y; then
         info "Skipping live MCP client setup for now. You can run: exakit mcp-setup"
@@ -1118,10 +1300,41 @@ exakit_maybe_offer_mcp_setup() {
     fi
 }
 
+# exakit_maybe_offer_data_load <kit_root> — interactively offer the guided data
+# loading menu during install. Non-interactive installs print the follow-up
+# command and continue. The selected load runs in a subshell so a die() inside
+# the loading flow never aborts the surrounding install.
+exakit_maybe_offer_data_load() {
+    _kit_root="$1"
+    : "$_kit_root"
+    command -v exakit_data_load_menu >/dev/null 2>&1 || return 0
+
+    if [ -z "$(_exakit_prompt_tty)" ]; then
+        info "Non-interactive install - loading the bundled sample data by default."
+        if ! ( exakit_load_sample_data "$_kit_root" ); then
+            warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+        fi
+        return 0
+    fi
+
+    info "The database is ready for data. Loading data now lets MCP validate against real tables."
+    if ! confirm "Load or verify data before MCP setup?" y; then
+        info "Skipping data loading. Run it any time with: exakit data-load"
+        return 0
+    fi
+    if ( exakit_data_load_menu ); then
+        :
+    else
+        warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+    fi
+}
+
 # kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>
-# The steps every platform runs after its runtime is up: exapump, MCP,
-# the exakit helper, and the pending-assets report. One implementation so
-# the per-OS setup scripts cannot drift apart.
+# The steps every platform runs after its runtime is up, in order: exapump,
+# the sample-data load offer, the MCP server, the exakit helper, and the MCP
+# client setup offer. Data is loaded before MCP so the read-only user is
+# provisioned against a populated schema. One implementation so the per-OS
+# setup scripts cannot drift apart.
 kit_shared_steps() {
     _step_no="$1"
     _total="$2"
@@ -1140,12 +1353,22 @@ kit_shared_steps() {
     fi
     _step_no=$((_step_no + 1))
 
+    # Load the sample data before any MCP configuration. exapump is now up
+    # (its only dependency), and doing this first means the read-only MCP
+    # user is provisioned, granted, and posture-checked against a schema
+    # that already holds the sample tables — and the AI client has data to
+    # query the moment it connects.
+    exakit_maybe_offer_data_load "$_kit_root" || true
+
     if command -v mcp_install >/dev/null 2>&1; then
         if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
             mcp_install
-            exakit_generate_mcp_configs
-            mcp_validate
-            mark_step mcp
+            if exakit_generate_mcp_configs; then
+                mcp_validate
+                mark_step mcp
+            else
+                warn "MCP client config generation failed — re-run 'exakit mcp-configs' once the issue above is fixed."
+            fi
         fi
     else
         info "Step ${_step_no}/${_total}  MCP server — module not included in this kit build yet, skipping"
@@ -1155,22 +1378,25 @@ kit_shared_steps() {
     if begin_step exakit_helper "Step ${_step_no}/${_total}  exakit helper command"; then
         mkdir -p "$EXAKIT_BIN_DIR"
         install -m 755 "$_script_dir/exakit" "$EXAKIT_BIN_DIR/exakit"
-        # Keep a copy of the kit library next to the state so exakit finds
-        # it even when this checkout moves or disappears.
+        # Keep a copy of the kit library (and the mcp/ and sql/ packages
+        # exakit_repo_root() depends on) next to the state so exakit finds
+        # them even when this checkout moves or disappears.
         mkdir -p "$EXAKIT_HOME/kit/setup"
         cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/"
+        # Copy the assets exakit needs after the checkout is gone: the mcp/
+        # and sql/ packages, the data/ CSVs, and load-data.sh (so both
+        # `exakit load-data` and the documented
+        # ~/.exasol-starter-kit/kit/setup/load-data.sh command keep working).
+        [ -d "$_kit_root/mcp" ] && cp -R "$_kit_root/mcp" "$EXAKIT_HOME/kit/"
+        [ -d "$_kit_root/sql" ] && cp -R "$_kit_root/sql" "$EXAKIT_HOME/kit/"
+        [ -d "$_kit_root/data" ] && cp -R "$_kit_root/data" "$EXAKIT_HOME/kit/"
+        [ -f "$_script_dir/load-data.sh" ] && cp "$_script_dir/load-data.sh" "$EXAKIT_HOME/kit/setup/"
         ensure_path_hint "$EXAKIT_BIN_DIR"
         mark_step exakit_helper
         ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
     fi
 
     exakit_maybe_offer_mcp_setup || true
-
-    for _pending in sql/01_create_schema.sql data/data-dictionary.md; do
-        if [ ! -s "$_kit_root/$_pending" ]; then
-            info "Pending: $_pending is not in this kit build yet (sample schema/data step will activate once it lands)"
-        fi
-    done
 }
 
 # connection_panel — the payoff screen: everything needed to connect.

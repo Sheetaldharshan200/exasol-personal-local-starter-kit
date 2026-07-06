@@ -250,9 +250,16 @@ class OperationRequest:
 
     def runtime_root_path(self, home: Path) -> Path:
         raw = self.runtime_root or "~/.exasol-starter-kit"
-        path = Path(raw)
-        if raw.startswith("~"):
+        if raw == "~":
+            return home
+        if raw.startswith("~/"):
             return home / raw[2:]
+        if raw.startswith("~"):
+            raise ValueError(
+                f"Unsupported runtime_root {raw!r}: '~user' expansion is not "
+                "supported; use an absolute path."
+            )
+        path = Path(raw)
         if path.is_absolute():
             return path
         return home / raw

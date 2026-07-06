@@ -6,11 +6,11 @@ This is the kit's core loop, done once, end to end: **ask → inspect the SQL �
 
 1. Kit installed and healthy: `exakit status` says `running`
 2. AI assistant connected (see your OS quickstart or [QUICKSTART.md](../QUICKSTART.md) step 4)
-3. Sample data loaded:
+3. Sample data loaded (the installer offers this; run it yourself any time with):
    ```bash
-   bash ~/.exasol-starter-kit/kit/setup/load-data.sh
+   exakit load-data
    ```
-   If it reports the data files as *pending*, the sample dataset hasn't shipped in your kit build yet — you can still do steps 1–2 against any data you upload yourself (`exapump upload yourfile.csv --table STARTER_KIT.MYDATA -p starter-kit`).
+   You can also point the workflow at any data you upload yourself (`exapump upload yourfile.csv --table STARTER_KIT.MYDATA -p starter-kit`).
 
 ## Step 1 — Discover (let the assistant look around)
 

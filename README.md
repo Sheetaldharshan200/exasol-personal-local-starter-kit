@@ -71,9 +71,7 @@ curl -fsSL https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-
 irm https://raw.githubusercontent.com/Sheetaldharshan200/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest. On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
-
-> **Native Windows note:** the PowerShell path currently sets up the database container first; for exapump and MCP setup, follow the [Windows quickstart](quickstarts/windows-docker.md) or use WSL for the full flow.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, and MCP server, the same on native Windows PowerShell as on macOS/Linux/WSL. On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
@@ -113,6 +111,8 @@ exakit status
 exakit info
 exakit stop
 exakit start
+exakit data-load
+exakit load-data
 exakit mcp-status
 exakit mcp-validate
 ```
@@ -141,6 +141,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 ## Safety and operations
 
 - **Dedicated read-only MCP login** — the kit provisions and validates a least-privilege database user before managed MCP flows proceed.
+- **Local TLS handled for MCP clients** — generated Claude, Cursor, and Codex configs set `EXA_SSL_CERT_VALIDATION=no` only for the local self-signed `127.0.0.1` runtime; use trusted CA validation for real remote databases.
 - **No preinstalled Python required** — the setup uses `python3` when present, otherwise it bootstraps a managed runtime through `uv`.
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.

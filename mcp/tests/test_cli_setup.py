@@ -60,6 +60,7 @@ class RuntimeClientSetupCLITests(unittest.TestCase):
         self.assertIn("[mcp_servers.exasol]", codex_doc)
         cursor_doc = json.loads((self.runtime_root / "mcp" / "cursor-mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(cursor_doc["mcpServers"]["exasol"]["env"]["EXA_USER"], "mcp_readonly")
+        self.assertEqual(cursor_doc["mcpServers"]["exasol"]["env"]["EXA_SSL_CERT_VALIDATION"], "no")
 
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         client_setup = manifest["components"]["mcp_server"]["client_setup"]
@@ -108,6 +109,7 @@ class RuntimeClientSetupCLITests(unittest.TestCase):
         codex_doc = codex_path.read_text(encoding="utf-8")
         self.assertIn("exasol", cursor_doc["mcpServers"])
         self.assertEqual(cursor_doc["mcpServers"]["exasol"]["env"]["EXA_USER"], "mcp_readonly")
+        self.assertEqual(cursor_doc["mcpServers"]["exasol"]["env"]["EXA_SSL_CERT_VALIDATION"], "no")
         self.assertIn("[mcp_servers.exasol]", codex_doc)
         self.assertTrue(any(action["kind"] == "restart_client" for action in output["next_actions"]))
 
@@ -206,6 +208,7 @@ class RuntimeClientSetupCLITests(unittest.TestCase):
                 "dsn": dsn,
                 "user": "sys",
                 "password_file": str(self.password_file),
+                "tls": "self-signed",
             },
             "components": {
                 "mcp_server": {
