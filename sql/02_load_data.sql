@@ -1,4 +1,4 @@
--- 02_load_data.sql — post-load transformations.
+-- 02_load_data.sql - post-load transformations.
 -- setup/load-data.sh runs this (if non-empty) after every data/*.csv has
 -- been bulk-loaded by exapump into its matching STARTER_KIT table. The
 -- TPC-H sample data is already clean and self-consistent (see
@@ -8,4 +8,4 @@
 -- deliverable, and so a future dataset with real transform needs has a
 -- ready-made place to add them.
 OPEN SCHEMA STARTER_KIT;
-SELECT 'STARTER_KIT sample data loaded — no post-load transform required.' AS STATUS;
+SELECT 'STARTER_KIT sample data loaded - no post-load transform required.' AS STATUS;

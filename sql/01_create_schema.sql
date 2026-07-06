@@ -1,4 +1,4 @@
--- 01_create_schema.sql — sample dataset schema (TPC-H, SF=0.02).
+-- 01_create_schema.sql - sample dataset schema (TPC-H, SF=0.02).
 -- Run by setup/load-data.sh via exapump before the CSV files in data/ are
 -- loaded. Column order in every table matches the header row of the
 -- matching data/<table>.csv exactly, and column types match the "Type"
