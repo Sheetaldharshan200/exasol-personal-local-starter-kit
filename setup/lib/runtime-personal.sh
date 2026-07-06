@@ -101,19 +101,39 @@ personal_deployment_exists() {
     [ -d "$EXAKIT_PERSONAL_DEPLOY_DIR" ] && "$(personal_cli)" info >/dev/null 2>&1
 }
 
+# personal_deployment_running — is a local Exasol deployment actually up and
+# reachable right now? `exasol info` is the launcher's own source of truth, so
+# this trusts it directly (no deploy-dir guard). Used to adopt an
+# already-running database instead of failing on a busy port.
+personal_deployment_running() {
+    "$(personal_cli)" info >/dev/null 2>&1
+}
+
 # personal_deploy_local — run the local deployment. This is the long step
 # (10-20 minutes on first install); output stays visible and is logged.
 personal_deploy_local() {
-    if personal_deployment_exists; then
-        ok "Local deployment already present"
-        personal_record_manifest
-        return 0
+    # A reachable Exasol is already up (this run, a previous run, or the user
+    # started it by hand). `exasol info` is the launcher's own health signal.
+    # Checked BEFORE the port test below so a healthy database that legitimately
+    # owns port 8563 is offered for reuse rather than reported as a conflict.
+    # Ask before adopting it — a piped/non-interactive install defaults to yes
+    # (reuse), which is the safe, idempotent choice for automation.
+    if personal_deployment_running; then
+        info "An Exasol database is already running and reachable on port $EXAKIT_PERSONAL_PORT."
+        if confirm "Use the running database instead of deploying a new one?" y; then
+            ok "Reusing the existing Exasol deployment"
+            personal_record_manifest
+            return 0
+        fi
+        die "Declined to reuse the running database. Stop it first ('exakit stop', or 'exasol stop'), then re-run to deploy a fresh one — port $EXAKIT_PERSONAL_PORT stays in use while it is running."
     fi
 
-    # The launcher deploys on its own fixed port; EXAKIT_DB_PORT does not
-    # apply to the macOS path, so check the real port and say so honestly.
+    # Port busy but the launcher sees no reachable deployment on it: it is a
+    # foreign process (another database, a stale container) that we must not
+    # clobber. EXAKIT_DB_PORT does not apply to the macOS path, so name the
+    # real port and say so honestly.
     if port_in_use "$EXAKIT_PERSONAL_PORT"; then
-        die "Port $EXAKIT_PERSONAL_PORT is required by Exasol Personal and is already in use. Stop the other application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
+        die "Port $EXAKIT_PERSONAL_PORT is in use by a process that is not a reachable Exasol Personal deployment. Stop that application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
     fi
 
     info "Deploying Exasol Personal locally — this takes 10-20 minutes on first install"
