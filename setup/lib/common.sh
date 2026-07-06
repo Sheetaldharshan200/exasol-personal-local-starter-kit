@@ -1468,7 +1468,18 @@ kit_shared_steps() {
     fi
     _step_no=$((_step_no + 1))
 
+    # The step flag alone is not trusted: if the exakit command was removed
+    # (cleanup, testing), a re-run must reinstall it rather than skip.
+    _helper_needed=0
     if begin_step exakit_helper "Step ${_step_no}/${_total}  exakit helper command"; then
+        _helper_needed=1
+    elif [ ! -x "$EXAKIT_BIN_DIR/exakit" ]; then
+        info "exakit command is missing — reinstalling it"
+        _helper_needed=1
+    else
+        ensure_path_hint "$EXAKIT_BIN_DIR"
+    fi
+    if [ "$_helper_needed" -eq 1 ]; then
         mkdir -p "$EXAKIT_BIN_DIR"
         install -m 755 "$_script_dir/exakit" "$EXAKIT_BIN_DIR/exakit"
         # Keep a copy of the kit library (and the mcp/ and sql/ packages
