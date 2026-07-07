@@ -90,7 +90,19 @@ class RuntimeClientSetupCLITests(unittest.TestCase):
         self.assertIn("exasol", cursor_doc["mcpServers"])
         self.assertEqual(cursor_doc["mcpServers"]["exasol"]["env"]["EXA_USER"], "mcp_readonly")
         self.assertEqual(cursor_doc["mcpServers"]["exasol"]["env"]["EXA_SSL_CERT_VALIDATION"], "no")
+        cursor_settings = json.loads(
+            cursor_doc["mcpServers"]["exasol"]["env"]["EXA_MCP_SETTINGS"]
+        )
+        self.assertTrue(cursor_settings["enable_read_query"])
+        self.assertTrue(cursor_settings["enable_summarize_table"])
+        self.assertTrue(cursor_settings["enable_query_profiling"])
+        self.assertFalse(cursor_settings["enable_write_query"])
         self.assertIn("[mcp_servers.exasol]", codex_doc)
+        self.assertIn("EXA_MCP_SETTINGS", codex_doc)
+        self.assertIn("enable_read_query", codex_doc)
+        self.assertIn("enable_summarize_table", codex_doc)
+        self.assertIn("enable_query_profiling", codex_doc)
+        self.assertIn("enable_write_query", codex_doc)
         self.assertTrue(any(action["kind"] == "restart_client" for action in output["next_actions"]))
 
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
