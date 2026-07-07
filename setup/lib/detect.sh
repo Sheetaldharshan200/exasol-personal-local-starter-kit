@@ -32,18 +32,35 @@ detect_arch() {
     esac
 }
 
-# detect_ram_gb — total physical memory in whole GB
+# detect_ram_gb — total physical memory in whole GB. ALWAYS prints a
+# non-negative integer, and 0 when it cannot be determined. This matters:
+# callers compare it with `-lt`/`-ge`, and an empty value there makes the test
+# error out ("integer expression expected") AND evaluate false — silently
+# skipping the requirement guard. Returning 0 instead fails closed.
 detect_ram_gb() {
     if [ "$(uname -s)" = "Darwin" ]; then
-        echo $(( $(sysctl -n hw.memsize) / 1073741824 ))
+        _dr_bytes="$(sysctl -n hw.memsize 2>/dev/null)"
+        case "$_dr_bytes" in
+            ''|*[!0-9]*) _dr_ram=0 ;;
+            *)           _dr_ram=$(( _dr_bytes / 1073741824 )) ;;
+        esac
     else
-        awk '/MemTotal/ { printf "%d", $2 / 1048576 }' /proc/meminfo
+        _dr_ram="$(awk '/MemTotal/ { printf "%d", $2 / 1048576 }' /proc/meminfo 2>/dev/null)"
     fi
+    case "$_dr_ram" in
+        ''|*[!0-9]*) echo 0 ;;
+        *)           echo "$_dr_ram" ;;
+    esac
 }
 
-# detect_free_disk_gb <path> — free space in whole GB at the given path
+# detect_free_disk_gb <path> — free space in whole GB. Same fail-closed
+# contract as detect_ram_gb: always a non-negative integer, 0 if unknown.
 detect_free_disk_gb() {
-    df -Pk "${1:-$HOME}" | awk 'NR == 2 { printf "%d", $4 / 1048576 }'
+    _dd="$(df -Pk "${1:-$HOME}" 2>/dev/null | awk 'NR == 2 { printf "%d", $4 / 1048576 }')"
+    case "$_dd" in
+        ''|*[!0-9]*) echo 0 ;;
+        *)           echo "$_dd" ;;
+    esac
 }
 
 # detect_container_runtime — prints the first usable runtime:

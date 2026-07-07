@@ -25,14 +25,22 @@ personal_check_requirements() {
     [ "$_arch" != "unsupported" ] || die "Unsupported CPU architecture: $(uname -m)"
 
     _ram="$(detect_ram_gb)"
-    if [ "$_ram" -lt "$EXAKIT_PERSONAL_MIN_RAM_GB" ]; then
-        error "Exasol Personal needs at least ${EXAKIT_PERSONAL_MIN_RAM_GB} GB RAM; this machine has ${_ram} GB."
-        die "This machine does not meet the requirements for a local Exasol Personal deployment."
+    if [ "${EXAKIT_FORCE:-0}" != "1" ]; then
+        if [ "$_ram" -eq 0 ]; then
+            die "Could not determine this machine's memory. Fix the environment or set EXAKIT_FORCE=1 to install anyway."
+        elif [ "$_ram" -lt "$EXAKIT_PERSONAL_MIN_RAM_GB" ]; then
+            error "Exasol Personal needs at least ${EXAKIT_PERSONAL_MIN_RAM_GB} GB RAM; this machine has ${_ram} GB."
+            die "This machine does not meet the requirements for a local Exasol Personal deployment."
+        fi
     fi
 
     _disk="$(detect_free_disk_gb "$HOME")"
-    if [ "$_disk" -lt "$EXAKIT_PERSONAL_MIN_DISK_GB" ] && [ "${EXAKIT_FORCE:-0}" != "1" ]; then
-        die "Less than ${EXAKIT_PERSONAL_MIN_DISK_GB} GB free disk space (detected: ${_disk} GB). Free up space or set EXAKIT_FORCE=1."
+    if [ "${EXAKIT_FORCE:-0}" != "1" ]; then
+        if [ "$_disk" -eq 0 ]; then
+            die "Could not determine free disk space at $HOME. Free up space or set EXAKIT_FORCE=1 to install anyway."
+        elif [ "$_disk" -lt "$EXAKIT_PERSONAL_MIN_DISK_GB" ]; then
+            die "Less than ${EXAKIT_PERSONAL_MIN_DISK_GB} GB free disk space (detected: ${_disk} GB). Free up space or set EXAKIT_FORCE=1."
+        fi
     fi
 
     ok "Requirements met (macOS, ${_ram} GB RAM, ${_disk} GB free)"
