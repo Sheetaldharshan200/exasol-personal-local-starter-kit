@@ -9,7 +9,7 @@
 #   - install manifest read/write (~/.exasol-starter-kit/manifest.json)
 #   - step tracking for idempotent re-runs
 #   - rollback registration and failure handling
-#   - pinned component versions (overridable via EXAKIT_* env vars)
+#   - component version resolution (latest by default, overridable via env)
 #   - download + SHA-256 verification helpers
 
 # ---------------------------------------------------------------------------
@@ -26,17 +26,30 @@ EXAKIT_MCP_READONLY_USER="${EXAKIT_MCP_READONLY_USER:-mcp_readonly}"
 EXAKIT_MCP_READONLY_SCHEMAS="${EXAKIT_MCP_READONLY_SCHEMAS:-STARTER_KIT}"
 
 # ---------------------------------------------------------------------------
-# Pinned component versions (override via environment)
+# Component version policy
 # ---------------------------------------------------------------------------
-EXAKIT_PERSONAL_VERSION="${EXAKIT_PERSONAL_VERSION:-2.0.0-rc4}"
-EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-2026.2.0-nano.2}"
-EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-0.11.2}"
+EXAKIT_VERSION_POLICY="${EXAKIT_VERSION_POLICY:-latest}"
+EXAKIT_PERSONAL_VERSION="${EXAKIT_PERSONAL_VERSION:-}"
+EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-}"
+EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-}"
 EXAKIT_MCP_PACKAGE="${EXAKIT_MCP_PACKAGE:-exasol-mcp-server}"
-EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-1.10.1}"
+EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-}"
+
+# Last-known-good fallbacks are used only when a latest-version lookup is not
+# possible (offline install, API rate limit, private mirror). Successful latest
+# resolutions are recorded in the manifest so later updates compare against the
+# version that was actually installed.
+EXAKIT_PERSONAL_VERSION_FALLBACK="${EXAKIT_PERSONAL_VERSION_FALLBACK:-2.0.0-rc4}"
+EXAKIT_NANO_TAG_FALLBACK="${EXAKIT_NANO_TAG_FALLBACK:-2026.2.0-nano.2}"
+EXAKIT_EXAPUMP_VERSION_FALLBACK="${EXAKIT_EXAPUMP_VERSION_FALLBACK:-0.11.2}"
+EXAKIT_MCP_VERSION_FALLBACK="${EXAKIT_MCP_VERSION_FALLBACK:-1.10.1}"
 
 EXAKIT_PERSONAL_REPO="exasol/exasol-personal"
 EXAKIT_EXAPUMP_REPO="exasol-labs/exapump"
 EXAKIT_NANO_IMAGE="exasol/nano"
+EXAKIT_KIT_REPO="${EXAKIT_KIT_REPO:-${EXAKIT_REPO:-ranjanm-chn/exasol-personal-local-starter-kit}}"
+EXAKIT_VERSION_LOOKUP_CONNECT_TIMEOUT="${EXAKIT_VERSION_LOOKUP_CONNECT_TIMEOUT:-5}"
+EXAKIT_VERSION_LOOKUP_MAX_TIME="${EXAKIT_VERSION_LOOKUP_MAX_TIME:-12}"
 
 EXAKIT_DB_PORT="${EXAKIT_DB_PORT:-8563}"
 
@@ -184,6 +197,14 @@ run_python() {
     "$EXAKIT_UV_BIN" run --python "$EXAKIT_MANAGED_PYTHON_VERSION" --no-project python "$@"
 }
 
+# Optional Python for best-effort flows (latest-version checks, digest lookup).
+# Unlike require_python3, this never exits: callers can fall back to shell
+# parsing or report "unknown" instead of failing a status/update-check command.
+exakit_can_run_python() {
+    _exakit_has_system_python3 && return 0
+    exakit_ensure_uv >/dev/null 2>&1
+}
+
 manifest_init() {
     mkdir -p "$EXAKIT_HOME"
     if [ -f "$EXAKIT_MANIFEST" ]; then
@@ -260,6 +281,343 @@ for part in key.split("."):
         sys.exit(1)
 print(node if isinstance(node, str) else json.dumps(node))
 PY
+}
+
+# ---------------------------------------------------------------------------
+# Version resolution and update planning
+# ---------------------------------------------------------------------------
+exakit_installation_runtime_type() {
+    manifest_get runtime.type 2>/dev/null
+}
+
+exakit_installation_runtime_version() {
+    case "$(exakit_installation_runtime_type 2>/dev/null || true)" in
+        nano)
+            _image="$(manifest_get runtime.image 2>/dev/null || true)"
+            printf '%s\n' "${_image##*:}"
+            ;;
+        personal) manifest_get runtime.version 2>/dev/null ;;
+        *) return 1 ;;
+    esac
+}
+
+exakit_record_desired_versions() {
+    manifest_set version_policy "$EXAKIT_VERSION_POLICY"
+    manifest_set desired.runtime.personal "$EXAKIT_PERSONAL_VERSION"
+    manifest_set desired.runtime.nano "$EXAKIT_NANO_TAG"
+    manifest_set desired.exapump "$EXAKIT_EXAPUMP_VERSION"
+    manifest_set desired.mcp "$EXAKIT_MCP_VERSION"
+}
+
+exakit_update_actual_target() {
+    case "$1" in
+        runtime|database|db)
+            _rtype="$(exakit_installation_runtime_type 2>/dev/null || true)"
+            [ -n "$_rtype" ] || return 1
+            printf '%s\n' "$_rtype"
+            ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+exakit_latest_github_release_version() {
+    _repo="$1"
+    _json="$(curl -fsSL --retry 1 --connect-timeout "$EXAKIT_VERSION_LOOKUP_CONNECT_TIMEOUT" --max-time "$EXAKIT_VERSION_LOOKUP_MAX_TIME" \
+        "https://api.github.com/repos/${_repo}/releases/latest" 2>/dev/null || true)"
+    [ -n "$_json" ] || return 1
+    if exakit_can_run_python; then
+        printf '%s' "$_json" | run_python -c 'import json,sys; print(json.load(sys.stdin).get("tag_name","").lstrip("v"))' 2>/dev/null
+        return $?
+    fi
+    printf '%s' "$_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -1
+}
+
+exakit_latest_pypi_version() {
+    _package="$1"
+    _json="$(curl -fsSL --retry 1 --connect-timeout "$EXAKIT_VERSION_LOOKUP_CONNECT_TIMEOUT" --max-time "$EXAKIT_VERSION_LOOKUP_MAX_TIME" \
+        "https://pypi.org/pypi/${_package}/json" 2>/dev/null || true)"
+    [ -n "$_json" ] || return 1
+    if exakit_can_run_python; then
+        printf '%s' "$_json" | run_python -c 'import json,sys; print(json.load(sys.stdin).get("info",{}).get("version",""))' 2>/dev/null
+        return $?
+    fi
+    printf '%s' "$_json" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+exakit_latest_docker_tag() {
+    _image="$1"
+    _json="$(curl -fsSL --retry 1 --connect-timeout "$EXAKIT_VERSION_LOOKUP_CONNECT_TIMEOUT" --max-time "$EXAKIT_VERSION_LOOKUP_MAX_TIME" \
+        "https://hub.docker.com/v2/repositories/${_image}/tags?page_size=100&ordering=last_updated" 2>/dev/null || true)"
+    [ -n "$_json" ] || return 1
+    if exakit_can_run_python; then
+        printf '%s' "$_json" | run_python -c '
+import json, re, sys
+doc = json.load(sys.stdin)
+tags = [r.get("name","") for r in doc.get("results", [])]
+pattern = re.compile(r"^\d+(?:\.\d+)+(?:[-._A-Za-z0-9]+)?$")
+candidates = [t for t in tags if pattern.match(t) and "latest" not in t.lower()]
+def key(tag):
+    parts = re.split(r"([0-9]+)", tag)
+    return [int(p) if p.isdigit() else p for p in parts]
+print(sorted(candidates, key=key)[-1] if candidates else "")
+' 2>/dev/null
+        return $?
+    fi
+    # Shell fallback: Docker Hub returns newest first with ordering=last_updated.
+    # Pick the first version-like tag rather than failing if Python/uv is absent.
+    printf '%s' "$_json" | tr ',' '\n' | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | \
+        grep -E '^[0-9]+(\.[0-9]+)+[-._A-Za-z0-9]*$' | grep -vi latest | head -1
+}
+
+exakit_version_newer() {
+    _latest="$1"
+    _current="$2"
+    [ -n "$_latest" ] && [ -n "$_current" ] || return 1
+    [ "$_latest" != "$_current" ] || return 1
+    if exakit_can_run_python; then
+        run_python - "$_latest" "$_current" <<'PY'
+import re, sys
+def key(v):
+    v = v.strip().lstrip("v")
+    return [int(p) if p.isdigit() else p for p in re.split(r"([0-9]+)", v)]
+sys.exit(0 if key(sys.argv[1]) > key(sys.argv[2]) else 1)
+PY
+        return $?
+    fi
+    _latest_major="$(exakit_major_version "$_latest")"
+    _current_major="$(exakit_major_version "$_current")"
+    case "$_latest_major$_current_major" in *[!0-9]*) return 1 ;; esac
+    if [ "$_latest_major" -gt "$_current_major" ]; then return 0; fi
+    if [ "$_latest_major" -lt "$_current_major" ]; then return 1; fi
+    # Same major and no Python/uv: treat different tags as worth inspecting,
+    # but avoid claiming a downgrade is newer when the major clearly regressed.
+    [ "$_latest" != "$_current" ]
+}
+
+exakit_major_version() {
+    printf '%s\n' "$1" | sed -E 's/^v//; s/^([0-9]+).*/\1/'
+}
+
+exakit_resolve_install_versions() {
+    [ "${EXAKIT_VERSION_POLICY:-latest}" = "latest" ] || {
+        EXAKIT_PERSONAL_VERSION="${EXAKIT_PERSONAL_VERSION:-$EXAKIT_PERSONAL_VERSION_FALLBACK}"
+        EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-$EXAKIT_NANO_TAG_FALLBACK}"
+        EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-$EXAKIT_EXAPUMP_VERSION_FALLBACK}"
+        EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-$EXAKIT_MCP_VERSION_FALLBACK}"
+        export EXAKIT_PERSONAL_VERSION EXAKIT_NANO_TAG EXAKIT_EXAPUMP_VERSION EXAKIT_MCP_VERSION
+        return 0
+    }
+
+    _resolved=0
+    if [ -z "$EXAKIT_PERSONAL_VERSION" ]; then
+        EXAKIT_PERSONAL_VERSION="$(exakit_latest_github_release_version "$EXAKIT_PERSONAL_REPO" || true)"
+        [ -n "$EXAKIT_PERSONAL_VERSION" ] || EXAKIT_PERSONAL_VERSION="$EXAKIT_PERSONAL_VERSION_FALLBACK"
+        _resolved=1
+    fi
+    if [ -z "$EXAKIT_NANO_TAG" ]; then
+        EXAKIT_NANO_TAG="$(exakit_latest_docker_tag "$EXAKIT_NANO_IMAGE" || true)"
+        [ -n "$EXAKIT_NANO_TAG" ] || EXAKIT_NANO_TAG="$EXAKIT_NANO_TAG_FALLBACK"
+        _resolved=1
+    fi
+    if [ -z "$EXAKIT_EXAPUMP_VERSION" ]; then
+        EXAKIT_EXAPUMP_VERSION="$(exakit_latest_github_release_version "$EXAKIT_EXAPUMP_REPO" || true)"
+        [ -n "$EXAKIT_EXAPUMP_VERSION" ] || EXAKIT_EXAPUMP_VERSION="$EXAKIT_EXAPUMP_VERSION_FALLBACK"
+        _resolved=1
+    fi
+    if [ -z "$EXAKIT_MCP_VERSION" ]; then
+        EXAKIT_MCP_VERSION="$(exakit_latest_pypi_version "$EXAKIT_MCP_PACKAGE" || true)"
+        [ -n "$EXAKIT_MCP_VERSION" ] || EXAKIT_MCP_VERSION="$EXAKIT_MCP_VERSION_FALLBACK"
+        _resolved=1
+    fi
+    export EXAKIT_PERSONAL_VERSION EXAKIT_NANO_TAG EXAKIT_EXAPUMP_VERSION EXAKIT_MCP_VERSION
+    if [ "$_resolved" -eq 1 ] && [ -f "$EXAKIT_MANIFEST" ]; then
+        exakit_record_desired_versions
+    fi
+}
+
+exakit_component_latest() {
+    case "$1" in
+        exakit)   exakit_latest_github_release_version "$EXAKIT_KIT_REPO" ;;
+        exapump)  exakit_latest_github_release_version "$EXAKIT_EXAPUMP_REPO" ;;
+        mcp)      exakit_latest_pypi_version "$EXAKIT_MCP_PACKAGE" ;;
+        nano)     exakit_latest_docker_tag "$EXAKIT_NANO_IMAGE" ;;
+        personal) exakit_latest_github_release_version "$EXAKIT_PERSONAL_REPO" ;;
+        runtime)
+            case "$(exakit_installation_runtime_type 2>/dev/null)" in
+                nano) exakit_component_latest nano ;;
+                personal) exakit_component_latest personal ;;
+                *) return 1 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+exakit_component_current() {
+    case "$1" in
+        exakit)
+            _src="$(manifest_get kit.source 2>/dev/null || true)"
+            case "$_src" in *@*) printf '%s\n' "${_src##*@}" ;; *) printf '%s\n' "unknown" ;; esac
+            ;;
+        exapump)  manifest_get components.exapump.version 2>/dev/null ;;
+        mcp)      manifest_get components.mcp_server.version 2>/dev/null ;;
+        nano)
+            _image="$(manifest_get runtime.image 2>/dev/null || true)"
+            printf '%s\n' "${_image##*:}"
+            ;;
+        personal) manifest_get runtime.version 2>/dev/null ;;
+        runtime)
+            exakit_installation_runtime_version
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+exakit_update_targets() {
+    case "${1:-all}" in
+        all) printf '%s\n' exakit runtime exapump mcp ;;
+        runtime|database|db) printf '%s\n' runtime ;;
+        nano|personal|exakit|exapump|mcp) printf '%s\n' "$1" ;;
+        *) return 1 ;;
+    esac
+}
+
+exakit_print_update_check() {
+    _target="${1:-all}"
+    _targets="$(exakit_update_targets "$_target")" || die "Unknown update target: $_target"
+    printf '\n  Component update check\n'
+    printf '  ----------------------\n'
+    printf '%-12s %-18s %-18s %s\n' "Component" "Installed" "Latest" "Action"
+    _updates=0
+    for _component in $_targets; do
+        _actual="$(exakit_update_actual_target "$_component" 2>/dev/null || printf '%s\n' "$_component")"
+        _current="$(exakit_component_current "$_actual" 2>/dev/null || true)"
+        _latest="$(exakit_component_latest "$_actual" 2>/dev/null || true)"
+        [ -n "$_current" ] || _current="not installed"
+        [ -n "$_latest" ] || _latest="unknown"
+        _action="current"
+        if [ "$_latest" = "unknown" ] || [ "$_current" = "unknown" ] || [ "$_current" = "not installed" ]; then
+            _action="inspect"
+        elif exakit_version_newer "$_latest" "$_current"; then
+            if [ "$_actual" = "personal" ] && [ "$(exakit_major_version "$_latest")" != "$(exakit_major_version "$_current")" ]; then
+                _action="exakit update $_component --plan"
+            else
+                _action="exakit update $_component"
+            fi
+            _updates=$((_updates + 1))
+        fi
+        printf '%-12s %-18s %-18s %s\n' "$_actual" "$_current" "$_latest" "$_action"
+    done
+    printf '\n'
+    if [ "$_updates" -gt 1 ]; then
+        info "Update everything with: exakit update all"
+    fi
+}
+
+exakit_update_self() {
+    _latest="$(exakit_component_latest exakit)"
+    [ -n "$_latest" ] || die "Could not resolve the latest starter kit release."
+    _current="$(exakit_component_current exakit 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "exakit is already current ($_current)"
+        return 0
+    fi
+    _repo="$EXAKIT_KIT_REPO"
+    _kit_dir="$EXAKIT_HOME/kit"
+    _tmp="$(mktemp "${TMPDIR:-/tmp}/exakit-kit.XXXXXX")"
+    _stage="$(mktemp -d "${TMPDIR:-/tmp}/exakit-kit-stage.XXXXXX")"
+    _backup="${_kit_dir}.backup-$(date +%Y%m%d-%H%M%S)"
+    info "Updating starter kit ${_current:-unknown} -> $_latest"
+    if ! curl -fL --proto '=https' --retry 3 --connect-timeout 15 -sS \
+            -o "$_tmp" "https://github.com/${_repo}/archive/refs/tags/v${_latest}.tar.gz"; then
+        curl -fL --proto '=https' --retry 3 --connect-timeout 15 -sS \
+            -o "$_tmp" "https://github.com/${_repo}/archive/refs/tags/${_latest}.tar.gz" || \
+            die "Could not download the starter kit release $_latest from $_repo."
+    fi
+    tar -xzf "$_tmp" -C "$_stage" --strip-components 1 || {
+        rm -rf "$_stage"
+        rm -f "$_tmp"
+        die "Could not unpack the starter kit update; existing kit copy was left untouched."
+    }
+    rm -f "$_tmp"
+    for _required in setup/exakit setup/lib/common.sh setup/lib/runtime-nano.sh setup/lib/runtime-personal.sh setup/lib/exapump.sh setup/lib/mcp.sh setup/exakit.ps1 setup/lib/exakit-common.ps1; do
+        [ -f "$_stage/$_required" ] || {
+            rm -rf "$_stage"
+            die "Downloaded starter kit is incomplete (missing $_required); existing kit copy was left untouched."
+        }
+    done
+    if [ -d "$_kit_dir" ]; then
+        mv "$_kit_dir" "$_backup" || {
+            rm -rf "$_stage"
+            die "Could not back up existing kit copy; update was not applied."
+        }
+        info "Previous kit copy kept at $_backup"
+    fi
+    mkdir -p "$(dirname "$_kit_dir")"
+    if ! mv "$_stage" "$_kit_dir"; then
+        [ -d "$_backup" ] && mv "$_backup" "$_kit_dir"
+        rm -rf "$_stage"
+        die "Could not install the staged starter kit update; previous kit copy was restored."
+    fi
+    if [ -f "$_kit_dir/setup/exakit" ]; then
+        mkdir -p "$EXAKIT_BIN_DIR"
+        install -m 755 "$_kit_dir/setup/exakit" "$EXAKIT_BIN_DIR/exakit"
+    else
+        [ -d "$_backup" ] && { rm -rf "$_kit_dir"; mv "$_backup" "$_kit_dir"; }
+        die "Updated kit did not contain setup/exakit after staging; previous kit copy was restored."
+    fi
+    manifest_set kit.source "${_repo}@${_latest}"
+    ok "exakit updated. Database data, credentials, and MCP state were not changed."
+}
+
+exakit_update_component() {
+    _component="$1"
+    shift || true
+    case "$_component" in
+        exakit) exakit_update_self ;;
+        exapump)
+            command -v exapump_update >/dev/null 2>&1 || die "exapump module is not available in this kit build."
+            exapump_update
+            ;;
+        mcp)
+            command -v mcp_update >/dev/null 2>&1 || die "MCP module is not available in this kit build."
+            mcp_update
+            ;;
+        runtime)
+            case "$(exakit_installation_runtime_type 2>/dev/null)" in
+                nano)
+                    [ "$#" -eq 0 ] || die "Personal upgrade options are not valid for the Nano runtime."
+                    nano_update
+                    ;;
+                personal) personal_update "$@" ;;
+                *) die "No runtime is recorded in the manifest." ;;
+            esac
+            ;;
+        nano)
+            [ "$#" -eq 0 ] || die "Personal upgrade options are not valid for Nano."
+            nano_update
+            ;;
+        personal) personal_update "$@" ;;
+        *) die "Unknown update target: $_component" ;;
+    esac
+}
+
+exakit_update() {
+    _target="${1:-all}"
+    if [ "$#" -gt 0 ]; then shift; fi
+    if [ "$#" -gt 0 ]; then
+        case "$_target" in
+            personal|runtime|database|db) ;;
+            *) die "Update options are only supported for Personal runtime updates." ;;
+        esac
+    fi
+    _targets="$(exakit_update_targets "$_target")" || die "Unknown update target: $_target"
+    exakit_init_logging
+    info "Checking updates before applying changes"
+    exakit_print_update_check "$_target"
+    for _component in $_targets; do
+        exakit_update_component "$_component" "$@"
+    done
 }
 
 # step_done <name> — succeeds if the step is recorded in steps_completed.

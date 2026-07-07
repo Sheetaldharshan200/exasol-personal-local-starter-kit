@@ -34,6 +34,7 @@ printf '\n'
 manifest_set os "$(detect_os)"
 manifest_set arch "$(detect_arch)"
 manifest_set kit.source "${EXAKIT_KIT_SOURCE:-checkout:$KIT_ROOT}"
+exakit_resolve_install_versions
 
 # --- step 1: requirements ---------------------------------------------------
 EXAKIT_CURRENT_STEP="requirements"

@@ -2,7 +2,7 @@
 # exapump.sh — exapump installation and connection module.
 #
 # Sourced by setup scripts after common.sh, detect.sh, and a runtime module.
-# Installs the pinned exapump release binary (checksum-verified against the
+# Installs the resolved exapump release binary (checksum-verified against the
 # digests published by the release API), writes a dedicated connection
 # profile, and validates the connection with SELECT 1.
 #
@@ -29,7 +29,7 @@ exapump_asset_name() {
     echo "exapump-${_ver}-${_osname}-${_archname}"
 }
 
-# Digests of the pinned release (published by the release API). When the
+# Digests of the bundled fallback release (published by the release API). When the
 # version is overridden the digest is fetched from the API instead.
 exapump_pinned_sha256() {
     case "$1" in
@@ -42,10 +42,12 @@ exapump_pinned_sha256() {
 }
 
 exapump_release_digest_from_api() {
-    require_python3
-    curl -fsSL --retry 3 --connect-timeout 15 \
+    _json="$(curl -fsSL --retry 3 --connect-timeout 15 \
         "https://api.github.com/repos/${EXAKIT_EXAPUMP_REPO}/releases/tags/v${EXAKIT_EXAPUMP_VERSION}" \
-        2>/dev/null | run_python -c '
+        2>/dev/null || true)"
+    [ -n "$_json" ] || return 1
+    if exakit_can_run_python; then
+        printf '%s' "$_json" | run_python -c '
 import json, sys
 name = sys.argv[1]
 doc = json.load(sys.stdin)
@@ -54,10 +56,26 @@ for asset in doc.get("assets", []):
         print(asset["digest"].split(":", 1)[1])
         break
 ' "$1"
+        return $?
+    fi
+    # Best-effort shell fallback for GitHub's asset object. If this misses, the
+    # caller already warns and continues rather than pretending verification ran.
+    printf '%s' "$_json" | tr '{' '\n' | awk -v name="$1" '
+        index($0, "\"name\":\"" name "\"") || index($0, "\"name\": \"" name "\"") {
+            if (match($0, /"digest"[[:space:]]*:[[:space:]]*"sha256:[^"]+"/)) {
+                digest = substr($0, RSTART, RLENGTH)
+                sub(/^.*sha256:/, "", digest)
+                sub(/"$/, "", digest)
+                print digest
+                exit
+            }
+        }'
 }
 
 exapump_cli() {
-    if command -v exapump >/dev/null 2>&1; then
+    if [ -x "$EXAKIT_EXAPUMP_BIN" ]; then
+        echo "$EXAKIT_EXAPUMP_BIN"
+    elif command -v exapump >/dev/null 2>&1; then
         command -v exapump
     else
         echo "$EXAKIT_EXAPUMP_BIN"
@@ -68,7 +86,7 @@ exapump_install() {
     [ "$(detect_arch)" != "unsupported" ] || \
         die "Unsupported CPU architecture: $(uname -m). exapump binaries exist for x86_64 and arm64 only."
 
-    if command -v exapump >/dev/null 2>&1 || [ -x "$EXAKIT_EXAPUMP_BIN" ]; then
+    if [ "${EXAKIT_FORCE_COMPONENT_INSTALL:-0}" != "1" ] && { command -v exapump >/dev/null 2>&1 || [ -x "$EXAKIT_EXAPUMP_BIN" ]; }; then
         # Trust the existing binary only if it actually runs — an interrupted
         # earlier download can leave a broken file at the same path.
         if "$(exapump_cli)" --version >/dev/null 2>&1; then
@@ -245,6 +263,24 @@ exapump_count() {
 exapump_record_manifest() {
     manifest_set components.exapump.version "$EXAKIT_EXAPUMP_VERSION"
     manifest_set components.exapump.path "$(exapump_cli)"
+}
+
+exapump_update() {
+    _latest="$(exakit_component_latest exapump)"
+    [ -n "$_latest" ] || die "Could not resolve the latest exapump release."
+    _current="$(manifest_get components.exapump.version 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "exapump is already current ($_current)"
+        return 0
+    fi
+    info "Updating exapump ${_current:-unknown} -> $_latest"
+    EXAKIT_EXAPUMP_VERSION="$_latest"
+    EXAKIT_FORCE_COMPONENT_INSTALL=1
+    export EXAKIT_EXAPUMP_VERSION EXAKIT_FORCE_COMPONENT_INSTALL
+    exapump_install
+    exapump_create_profile
+    manifest_set desired.exapump "$EXAKIT_EXAPUMP_VERSION"
+    ok "exapump updated without changing database data"
 }
 
 exakit_table_name_from_path() {

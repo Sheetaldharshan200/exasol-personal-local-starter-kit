@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # runtime-nano.sh — Exasol Nano container runtime module (Linux, WSL, Windows).
 #
-# Sourced by setup scripts after common.sh and detect.sh. Runs the pinned
-# exasol/nano image under Docker (preferred) or Podman (fallback), with:
+# Sourced by setup scripts after common.sh and detect.sh. Runs the resolved
+# exasol/nano image tag under Docker (preferred) or Podman (fallback), with:
 #   - a persistent named volume for /exa (database state survives restarts)
 #   - the SQL port bound to localhost only
 #   - a generated SYS password injected on first deployment via secret mount
@@ -159,7 +159,7 @@ nano_start_existing() {
     nano_wait_ready
 }
 
-# nano_install — pull the pinned image and start the container (first run
+# nano_install — pull the resolved image and start the container (first run
 # deploys the database with a generated SYS password). Idempotent.
 nano_install() {
     _engine="$(nano_engine)"
@@ -323,4 +323,44 @@ nano_teardown() {
         info "Data volume $EXAKIT_NANO_VOLUME kept (pass --data to remove it)"
     fi
     manifest_set runtime.status "removed"
+}
+
+nano_update() {
+    nano_resolve_names
+    _latest="$(exakit_component_latest nano)"
+    [ -n "$_latest" ] || die "Could not resolve the latest Exasol Nano image tag."
+    _current="$(exakit_component_current nano 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "Exasol Nano is already current ($_current)"
+        return 0
+    fi
+
+    _engine="$(nano_engine)"
+    _image="docker.io/${EXAKIT_NANO_IMAGE}:${_latest}"
+    info "Updating Exasol Nano ${_current:-unknown} -> $_latest"
+    info "The container will be recreated; the data volume '$EXAKIT_NANO_VOLUME' is kept."
+    run_logged "$_engine" pull "$_image" || die "Could not pull $_image"
+
+    if nano_container_exists; then
+        if nano_container_running; then
+            info "Stopping Nano before recreating the container"
+            run_logged "$_engine" stop -t 60 "$EXAKIT_NANO_CONTAINER" || die "Could not stop $EXAKIT_NANO_CONTAINER"
+        fi
+        run_logged "$_engine" rm -f "$EXAKIT_NANO_CONTAINER" || die "Could not remove old Nano container"
+    fi
+
+    info "Starting Nano with the existing data volume"
+    run_logged "$_engine" run -d \
+        --name "$EXAKIT_NANO_CONTAINER" \
+        --shm-size=512mb \
+        --pids-limit=-1 \
+        -p "127.0.0.1:${EXAKIT_DB_PORT}:8563" \
+        -v "${EXAKIT_NANO_VOLUME}:/exa" \
+        "$_image" || die "Could not start updated Nano container"
+    EXAKIT_NANO_TAG="$_latest"
+    export EXAKIT_NANO_TAG
+    nano_wait_ready
+    nano_record_manifest
+    manifest_set desired.runtime.nano "$EXAKIT_NANO_TAG"
+    ok "Nano updated; data volume kept: $EXAKIT_NANO_VOLUME"
 }

@@ -97,6 +97,24 @@ mcp_install() {
     ok "MCP server ready to run via uvx"
 }
 
+mcp_update() {
+    _latest="$(exakit_component_latest mcp)"
+    [ -n "$_latest" ] || die "Could not resolve the latest ${EXAKIT_MCP_PACKAGE} version."
+    _current="$(manifest_get components.mcp_server.version 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "MCP server is already current ($_current)"
+        return 0
+    fi
+    info "Updating MCP server ${_current:-unknown} -> $_latest"
+    EXAKIT_MCP_VERSION="$_latest"
+    export EXAKIT_MCP_VERSION
+    mcp_install
+    exakit_generate_mcp_configs || warn "MCP configs were not regenerated. Retry with: exakit mcp-configs"
+    mcp_validate || true
+    manifest_set desired.mcp "$EXAKIT_MCP_VERSION"
+    ok "MCP server updated; database data was not changed"
+}
+
 # mcp_credentials — prints "user<TAB>password_file" for the client configs.
 # Prefers the validated dedicated read-only user; falls back to the legacy
 # MCP default or, as a last resort, the runtime admin user.

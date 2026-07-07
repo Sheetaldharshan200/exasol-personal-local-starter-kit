@@ -6,6 +6,9 @@
 #   preflight           check this machine's requirements, install nothing
 #   status              show what is installed and whether it is healthy
 #   version             kit source, install date, component versions
+#   update-check [what] check latest versions (all, runtime, exakit, exapump, mcp)
+#   update [what]       update all or one component without deleting database data
+#                       Personal major upgrades support --plan, --backup, --apply
 #   info                print the connection details panel
 #   start               start the local database
 #   stop                stop the local database
@@ -49,6 +52,7 @@ fi
 . "$_lib_dir/runtime-nano.sh"
 . "$_lib_dir/runtime-personal.sh"
 [ -f "$_lib_dir/exapump.sh" ] && . "$_lib_dir/exapump.sh"
+[ -f "$_lib_dir/mcp.sh" ] && . "$_lib_dir/mcp.sh"
 
 _runtime_type() {
     manifest_get runtime.type 2>/dev/null
@@ -118,6 +122,18 @@ cmd_version() {
     printf 'exapump:        %s\n' "$(manifest_get components.exapump.version 2>/dev/null)"
     printf 'MCP server:     %s %s\n' "$(manifest_get components.mcp_server.package 2>/dev/null)" \
         "$(manifest_get components.mcp_server.version 2>/dev/null)"
+    printf '\n'
+    exakit_print_update_check all || true
+}
+
+cmd_update_check() {
+    [ -f "$EXAKIT_MANIFEST" ] || { echo "Not installed (no manifest at $EXAKIT_MANIFEST)"; exit 0; }
+    exakit_print_update_check "${1:-all}"
+}
+
+cmd_update() {
+    _require_install
+    exakit_update "$@"
 }
 
 cmd_logs() {
@@ -279,6 +295,8 @@ case "${1:-help}" in
     preflight) preflight_report ;;
     status)   cmd_status ;;
     version)  cmd_version ;;
+    update-check|updates|outdated) shift; cmd_update_check "${1:-all}" ;;
+    update|upgrade) shift; cmd_update "$@" ;;
     info)     connection_panel ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;

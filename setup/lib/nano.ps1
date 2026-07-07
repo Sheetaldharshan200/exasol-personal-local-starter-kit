@@ -312,3 +312,39 @@ function Remove-Nano {
     }
     Set-ExakitManifestValue "runtime.status" "removed"
 }
+
+function Update-Nano {
+    param([Parameter(Mandatory)][string]$LatestTag)
+    Resolve-NanoNames
+    $currentImage = Get-ExakitManifestValue "runtime.image"
+    $currentTag = if ($currentImage -and $currentImage.Contains(":")) { ($currentImage -split ":")[-1] } else { "" }
+    if ($currentTag -eq $LatestTag) { Ok "Exasol Nano is already current ($currentTag)"; return }
+
+    $engine = Get-NanoEngine
+    $image = "docker.io/$($script:NanoImage):$LatestTag"
+    Info "Updating Exasol Nano $currentTag -> $LatestTag"
+    Info "The container will be recreated; the data volume '$($script:NanoVolume)' is kept."
+    $code = Invoke-ExakitLogged $engine "pull" $image
+    if ($code -ne 0) { Fail "Could not pull $image" }
+
+    if (Test-NanoContainerExists) {
+        if (Test-NanoContainerRunning) {
+            $code = Invoke-ExakitLogged $engine "stop" "-t" "60" $script:NanoContainer
+            if ($code -ne 0) { Fail "Could not stop $($script:NanoContainer)" }
+        }
+        $code = Invoke-ExakitLogged $engine "rm" "-f" $script:NanoContainer
+        if ($code -ne 0) { Fail "Could not remove old Nano container" }
+    }
+
+    $code = Invoke-ExakitLogged $engine "run" "-d" "--name" $script:NanoContainer `
+        "--shm-size=512mb" "--pids-limit=-1" `
+        "-p" "127.0.0.1:$($script:DbPort):8563" `
+        "-v" "$($script:NanoVolume):/exa" `
+        $image
+    if ($code -ne 0) { Fail "Could not start updated Nano container" }
+    $script:NanoTag = $LatestTag
+    Wait-NanoReady
+    Set-NanoManifest
+    Set-ExakitManifestValue "desired.runtime.nano" $script:NanoTag
+    Ok "Nano updated; data volume kept: $($script:NanoVolume)"
+}

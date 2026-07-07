@@ -121,6 +121,124 @@ _mcp_user="$(mcp_credentials | awk -F '\t' '{print $1}')"
 check "mcp_credentials(legacy fallback)" "mcp_readonly" "$_mcp_user"
 rm -rf "$_mcp_test_dir"
 
+echo "update command routing:"
+update_targets="$(bash -c ". '$ROOT/setup/lib/common.sh'; exakit_update_targets all" | tr '\n' ' ')"
+check "update_targets(all)" "exakit runtime exapump mcp " "$update_targets"
+personal_target="$(bash -c ". '$ROOT/setup/lib/common.sh'; exakit_update_targets personal" | tr '\n' ' ')"
+check "update_targets(personal)" "personal " "$personal_target"
+if grep -q 'mcp.sh' "$ROOT/setup/exakit"; then
+    check "exakit_sources(mcp)" "yes" "yes"
+else
+    check "exakit_sources(mcp)" "yes" "no"
+fi
+if grep -q 'cmd_update "$@"' "$ROOT/setup/exakit" && \
+   grep -q 'exakit_update_component "$_component" "$@"' "$ROOT/setup/lib/common.sh"; then
+    check "update_options(forwarded)" "yes" "yes"
+else
+    check "update_options(forwarded)" "yes" "no"
+fi
+if bash -c ". '$ROOT/setup/lib/common.sh'; exakit_version_newer 3.0.0 2.0.0"; then
+    check "version_newer(3>2)" "yes" "yes"
+else
+    check "version_newer(3>2)" "yes" "no"
+fi
+update_action="$(bash -c "
+. '$ROOT/setup/lib/common.sh'
+manifest_get() {
+  case \"\$1\" in
+    runtime.type) printf '%s\n' nano ;;
+    runtime.image) printf '%s\n' docker.io/exasol/nano:2026.2.0-nano.2 ;;
+    components.exapump.version) printf '%s\n' 0.11.2 ;;
+    components.mcp_server.version) printf '%s\n' 1.10.1 ;;
+    kit.source) printf '%s\n' example/starter@1.0.0 ;;
+    *) return 1 ;;
+  esac
+}
+exakit_component_latest() {
+  case \"\$1\" in
+    nano) printf '%s\n' 2026.3.0-nano.1 ;;
+    exapump) printf '%s\n' 0.12.0 ;;
+    mcp) printf '%s\n' 1.11.0 ;;
+    exakit) printf '%s\n' 1.1.0 ;;
+  esac
+}
+exakit_print_update_check all
+" | grep -c 'exakit update')"
+check "update_check(commands)" "5" "$update_action"
+
+personal_major_plan="$(bash -c "
+. '$ROOT/setup/lib/common.sh'
+. '$ROOT/setup/lib/detect.sh'
+. '$ROOT/setup/lib/runtime-personal.sh'
+manifest_get() {
+  case \"\$1\" in
+    runtime.version) printf '%s\n' 2.0.0 ;;
+    *) return 1 ;;
+  esac
+}
+exakit_component_latest() { printf '%s\n' 3.0.0; }
+personal_update --plan
+" 2>&1 | grep -c 'exakit update personal --backup')"
+check "personal_major(plan)" "1" "$personal_major_plan"
+
+_personal_backup_dir="$(mktemp -d)"
+mkdir -p "$_personal_backup_dir/deploy"
+printf 'deployment state\n' > "$_personal_backup_dir/deploy/marker.txt"
+personal_backup_count="$(bash -c "
+. '$ROOT/setup/lib/common.sh'
+. '$ROOT/setup/lib/detect.sh'
+. '$ROOT/setup/lib/runtime-personal.sh'
+EXAKIT_HOME='$_personal_backup_dir/home'
+EXAKIT_PERSONAL_DEPLOY_DIR='$_personal_backup_dir/deploy'
+EXAKIT_LOG_FILE='$_personal_backup_dir/backup.log'
+manifest_set() { :; }
+personal_upgrade_backup 2.0.0 3.0.0 >/dev/null
+find \"\$EXAKIT_HOME/backups\" -name 'personal-upgrade-*.tar.gz' | wc -l | tr -d ' '
+")"
+check "personal_major(backup)" "1" "$personal_backup_count"
+rm -rf "$_personal_backup_dir"
+
+echo "version lookup fallbacks without Python/uv:"
+fallback_versions="$(bash -c "
+. '$ROOT/setup/lib/common.sh'
+EXAKIT_DISABLE_SYSTEM_PYTHON=1
+exakit_ensure_uv() { return 1; }
+curl() {
+  case \"\$*\" in
+    *api.github.com*) printf '%s\n' '{\"tag_name\":\"v9.8.7\"}' ;;
+    *pypi.org*) printf '%s\n' '{\"info\":{\"version\":\"6.5.4\"}}' ;;
+    *hub.docker.com*) printf '%s\n' '{\"results\":[{\"name\":\"2026.4.0-nano.1\"},{\"name\":\"latest\"}]}' ;;
+  esac
+}
+printf '%s %s %s ' \"\$(exakit_latest_github_release_version owner/repo)\" \"\$(exakit_latest_pypi_version pkg)\" \"\$(exakit_latest_docker_tag exasol/nano)\"
+if exakit_version_newer 3.0.0 2.9.9; then printf yes; else printf no; fi
+")"
+check "lookup_fallback(no-python)" "9.8.7 6.5.4 2026.4.0-nano.1 yes" "$fallback_versions"
+
+echo "managed binary precedence:"
+_bin_test_dir="$(mktemp -d)"
+mkdir -p "$_bin_test_dir/kit-bin" "$_bin_test_dir/path-bin"
+printf '#!/bin/sh\necho kit\n' > "$_bin_test_dir/kit-bin/exapump"
+printf '#!/bin/sh\necho path\n' > "$_bin_test_dir/path-bin/exapump"
+chmod +x "$_bin_test_dir/kit-bin/exapump" "$_bin_test_dir/path-bin/exapump"
+managed_exapump="$(PATH="$_bin_test_dir/path-bin:$PATH" bash -c "
+. '$ROOT/setup/lib/common.sh'
+. '$ROOT/setup/lib/exapump.sh'
+EXAKIT_EXAPUMP_BIN='$_bin_test_dir/kit-bin/exapump'
+exapump_cli
+")"
+check "exapump_cli(prefers-managed)" "$_bin_test_dir/kit-bin/exapump" "$managed_exapump"
+rm -rf "$_bin_test_dir"
+
+echo "self-update staging guard:"
+if grep -q 'exakit-kit-stage' "$ROOT/setup/lib/common.sh" && \
+   grep -q 'Downloaded starter kit is incomplete' "$ROOT/setup/lib/common.sh" && \
+   grep -q 'existing kit copy was left untouched' "$ROOT/setup/lib/common.sh"; then
+    check "self_update(staged_validation)" "yes" "yes"
+else
+    check "self_update(staged_validation)" "yes" "no"
+fi
+
 echo
 echo "passed: $PASS, failed: $FAIL"
 [ "$FAIL" -eq 0 ]
