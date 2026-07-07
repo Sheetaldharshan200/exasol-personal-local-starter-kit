@@ -1539,7 +1539,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 clients = ", ".join(LABELS.get(item, item) for item in doc.get("selected_clients", []))
 print("")
 print("  MCP setup summary")
-print("  Mode:     permanent")
+print("  Mode:     managed")
 print("  Meaning:  Wrote managed MCP entries into the selected client config files.")
 print(f"  Clients:  {clients or 'none'}")
 print(f"  Status:   {doc.get('status', 'unknown')}")
@@ -1585,7 +1585,7 @@ exakit_print_mcp_ready_panel() {
     fi
     printf '  Managed state: %s\n' "$EXAKIT_MCP_DIR"
     printf '\n'
-    printf '  Permanent setup updated the selected client config files.\n'
+    printf '  MCP setup updated the selected client config files.\n'
     printf '  Next step: restart the selected client now.\n'
     printf '  After setup/restart, look for an MCP server named: exasol\n'
     printf '\n'
@@ -1682,7 +1682,7 @@ exakit_parse_mcp_client_selection() {
 }
 
 exakit_mcp_setup() {
-    info "MCP setup will permanently edit the selected AI client config files."
+    info "MCP setup will edit the selected AI client config files."
 
     printf '\n'
     info "Choose one or more clients"
@@ -1697,7 +1697,7 @@ exakit_mcp_setup() {
     done
 
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX")"
-    info "Applying permanent MCP setup"
+    info "Applying MCP setup"
     _setup_status=0
     if exakit_run_mcp_setup_cli "$_clients_csv" "$_result_file"; then
         :
