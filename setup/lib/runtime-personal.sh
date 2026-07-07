@@ -252,7 +252,7 @@ personal_wait_ready() {
         sleep 5
         _tries=$((_tries + 1))
     done
-    die "Deployment does not answer to 'exasol info'. Check: $(personal_cli) info"
+    die "Deployment does not respond to 'exasol info'. Check: $(personal_cli) info"
 }
 
 personal_record_manifest() {

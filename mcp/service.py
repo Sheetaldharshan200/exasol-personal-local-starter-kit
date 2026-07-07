@@ -133,7 +133,7 @@ class MCPAccessSubsystem:
         finding = Finding(
             code="operation_out_of_scope",
             severity=Severity.WARNING,
-            message="MCP server installation is owned by another component and is intentionally not performed here.",
+            message="Installing the MCP server runtime is handled by the Exasol starter-kit installer, not by this tool.",
             recommended_action="Invoke the upstream installer-owned runtime installation workflow first.",
             blocking=True,
         )
@@ -389,7 +389,7 @@ class MCPAccessSubsystem:
             request_id=request.request_id,
             operation=request.operation,
             status=OperationStatus.FAILED_RECOVERABLE,
-            summary="Repair found drift but had no safe remediation path.",
+            summary="Repair detected configuration changes but could not fix them automatically. Recreate the configuration with configure, or restore a snapshot.",
             findings=findings,
             verification_evidence=existing_validation.evidence,
         )

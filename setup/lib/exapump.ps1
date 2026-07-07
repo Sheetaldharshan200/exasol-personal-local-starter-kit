@@ -291,7 +291,7 @@ function Test-ExapumpConnection {
     # TLS handshake error) is exactly what's needed to diagnose this, and
     # making someone go dig through a log file for it is not production-grade.
     Write-ExapumpOutput -Output $lastOutput -Header "Last attempt's output:"
-    Fail "SELECT 1 failed through profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
+    Fail "SELECT 1 failed via profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
 }
 
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.
