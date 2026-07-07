@@ -83,9 +83,9 @@ Run:
 exakit mcp-setup
 ```
 
-Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
+The setup backs up and edits the selected supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
 
-When the kit can detect the local MCP launcher path, it writes that exact path into the generated client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
+When the kit can detect the local MCP launcher path, it writes that exact path into the client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
 
 ### Let an AI assistant drive the kit (the skill)
 
@@ -122,7 +122,6 @@ exakit info
 exakit stop
 exakit start
 exakit data-load
-exakit load-data
 exakit skills-install
 exakit mcp-status
 exakit mcp-validate

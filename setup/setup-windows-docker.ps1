@@ -81,12 +81,8 @@ try {
     # --- step 4: MCP server (AI agent bridge) ----------------------------------
     if ($exapumpSupported -and (Begin-ExakitStep "mcp" "Step 3/5  MCP server (AI agent bridge)")) {
         Install-Mcp
-        if (Update-ExakitMcpConfigs) {
-            Test-McpServer
-            Set-ExakitStepDone "mcp"
-        } else {
-            Warn2 "MCP client config generation failed - re-run 'exakit mcp-configs' once the issue above is fixed."
-        }
+        Test-McpServer
+        Set-ExakitStepDone "mcp"
     }
 
     # --- step 5: exakit helper command ------------------------------------------

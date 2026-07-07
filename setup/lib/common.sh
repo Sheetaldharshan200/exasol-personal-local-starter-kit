@@ -902,27 +902,6 @@ exakit_maybe_offer_skills_install() {
         warn "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
 }
 
-exakit_generate_mcp_configs() {
-    require_python3
-    _repo_root="$(exakit_repo_root)" || {
-        warn "Could not find the MCP package source to generate client configs."
-        return 1
-    }
-    exakit_configure_mcp_readonly_access || return 1
-    info "Generating ready-made MCP client configs"
-    if ! (
-        cd "$_repo_root" &&
-        PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
-            run_python -m mcp export-runtime-configs --runtime-root "$EXAKIT_HOME"
-    ) >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
-        warn "MCP config generation failed (see log)."
-        return 1
-    fi
-    mark_step mcp_configs
-    ok "MCP client configs are ready in $EXAKIT_MCP_DIR"
-    return 0
-}
-
 exakit_exapump_bin() {
     _manifest_path="$(manifest_get components.exapump.path 2>/dev/null || true)"
     if [ -n "$_manifest_path" ] && [ -x "$_manifest_path" ]; then
@@ -1479,15 +1458,10 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 clients = ", ".join(LABELS.get(item, item) for item in doc.get("selected_clients", []))
 print("")
 print("  MCP setup summary")
-print(f"  Mode:     {doc.get('mode', 'unknown')}")
-if doc.get("mode") == "temporary":
-    print("  Meaning:  Generated config files only; no AI client config was changed.")
-elif doc.get("mode") == "permanent":
-    print("  Meaning:  Wrote managed MCP entries into the selected client config files.")
+print("  Mode:     permanent")
+print("  Meaning:  Wrote managed MCP entries into the selected client config files.")
 print(f"  Clients:  {clients or 'none'}")
 print(f"  Status:   {doc.get('status', 'unknown')}")
-if doc.get("mode") == "temporary":
-    print(f"  Bundle:   {doc.get('bundle_dir', 'unknown')}")
 for artifact in doc.get("artifacts", []):
     client = LABELS.get(artifact.get("client"), artifact.get("client", "unknown"))
     print(f"  File:     {client} -> {artifact.get('path', 'unknown')}")
@@ -1528,18 +1502,10 @@ exakit_print_mcp_ready_panel() {
     if [ "$_tls" = "self-signed" ]; then
         printf '  TLS:           local self-signed certificate accepted for 127.0.0.1\n'
     fi
-    printf '  Config bundle: %s\n' "$EXAKIT_MCP_DIR"
+    printf '  Managed state: %s\n' "$EXAKIT_MCP_DIR"
     printf '\n'
-    if [ "$_mode" = "temporary" ]; then
-        printf '  Temporary mode did not change your AI client config.\n'
-        printf '  Next steps:\n'
-        printf '  1. Open the generated config file for your client from the bundle above.\n'
-        printf '  2. Copy or merge it into that AI client MCP config.\n'
-        printf '  3. Restart the client.\n'
-    else
-        printf '  Permanent mode updated the selected client config files.\n'
-        printf '  Next step: restart the selected client now.\n'
-    fi
+    printf '  Permanent setup updated the selected client config files.\n'
+    printf '  Next step: restart the selected client now.\n'
     printf '  After setup/restart, look for an MCP server named: exasol\n'
     printf '\n'
     printf '  First prompt to try in your AI client:\n'
@@ -1635,21 +1601,8 @@ exakit_parse_mcp_client_selection() {
 }
 
 exakit_mcp_setup() {
-    info "Choose how you want MCP set up in your AI clients"
-    printf '    1. Default: Permanent setup (edit selected clients now)\n'
-    printf '    2. Temporary setup (copy/paste instructions only)\n'
-    printf '\n'
-    printf '    Quick guide:\n'
-    printf '       Choose 1 if you want the kit to configure the apps for you.\n'
-    printf '       Choose 2 if you only want files and copy/paste steps.\n'
-    while :; do
-        _mode_choice="$(prompt_text "Choose setup mode (1 permanent, 2 temporary)" "1")"
-        case "$_mode_choice" in
-            1|permanent|Permanent|default|Default) _mode="permanent"; break ;;
-            2|temporary|Temporary) _mode="temporary"; break ;;
-            *) warn "Please enter 1 for permanent or 2 for temporary." ;;
-        esac
-    done
+    _mode="permanent"
+    info "MCP setup will permanently edit the selected AI client config files."
 
     printf '\n'
     info "Choose one or more clients"
@@ -1664,7 +1617,7 @@ exakit_mcp_setup() {
     done
 
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX")"
-    info "Applying MCP setup ($_mode mode)"
+    info "Applying permanent MCP setup"
     _setup_status=0
     if exakit_run_mcp_setup_cli "$_mode" "$_clients_csv" "$_result_file"; then
         :
@@ -1814,12 +1767,8 @@ kit_shared_steps() {
     if command -v mcp_install >/dev/null 2>&1; then
         if begin_step mcp "Step ${_step_no}/${_total}  MCP server (AI agent bridge)"; then
             mcp_install
-            if exakit_generate_mcp_configs; then
-                mcp_validate
-                mark_step mcp
-            else
-                warn "MCP client config generation failed — re-run 'exakit mcp-configs' once the issue above is fixed."
-            fi
+            mcp_validate
+            mark_step mcp
         fi
     else
         info "Step ${_step_no}/${_total}  MCP server — module not included in this kit build yet, skipping"
@@ -1847,8 +1796,7 @@ kit_shared_steps() {
         cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/"
         # Copy the assets exakit needs after the checkout is gone: the mcp/
         # and sql/ packages, the data/ CSVs, and load-data.sh (so both
-        # `exakit load-data` and the documented
-        # ~/.exasol-starter-kit/kit/setup/load-data.sh command keep working).
+        # `exakit data-load --force` and the documented raw setup script keep working).
         [ -d "$_kit_root/mcp" ] && cp -R "$_kit_root/mcp" "$EXAKIT_HOME/kit/"
         [ -d "$_kit_root/sql" ] && cp -R "$_kit_root/sql" "$EXAKIT_HOME/kit/"
         [ -d "$_kit_root/data" ] && cp -R "$_kit_root/data" "$EXAKIT_HOME/kit/"

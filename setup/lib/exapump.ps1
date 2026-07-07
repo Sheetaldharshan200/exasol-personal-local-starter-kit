@@ -602,7 +602,7 @@ function Show-ExakitDataLoadMenu {
 # Invoke-ExakitSampleDataLoad <kit_root> [-Force] - the full sample-data
 # pipeline: create the schema, bulk-load every data/*.csv, run any transform,
 # verify, then record the result in the manifest. One implementation, shared
-# by the installer's interactive offer, `exakit load-data`, and the guided
+# by the installer's interactive offer, `exakit data-load --force`, and the guided
 # data-load menu's option 1, so the entry points cannot drift apart.
 function Invoke-ExakitSampleDataLoad {
     param([Parameter(Mandatory)][string]$KitRoot, [switch]$Force)

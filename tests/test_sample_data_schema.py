@@ -215,8 +215,10 @@ class LoadWiringTests(unittest.TestCase):
 
     def test_exakit_cli_exposes_load_data_command(self) -> None:
         cli = EXAKIT_CLI.read_text(encoding="utf-8")
-        self.assertIn("load-data)", cli, "exakit must dispatch a 'load-data' subcommand.")
-        self.assertIn("cmd_load_data", cli)
+        self.assertIn("data-load)", cli, "exakit must dispatch the single 'data-load' subcommand.")
+        self.assertNotIn("load-data)", cli, "exakit must not expose a duplicate 'load-data' subcommand.")
+        self.assertNotIn("mcp-configs)", cli, "exakit must not expose a temporary MCP config command.")
+        self.assertIn("cmd_data_load", cli)
 
     def test_guided_data_load_menu_is_focused(self) -> None:
         menu_blocks = (

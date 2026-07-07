@@ -10,7 +10,7 @@ It covers:
 
 - install-time MCP preparation
 - dedicated read-only MCP credentials
-- temporary and permanent client configuration
+- permanent client configuration
 - lifecycle CRUD for managed MCP artifacts
 - validation, repair, backup, restore, and uninstall
 - security, drift, and recoverability
@@ -43,16 +43,7 @@ It covers:
 
 ### 3. Client Setup Edge Cases
 
-#### Temporary mode
-
-- export one client only
-- export multiple clients
-- export all supported clients
-- exported files written with restrictive permissions
-- manifest updated with exported artifacts
-- bundle index matches exported files
-
-#### Permanent mode
+#### Permanent setup
 
 - configure one client only
 - configure multiple clients
@@ -128,7 +119,7 @@ Expected behavior:
 ### 9. User Experience Edge Cases
 
 - user skips MCP setup during install and runs it later
-- user selects temporary setup first, then permanent later
+- user reruns permanent setup after client config drift
 - user changes selected clients on rerun
 - user asks to remove only one client from previously configured set
 - summary output should remain readable when operation partially succeeds

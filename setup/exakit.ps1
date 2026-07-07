@@ -11,10 +11,8 @@
 #   info                  print the connection details panel
 #   start                 start the local database
 #   stop                  stop the local database
-#   load-data [-Force]    load the sample dataset (schema + CSVs + verify)
-#   data-load             open focused data loading options
-#   mcp-configs           regenerate the ready-made temporary MCP config bundle
-#   mcp-setup             choose temporary or permanent MCP client setup
+#   data-load [-Force]    open focused data loading options; -Force reloads bundled sample data
+#   mcp-setup             permanently configure MCP in supported AI clients
 #   mcp-status [clients]  show managed MCP state
 #   mcp-validate [clients] validate managed MCP configs and connectivity
 #   mcp-repair [clients]  repair managed MCP config drift
@@ -269,7 +267,8 @@ function Invoke-CmdUpdate {
                     New-McpUpdateSnapshot | Out-Null
                     $script:McpVersion = $latest
                     Install-Mcp
-                    if (Update-ExakitMcpConfigs) { Test-McpServer }
+                    Test-McpServer
+                    Warn2 "Run exakit mcp-setup to refresh permanent AI client configs with the new MCP version."
                     Set-ExakitManifestValue "desired.mcp" $script:McpVersion
                 }
             }
@@ -283,29 +282,21 @@ function Invoke-CmdLogs {
     if ($latest) { Write-Host $latest.FullName } else { Write-Host "No logs found in $script:LogDir" -ForegroundColor Red; exit 1 }
 }
 
-function Invoke-CmdLoadData {
+function Invoke-CmdDataLoad {
     param([string]$ForceFlag = "")
     Assert-ExakitInstalled
     if ($ForceFlag -and $ForceFlag -ne "-Force" -and $ForceFlag -ne "--force") {
-        Fail "Unknown option '$ForceFlag' for load-data (only -Force/--force is supported)."
+        Fail "Unknown option '$ForceFlag' for data-load (only -Force/--force is supported)."
     }
     Initialize-ExakitLogging
-    $kitRoot = Get-ExakitRepoRoot
-    if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
-    Info "Loading the sample dataset (log: $script:LogFile)"
-    Invoke-ExakitSampleDataLoad -KitRoot $kitRoot -Force:([bool]$ForceFlag)
-}
-
-function Invoke-CmdDataLoadMenu {
-    Assert-ExakitInstalled
-    Initialize-ExakitLogging
-    Show-ExakitDataLoadMenu
-}
-
-function Invoke-CmdMcpConfigs {
-    Assert-ExakitInstalled
-    Initialize-ExakitLogging
-    if (-not (Update-ExakitMcpConfigs)) { Fail "Could not generate MCP client configs" }
+    if ($ForceFlag) {
+        $kitRoot = Get-ExakitRepoRoot
+        if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
+        Info "Reloading the bundled sample dataset (log: $script:LogFile)"
+        Invoke-ExakitSampleDataLoad -KitRoot $kitRoot -Force
+    } else {
+        Show-ExakitDataLoadMenu
+    }
 }
 
 function Invoke-CmdMcpSetup {
@@ -424,9 +415,7 @@ try {
         "info"         { Show-ExakitConnectionPanel }
         "start"        { Invoke-CmdStart }
         "stop"         { Invoke-CmdStop }
-        "load-data"    { Invoke-CmdLoadData -ForceFlag ($RestArgs | Select-Object -First 1) }
-        "data-load"    { Invoke-CmdDataLoadMenu }
-        "mcp-configs"  { Invoke-CmdMcpConfigs }
+        "data-load"    { Invoke-CmdDataLoad -ForceFlag ($RestArgs | Select-Object -First 1) }
         "mcp-setup"    { Invoke-CmdMcpSetup }
         "mcp-status"   { Invoke-CmdMcpOperation -Operation "status" -OpArgs $RestArgs }
         "mcp-validate" { Invoke-CmdMcpOperation -Operation "validate" -OpArgs $RestArgs }

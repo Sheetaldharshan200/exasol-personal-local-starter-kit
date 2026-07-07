@@ -493,7 +493,7 @@ exakit_data_load_menu() {
 # exakit_load_sample_data <kit_root> [--force] — the full sample-data pipeline:
 # create the schema, bulk-load every data/*.csv, run any transform, verify,
 # then record the result in the manifest. One implementation, shared by
-# setup/load-data.sh, the interactive installer offer, and `exakit load-data`,
+# setup/load-data.sh, the interactive installer offer, and `exakit data-load --force`,
 # so the three entry points cannot drift apart.
 #
 # Uses die() for hard failures (missing profile, failed load/verify). Callers
