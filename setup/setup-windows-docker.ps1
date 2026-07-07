@@ -1,8 +1,7 @@
 # setup-windows-docker.ps1 - Exasol Personal Local Starter Kit, Windows path.
 #
-# Installs and connects: Exasol Nano (container via Docker Desktop, Podman
-# fallback), exapump, the Exasol MCP server, and pyexasol. Prints connection
-# details when done.
+# Installs and connects: Exasol Nano (container via Docker Desktop), exapump,
+# the Exasol MCP server, and pyexasol. Prints connection details when done.
 #
 # Usually launched by install.ps1, but runs standalone from a checkout too:
 #   powershell -ExecutionPolicy Bypass -File setup\setup-windows-docker.ps1
