@@ -120,6 +120,7 @@ cmd_version() {
     printf 'exapump:        %s\n' "$(manifest_get components.exapump.version 2>/dev/null)"
     printf 'MCP server:     %s %s\n' "$(manifest_get components.mcp_server.package 2>/dev/null)" \
         "$(manifest_get components.mcp_server.version 2>/dev/null)"
+    printf 'pyexasol:       %s\n' "$(manifest_get components.pyexasol.version 2>/dev/null)"
     printf '\n'
     exakit_print_update_check all || true
 }

@@ -27,13 +27,14 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 
 You already use AI. The hard part is trusting it with your data. This kit gives you a complete, private AI-ready analytics setup that runs **entirely on your machine** — so you can let an AI assistant query real data, **see every SQL statement before it runs**, verify every answer yourself, and rerun the whole thing tomorrow.
 
-**One command installs three things and connects them:**
+**One command installs four things and connects them:**
 
 | | Component | What it does for you |
 |---|---|---|
 | 🗄️ | **Exasol database** | A full in-memory analytics database, running locally |
 | ⚡ | **exapump** | Load CSV/Parquet files and run SQL from your terminal |
 | 🤖 | **MCP server** | Lets Claude Desktop, Cursor, or other supported MCP clients query your database with a dedicated read-only login |
+| 🐍 | **pyexasol** | The official Exasol Python driver, ready in its own environment — script against your database from Python |
 
 At the end you get your connection details on screen, a managed runtime state under `~/.exasol-starter-kit/`, and guided MCP setup for supported clients. Time to first AI-assisted query: **about 15 minutes**.
 
@@ -71,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, and MCP server, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
@@ -191,6 +192,6 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 
 *Questions or issues → open an issue in this repository.*
 
-<sub>Part of the [Exasol](https://www.exasol.com) ecosystem · [Exasol Personal](https://github.com/exasol/exasol-personal) · [exapump](https://github.com/exasol-labs/exapump) · [MCP server](https://github.com/exasol/mcp-server)</sub>
+<sub>Part of the [Exasol](https://www.exasol.com) ecosystem · [Exasol Personal](https://github.com/exasol/exasol-personal) · [exapump](https://github.com/exasol-labs/exapump) · [MCP server](https://github.com/exasol/mcp-server) · [pyexasol](https://github.com/exasol/pyexasol)</sub>
 
 </div>

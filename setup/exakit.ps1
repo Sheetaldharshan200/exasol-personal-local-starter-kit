@@ -111,6 +111,7 @@ function Invoke-CmdVersion {
     Write-Host "Runtime:        $(Get-RuntimeType) $runtimeVersion"
     Write-Host "exapump:        $(Get-ExakitManifestValue 'components.exapump.version')"
     Write-Host "MCP server:     $(Get-ExakitManifestValue 'components.mcp_server.package') $(Get-ExakitManifestValue 'components.mcp_server.version')"
+    Write-Host "pyexasol:       $(Get-ExakitManifestValue 'components.pyexasol.version')"
     Invoke-CmdUpdateCheck -Target "all"
 }
 
