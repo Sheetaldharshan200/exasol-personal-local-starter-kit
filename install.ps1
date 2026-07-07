@@ -72,8 +72,19 @@ $ramGb = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemor
 # EXASOL wordmark and palette match the rest of the install exactly. Available
 # now that the kit is downloaded; plain fallback if the lib is missing.
 $uiLib = Join-Path $KitDir "setup\lib\ui.ps1"
+$uiLoaded = $false
 if (Test-Path $uiLib) {
-    . $uiLib
+    # Load the visual layer WITHOUT dot-sourcing the file. A .ps1 file is
+    # subject to the execution policy (Restricted - the Windows default -
+    # blocks it), but a scriptblock built from the file's text is not: the
+    # same exemption install.ps1 itself runs under via `irm | iex`. Guarded so
+    # any failure just falls back to the plain plan below.
+    try {
+        . ([scriptblock]::Create((Get-Content -Raw -Path $uiLib)))
+        $uiLoaded = $true
+    } catch { $uiLoaded = $false }
+}
+if ($uiLoaded) {
     Write-ExakitInstallPlan `
         -Platform "windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)" `
         -Database "Exasol Nano (container via Docker Desktop)" `
