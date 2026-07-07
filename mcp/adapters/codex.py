@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11: tomllib was added in 3.11.
+    # Keep the whole MCP package importable on older interpreters (registry.py
+    # imports this adapter unconditionally); Codex operations degrade to a
+    # clear finding instead of crashing the subsystem at import time.
+    tomllib = None
 from pathlib import Path
 import re
 
@@ -71,6 +77,23 @@ class CodexAdapter(ClientAdapter):
     def inspect(self, path: Path, server_name: str) -> AdapterInspection:
         if not path.exists():
             return AdapterInspection(path=path, exists=False, document={}, file_valid=True)
+        if tomllib is None:
+            return AdapterInspection(
+                path=path,
+                exists=True,
+                document=None,
+                file_valid=False,
+                findings=[
+                    Finding(
+                        code="codex_requires_python_311",
+                        severity=Severity.ERROR,
+                        message="Codex configuration support requires Python 3.11 or newer.",
+                        scope={"path": str(path)},
+                        recommended_action="Run this tool under Python 3.11+ (the starter kit's managed runtime), or configure Claude Desktop or Cursor instead.",
+                        blocking=True,
+                    )
+                ],
+            )
         try:
             document = tomllib.loads(path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as exc:
@@ -166,6 +189,10 @@ class CodexAdapter(ClientAdapter):
 
     def validate_render(self, rendered: RenderResult) -> list[Finding]:
         if rendered.remove_file:
+            return []
+        if tomllib is None:
+            # Cannot re-parse TOML on Python < 3.11; inspect() already blocks
+            # Codex there, so this path is not reached in practice.
             return []
         try:
             tomllib.loads(rendered.content or "")
