@@ -12,8 +12,8 @@ while keeping the ones that matter gated.
 
 Allow without prompting:
 - The kit's **read-only status commands** — they change nothing:
-  `exakit status`, `exakit info`, `exakit version`, `exakit mcp-status`,
-  `exakit mcp-validate`, `exakit logs`.
+  `exakit status`, `exakit info`, `exakit version`, `exakit mcp-doctor`,
+  `exakit logs`.
 - The **`exasol` MCP tools** — the MCP server connects as a dedicated
   least-privilege read-only user, so the database itself rejects any write.
 
@@ -39,8 +39,7 @@ every user benefits):
       "Bash(exakit status:*)",
       "Bash(exakit info:*)",
       "Bash(exakit version:*)",
-      "Bash(exakit mcp-status:*)",
-      "Bash(exakit mcp-validate:*)",
+      "Bash(exakit mcp-doctor:*)",
       "Bash(exakit logs:*)",
       "mcp__exasol"
     ],

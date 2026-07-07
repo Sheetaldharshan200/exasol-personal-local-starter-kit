@@ -13,10 +13,8 @@
 #   stop                  stop the local database
 #   data-load [-Force]    open focused data loading options; -Force reloads bundled sample data
 #   mcp-setup             permanently configure MCP in supported AI clients
-#   mcp-status [clients]  show managed MCP state
-#   mcp-validate [clients] validate managed MCP configs and connectivity
+#   mcp-doctor [clients]  check MCP config, connectivity, and managed state
 #   mcp-repair [clients]  repair managed MCP config drift
-#   mcp-doctor [clients]  run MCP diagnostics
 #   mcp-remove [clients]  remove managed MCP config from the supported clients
 #   mcp-restore [snapshot] restore the latest (or a chosen) MCP snapshot
 #   skills-install        install the kit's AI skills for CLI agents
@@ -520,15 +518,39 @@ function Invoke-CmdSkillsInstall {
 }
 
 function Show-ExakitUsage {
-    # Print every leading comment line (from line 2 on) up to the first
-    # non-comment line - avoids a hard-coded line count going stale whenever
-    # the header comment above is edited. Uses a real `foreach` statement
-    # (not ForEach-Object): `break` inside a ForEach-Object script block with
-    # no enclosing loop terminates the whole calling scope, not just the loop.
-    foreach ($line in (Get-Content $PSCommandPath | Select-Object -Skip 1)) {
-        if (-not $line.StartsWith("#")) { break }
-        Write-Host ($line -replace '^# ?', '')
+    param([switch]$All)
+    # `exakit help --all` prints the full command reference: every leading
+    # comment line (from line 2 on) up to the first non-comment line - avoids
+    # a hard-coded line count going stale whenever the header comment above is
+    # edited. Plain `exakit help` (and a bare `exakit`) prints only the short
+    # everyday list, so a first-time user sees a handful of commands, not the
+    # whole surface. Mirrors the bash usage() tiering.
+    #
+    # Uses a real `foreach` statement (not ForEach-Object): `break` inside a
+    # ForEach-Object script block with no enclosing loop terminates the whole
+    # calling scope, not just the loop.
+    if ($All) {
+        foreach ($line in (Get-Content $PSCommandPath | Select-Object -Skip 1)) {
+            if (-not $line.StartsWith("#")) { break }
+            Write-Host ($line -replace '^# ?', '')
+        }
+        return
     }
+    @(
+        "exakit - Exasol Personal Local Starter Kit"
+        ""
+        "Get started:"
+        "  exakit mcp-setup     connect your AI assistant (Claude Desktop, Cursor, Codex)"
+        ""
+        "Everyday commands:"
+        "  status               is the database up and healthy?"
+        "  info                 show your connection details"
+        "  start | stop         run or pause the local database"
+        "  data-load            load the sample data or your own CSV / Parquet"
+        "  mcp-doctor           check the AI (MCP) connection"
+        ""
+        "Run 'exakit help --all' for every command (update, backup, repair, teardown, ...)."
+    ) | ForEach-Object { Write-Host $_ }
 }
 
 try {
@@ -536,15 +558,13 @@ try {
         "preflight"    { Test-NanoRequirements }
         "status"       { Invoke-CmdStatus }
         "version"      { Invoke-CmdVersion }
-        { $_ -in @("update-check", "updates", "outdated") } { Invoke-CmdUpdateCheck -Target ($RestArgs | Select-Object -First 1) }
-        { $_ -in @("update", "upgrade") } { Invoke-CmdUpdate -Target ($RestArgs | Select-Object -First 1) }
+        "update-check"  { Invoke-CmdUpdateCheck -Target ($RestArgs | Select-Object -First 1) }
+        "update"        { Invoke-CmdUpdate -Target ($RestArgs | Select-Object -First 1) }
         "info"         { Show-ExakitConnectionPanel }
         "start"        { Invoke-CmdStart }
         "stop"         { Invoke-CmdStop }
         "data-load"    { Invoke-CmdDataLoad -ForceFlag ($RestArgs | Select-Object -First 1) }
         "mcp-setup"    { Invoke-CmdMcpSetup }
-        "mcp-status"   { Invoke-CmdMcpOperation -Operation "status" -OpArgs $RestArgs }
-        "mcp-validate" { Invoke-CmdMcpOperation -Operation "validate" -OpArgs $RestArgs }
         "mcp-repair"   { Invoke-CmdMcpOperation -Operation "repair" -OpArgs $RestArgs }
         "mcp-doctor"   { Invoke-CmdMcpOperation -Operation "doctor" -OpArgs $RestArgs }
         "mcp-remove"   { Invoke-CmdMcpOperation -Operation "uninstall" -OpArgs $RestArgs }
@@ -553,8 +573,8 @@ try {
         "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
         "uninstall"    { Invoke-CmdUninstall -AssumeYes:($RestArgs -contains "-Yes" -or $RestArgs -contains "--yes" -or $RestArgs -contains "-y") -DryRun:($RestArgs -contains "-DryRun" -or $RestArgs -contains "--dry-run" -or $RestArgs -contains "-n") }
         "logs"         { Invoke-CmdLogs }
-        { $_ -in @("catalog", "catlog") } { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }
-        { $_ -in @("help", "-h", "--help") } { Show-ExakitUsage }
+        "catalog"      { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }
+        { $_ -in @("help", "-h", "--help") } { Show-ExakitUsage -All:($RestArgs -contains "--all" -or $RestArgs -contains "-a") }
         default {
             Write-Host "exakit: unknown command '$Command'" -ForegroundColor Red
             Show-ExakitUsage

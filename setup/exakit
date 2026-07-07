@@ -14,10 +14,8 @@
 #   stop                stop the local database
 #   data-load [--force] open focused data loading options; --force reloads bundled sample data
 #   mcp-setup           permanently configure MCP in supported AI clients
-#   mcp-status          show managed MCP state
-#   mcp-validate        validate managed MCP configs and connectivity
+#   mcp-doctor          check MCP config, connectivity, and managed state
 #   mcp-repair          repair managed MCP config drift
-#   mcp-doctor          run MCP diagnostics
 #   mcp-remove          remove managed MCP config from the supported clients
 #   mcp-restore         restore the latest (or a chosen) MCP snapshot
 #   skills-install      install the kit's AI skills for CLI agents
@@ -228,18 +226,6 @@ cmd_mcp_setup() {
     exakit_mcp_setup || die "Could not complete MCP client setup"
 }
 
-cmd_mcp_status() {
-    _require_install
-    exakit_init_logging
-    exakit_mcp_operation status "$@" || die "Could not inspect MCP state"
-}
-
-cmd_mcp_validate() {
-    _require_install
-    exakit_init_logging
-    exakit_mcp_operation validate "$@" || die "Could not validate MCP state"
-}
-
 cmd_mcp_repair() {
     _require_install
     exakit_init_logging
@@ -270,11 +256,31 @@ cmd_skills_install() {
 }
 
 usage() {
-    # Print the leading comment block (from line 2) up to the first non-comment
-    # line — no hardcoded range, so new command lines (catalog, skills-install,
-    # …) always appear instead of being silently truncated. Mirrors the
-    # PowerShell Show-ExakitUsage behavior.
-    awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"
+    # `exakit help --all` prints the full command reference: the leading
+    # comment block (from line 2) up to the first non-comment line — no
+    # hardcoded range, so new command lines always appear instead of being
+    # silently truncated. Plain `exakit help` (and a bare `exakit`) prints
+    # only the short everyday list below, so a first-time user sees a handful
+    # of commands, not the whole surface. Mirrors PowerShell Show-ExakitUsage.
+    if [ "${1:-}" = "--all" ] || [ "${1:-}" = "-a" ]; then
+        awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"
+        return
+    fi
+    cat <<'EOF'
+exakit — Exasol Personal Local Starter Kit
+
+Get started:
+  exakit mcp-setup     connect your AI assistant (Claude Desktop, Cursor, Codex)
+
+Everyday commands:
+  status               is the database up and healthy?
+  info                 show your connection details
+  start | stop         run or pause the local database
+  data-load            load the sample data or your own CSV / Parquet
+  mcp-doctor           check the AI (MCP) connection
+
+Run 'exakit help --all' for every command (update, backup, repair, teardown, …).
+EOF
 }
 
 # cmd_catalog [search] — render the searchable command catalog from the shared
@@ -342,15 +348,13 @@ case "${1:-help}" in
     preflight) preflight_report ;;
     status)   cmd_status ;;
     version)  cmd_version ;;
-    update-check|updates|outdated) shift; cmd_update_check "${1:-all}" ;;
-    update|upgrade) shift; cmd_update "$@" ;;
+    update-check) shift; cmd_update_check "${1:-all}" ;;
+    update) shift; cmd_update "$@" ;;
     info)     connection_panel ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;
     data-load) shift; cmd_data_load "${1:-}" ;;
     mcp-setup) cmd_mcp_setup ;;
-    mcp-status) shift; cmd_mcp_status "$@" ;;
-    mcp-validate) shift; cmd_mcp_validate "$@" ;;
     mcp-repair) shift; cmd_mcp_repair "$@" ;;
     mcp-doctor) shift; cmd_mcp_doctor "$@" ;;
     mcp-remove) shift; cmd_mcp_remove "$@" ;;
@@ -359,7 +363,7 @@ case "${1:-help}" in
     teardown) shift; cmd_teardown "${1:-}" ;;
     uninstall) shift; cmd_uninstall "$@" ;;
     logs)     cmd_logs ;;
-    catalog|catlog)  shift; cmd_catalog "${1:-}" ;;
-    help|-h|--help) usage ;;
+    catalog)  shift; cmd_catalog "${1:-}" ;;
+    help|-h|--help) shift; usage "${1:-}" ;;
     *) echo "exakit: unknown command '${1}'" >&2; usage >&2; exit 2 ;;
 esac
