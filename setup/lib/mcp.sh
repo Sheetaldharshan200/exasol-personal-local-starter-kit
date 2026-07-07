@@ -106,6 +106,7 @@ mcp_update() {
         return 0
     fi
     info "Updating MCP server ${_current:-unknown} -> $_latest"
+    mcp_update_snapshot || warn "MCP pre-update snapshot was not created; generated configs will still be refreshed."
     EXAKIT_MCP_VERSION="$_latest"
     export EXAKIT_MCP_VERSION
     mcp_install
@@ -113,6 +114,26 @@ mcp_update() {
     mcp_validate || true
     manifest_set desired.mcp "$EXAKIT_MCP_VERSION"
     ok "MCP server updated; database data was not changed"
+}
+
+mcp_update_snapshot() {
+    command -v exakit_run_mcp_operation_cli >/dev/null 2>&1 || return 1
+    _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-update-backup.XXXXXX")"
+    if ! exakit_run_mcp_operation_cli "backup" "claude_desktop,cursor,codex" "$_result_file"; then
+        rm -f "$_result_file"
+        return 1
+    fi
+    if [ -s "$_result_file" ]; then
+        exakit_print_mcp_operation_summary "$_result_file"
+        _snapshot_id="$(run_python - "$_result_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle).get("backup_reference", ""))
+PY
+)"
+        [ -n "$_snapshot_id" ] && manifest_set backups.mcp_update.latest "$_snapshot_id"
+    fi
+    rm -f "$_result_file"
 }
 
 # mcp_credentials — prints "user<TAB>password_file" for the client configs.

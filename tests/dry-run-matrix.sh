@@ -239,6 +239,57 @@ else
     check "self_update(staged_validation)" "yes" "no"
 fi
 
+echo "Windows parity guards:"
+if command -v pwsh >/dev/null 2>&1; then
+    ps_parse="$(pwsh -NoProfile -Command '
+      $files = @("setup/lib/exakit-common.ps1","setup/lib/nano.ps1","setup/lib/mcp.ps1","setup/setup-windows-docker.ps1","setup/exakit.ps1")
+      foreach ($f in $files) {
+        $errors = $null
+        $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw $f), [ref]$errors)
+        if ($errors) { Write-Output "no"; exit 0 }
+      }
+      Write-Output "yes"
+    ' | tr -d '\r')"
+    check "powershell(parse)" "yes" "$ps_parse"
+
+    _ps_tmp="$(mktemp -d)"
+    ps_versions="$(EXAKIT_HOME="$_ps_tmp/home" EXAKIT_BIN_DIR="$_ps_tmp/bin" EXAKIT_VERSION_POLICY=pinned pwsh -NoProfile -Command '
+      . ./setup/lib/exakit-common.ps1
+      Initialize-ExakitManifest
+      Resolve-ExakitInstallVersions
+      Write-Output "$script:NanoTag $script:ExapumpVersion $script:McpVersion"
+    ' | tail -1 | tr -d '\r')"
+    rm -rf "$_ps_tmp"
+    check "powershell(version_policy_fallback)" "2026.2.0-nano.2 0.11.2 1.10.1" "$ps_versions"
+else
+    check "powershell(parse)" "skipped" "skipped"
+    check "powershell(version_policy_fallback)" "skipped" "skipped"
+fi
+if grep -q 'Resolve-ExakitInstallVersions' "$ROOT/setup/setup-windows-docker.ps1" && \
+   grep -q 'Get-ExakitLatestDockerTag' "$ROOT/setup/lib/exakit-common.ps1" && \
+   grep -q 'Get-ExakitLatestGithubRelease' "$ROOT/setup/lib/exakit-common.ps1" && \
+   grep -q 'Get-ExakitLatestPypiVersion' "$ROOT/setup/lib/exakit-common.ps1"; then
+    check "windows_install(latest_resolution)" "yes" "yes"
+else
+    check "windows_install(latest_resolution)" "yes" "no"
+fi
+if grep -q 'nano_update_snapshot' "$ROOT/setup/lib/runtime-nano.sh" && \
+   grep -q 'nano_restore_previous_container' "$ROOT/setup/lib/runtime-nano.sh" && \
+   grep -q 'New-NanoUpdateSnapshot' "$ROOT/setup/lib/nano.ps1" && \
+   grep -q 'Restore-PreviousNanoContainer' "$ROOT/setup/lib/nano.ps1"; then
+    check "nano_update(recoverability)" "yes" "yes"
+else
+    check "nano_update(recoverability)" "yes" "no"
+fi
+if grep -q 'mcp_update_snapshot' "$ROOT/setup/lib/mcp.sh" && \
+   grep -q 'New-McpUpdateSnapshot' "$ROOT/setup/lib/mcp.ps1" && \
+   grep -q 'backups.mcp_update.latest' "$ROOT/setup/lib/mcp.sh" && \
+   grep -q 'backups.mcp_update.latest' "$ROOT/setup/lib/mcp.ps1"; then
+    check "mcp_update(snapshot)" "yes" "yes"
+else
+    check "mcp_update(snapshot)" "yes" "no"
+fi
+
 echo
 echo "passed: $PASS, failed: $FAIL"
 [ "$FAIL" -eq 0 ]

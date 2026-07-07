@@ -34,14 +34,18 @@ $script:McpReadonlyUser    = if ($env:EXAKIT_MCP_READONLY_USER) { $env:EXAKIT_MC
 $script:McpReadonlySchemas = if ($env:EXAKIT_MCP_READONLY_SCHEMAS) { $env:EXAKIT_MCP_READONLY_SCHEMAS } else { "STARTER_KIT" }
 
 # ---------------------------------------------------------------------------
-# Pinned component versions (override via environment)
+# Component version policy
 # ---------------------------------------------------------------------------
+$script:VersionPolicy = if ($env:EXAKIT_VERSION_POLICY) { $env:EXAKIT_VERSION_POLICY } else { "latest" }
 $script:NanoImage       = "exasol/nano"
-$script:NanoTag         = if ($env:EXAKIT_NANO_TAG) { $env:EXAKIT_NANO_TAG } else { "2026.2.0-nano.2" }
-$script:ExapumpVersion  = if ($env:EXAKIT_EXAPUMP_VERSION) { $env:EXAKIT_EXAPUMP_VERSION } else { "0.11.2" }
+$script:NanoTagFallback = if ($env:EXAKIT_NANO_TAG_FALLBACK) { $env:EXAKIT_NANO_TAG_FALLBACK } else { "2026.2.0-nano.2" }
+$script:ExapumpVersionFallback = if ($env:EXAKIT_EXAPUMP_VERSION_FALLBACK) { $env:EXAKIT_EXAPUMP_VERSION_FALLBACK } else { "0.11.2" }
+$script:McpVersionFallback = if ($env:EXAKIT_MCP_VERSION_FALLBACK) { $env:EXAKIT_MCP_VERSION_FALLBACK } else { "1.10.1" }
+$script:NanoTag         = if ($env:EXAKIT_NANO_TAG) { $env:EXAKIT_NANO_TAG } else { "" }
+$script:ExapumpVersion  = if ($env:EXAKIT_EXAPUMP_VERSION) { $env:EXAKIT_EXAPUMP_VERSION } else { "" }
 $script:ExapumpRepo     = "exasol-labs/exapump"
 $script:McpPackage      = if ($env:EXAKIT_MCP_PACKAGE) { $env:EXAKIT_MCP_PACKAGE } else { "exasol-mcp-server" }
-$script:McpVersion      = if ($env:EXAKIT_MCP_VERSION) { $env:EXAKIT_MCP_VERSION } else { "1.10.1" }
+$script:McpVersion      = if ($env:EXAKIT_MCP_VERSION) { $env:EXAKIT_MCP_VERSION } else { "" }
 $script:DbPort          = if ($env:EXAKIT_DB_PORT) { $env:EXAKIT_DB_PORT } else { "8563" }
 
 New-Item -ItemType Directory -Force -Path $script:ExakitHome, $script:LogDir, $script:CredsDir, $script:BinDir | Out-Null
@@ -329,6 +333,62 @@ function Set-ExakitManifestValue {
     if ($null -eq $doc) { Fail "Failed to update manifest ($Path): no manifest at $script:ManifestPath" }
     Set-ManifestValue -Manifest $doc -Path $Path -Value $Value
     Save-ExakitManifest $doc
+}
+
+function Get-ExakitLatestGithubRelease {
+    param([Parameter(Mandatory)][string]$Repo)
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing -TimeoutSec 12
+        return ("" + $release.tag_name).TrimStart("v")
+    } catch { return "" }
+}
+
+function Get-ExakitLatestPypiVersion {
+    param([Parameter(Mandatory)][string]$Package)
+    try {
+        $doc = Invoke-RestMethod -Uri "https://pypi.org/pypi/$Package/json" -UseBasicParsing -TimeoutSec 12
+        return "" + $doc.info.version
+    } catch { return "" }
+}
+
+function Get-ExakitLatestDockerTag {
+    try {
+        $doc = Invoke-RestMethod -Uri "https://hub.docker.com/v2/repositories/$($script:NanoImage)/tags?page_size=100&ordering=last_updated" -UseBasicParsing -TimeoutSec 12
+        $candidates = @($doc.results | ForEach-Object { $_.name } | Where-Object { $_ -match '^\d+(\.\d+)+[-._A-Za-z0-9]*$' -and $_ -notmatch 'latest' })
+        if ($candidates.Count -eq 0) { return "" }
+        return ($candidates | Sort-Object { [regex]::Replace($_, '\d+', { param($m) $m.Value.PadLeft(12, '0') }) } | Select-Object -Last 1)
+    } catch { return "" }
+}
+
+function Set-ExakitDesiredVersions {
+    Set-ExakitManifestValue "version_policy" $script:VersionPolicy
+    Set-ExakitManifestValue "desired.runtime.nano" $script:NanoTag
+    Set-ExakitManifestValue "desired.exapump" $script:ExapumpVersion
+    Set-ExakitManifestValue "desired.mcp" $script:McpVersion
+}
+
+function Resolve-ExakitInstallVersions {
+    if ($script:VersionPolicy -ne "latest") {
+        if (-not $script:NanoTag) { $script:NanoTag = $script:NanoTagFallback }
+        if (-not $script:ExapumpVersion) { $script:ExapumpVersion = $script:ExapumpVersionFallback }
+        if (-not $script:McpVersion) { $script:McpVersion = $script:McpVersionFallback }
+        Set-ExakitDesiredVersions
+        return
+    }
+
+    if (-not $script:NanoTag) {
+        $script:NanoTag = Get-ExakitLatestDockerTag
+        if (-not $script:NanoTag) { $script:NanoTag = $script:NanoTagFallback }
+    }
+    if (-not $script:ExapumpVersion) {
+        $script:ExapumpVersion = Get-ExakitLatestGithubRelease $script:ExapumpRepo
+        if (-not $script:ExapumpVersion) { $script:ExapumpVersion = $script:ExapumpVersionFallback }
+    }
+    if (-not $script:McpVersion) {
+        $script:McpVersion = Get-ExakitLatestPypiVersion $script:McpPackage
+        if (-not $script:McpVersion) { $script:McpVersion = $script:McpVersionFallback }
+    }
+    Set-ExakitDesiredVersions
 }
 
 function Test-ExakitStepDone {

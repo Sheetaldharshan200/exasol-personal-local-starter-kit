@@ -349,3 +349,104 @@ When implementation eventually begins, use this order:
 - Dependencies are clear enough to sequence work safely.
 - Test-first requirements are attached to each major workstream.
 - Remaining ambiguities are surfaced as questions, not hidden in tasks.
+
+## Production-Hardening Review Scorecard
+
+Captured on 2026-07-07 from the implementation review that triggered the hardening pass.
+
+| Metric | Score | Notes |
+| --- | ---: | --- |
+| Standards | 6/10 | Useful update flow, but upgrade mutation paths do not fully match documented backup/plan expectations. |
+| Spec Fit | N/A | No originating issue, PRD, or spec file was found. Review compared against repo docs and README promises. |
+| Correctness Risk | 7/10 | Unix update path is mostly coherent; Windows parity is the biggest risk. |
+| Test Coverage | 7/10 | `tests/dry-run-matrix.sh` covered key routing and passed 29/29. Python tests could not run because `pytest` was not installed. |
+| Architecture | 6.5/10 | Current architecture is workable, but update/state ownership is spreading across Bash, PowerShell, and Python. |
+| Maintainability | 6/10 | Component routing and version lookup are becoming repeated string-switch logic. |
+| Cross-Platform Parity | 5.5/10 | Unix install resolves latest versions by default, but Windows shared setup still uses pinned defaults. |
+| Safety / Recovery | 6/10 | Personal major upgrades have a safer plan/backup/apply path; Nano and MCP update flows need clearer snapshot/backup behavior. |
+| Documentation Alignment | 7/10 | README documents the new capability, but previously overstated "latest by default" for Windows. |
+| Overall | 6.5/10 | Good direction, but update safety and platform parity need tightening before production-solid status. |
+
+## Production-Hardening Backlog
+
+Target bar: move each scored category to 9/10 or better by making promises executable, tested, and documented.
+
+### PH-001 Cross-platform latest-version install parity
+
+Status: done in the 2026-07-07 hardening pass.
+
+Tasks:
+
+- Move Windows setup to the same policy as Unix: `EXAKIT_VERSION_POLICY=latest` by default, explicit env overrides when supplied, last-known-good fallbacks only when lookup fails.
+- Record resolved desired versions in the manifest before component installation.
+- Add dry-run/static guards that fail if Windows setup drifts back to pinned-only defaults.
+
+Acceptance:
+
+- Windows setup resolves latest Nano, exapump, and MCP versions before first install.
+- Fallback mode remains deterministic for offline/corporate-proxy environments.
+- `tests/dry-run-matrix.sh` covers the behavior.
+
+### PH-002 Nano update recovery
+
+Status: done in the 2026-07-07 hardening pass.
+
+Tasks:
+
+- Create a pre-update runtime snapshot record under `~/.exasol-starter-kit/backups/nano-update/`.
+- Recreate the previous container image automatically if the new image fails to start or become ready.
+- Keep the data volume in place and record the latest Nano update snapshot in the manifest.
+
+Acceptance:
+
+- Failed Nano image replacement does not strand the user without the previous container image.
+- Snapshot metadata names the old tag, new tag, container, volume, and prior image.
+- Bash and PowerShell paths both implement the behavior.
+
+### PH-003 MCP update snapshot clarity
+
+Status: done in the 2026-07-07 hardening pass.
+
+Tasks:
+
+- Run a managed MCP backup before refreshing the MCP package/config bundle when the runtime operation layer is available.
+- Surface the snapshot reference in command output and store it at `backups.mcp_update.latest` in the manifest.
+- Keep the snapshot best-effort because package refresh does not directly rewrite permanent client configs.
+
+Acceptance:
+
+- MCP update no longer hides whether a snapshot was attempted.
+- Managed client mutations remain owned by the Python runtime operation layer.
+- Tests guard the Bash and PowerShell wrappers.
+
+### PH-004 Documentation truthfulness and operator guidance
+
+Status: done in the 2026-07-07 hardening pass.
+
+Tasks:
+
+- Document the production-hardening contract in `mcp/docs/production-hardening.md`.
+- Update operations and risk docs with version-resolution and update-recovery expectations.
+- Keep README promises aligned with the implemented safety model.
+
+Acceptance:
+
+- The docs distinguish full database-data backups from runtime/client-config snapshots.
+- The docs explain which update paths are blocking, best-effort, or manual.
+- Future reviewers can map README claims to code paths and tests.
+
+### PH-005 Remaining score uplift gates
+
+Status: pending.
+
+Tasks:
+
+- Run Python unit tests once `pytest` is available.
+- Add deeper PowerShell behavior tests on a Windows runner or CI job.
+- Consider extracting repeated component-version lookup logic if another component is added.
+
+Acceptance:
+
+- Python unit tests pass in addition to shell dry-run coverage.
+- Windows install/update behavior is validated on native Windows, not only parsed and statically guarded from macOS.
+- No new component update path bypasses manifest recording and recovery notes.

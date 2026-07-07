@@ -22,6 +22,7 @@ $KitRoot = Split-Path -Parent $ScriptDir
 
 Initialize-ExakitLogging
 Initialize-ExakitManifest
+Resolve-ExakitInstallVersions
 
 Write-Host ""
 Write-Host "  Exasol Personal Local Starter Kit - Windows setup" -ForegroundColor Cyan

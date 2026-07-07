@@ -791,6 +791,20 @@ function Invoke-McpRestore {
     return [bool]$resultJson
 }
 
+function New-McpUpdateSnapshot {
+    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "cursor", "codex")
+    if (-not $resultJson) { Warn2 "MCP pre-update snapshot was not created; generated configs will still be refreshed."; return "" }
+    Show-McpOperationSummary $resultJson
+    try {
+        $doc = $resultJson | ConvertFrom-Json
+        if ($doc.backup_reference) {
+            Set-ExakitManifestValue "backups.mcp_update.latest" $doc.backup_reference
+            return $doc.backup_reference
+        }
+    } catch { }
+    return ""
+}
+
 # Request-ExakitMcpSetupOffer - interactively offer to set up MCP in the
 # user's AI client(s) during install. Non-interactive installs print the
 # follow-up command and continue.

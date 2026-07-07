@@ -264,6 +264,7 @@ function Invoke-CmdUpdate {
             "mcp" {
                 $latest = Get-ExakitComponentLatest "mcp"
                 if ($latest) {
+                    New-McpUpdateSnapshot | Out-Null
                     $script:McpVersion = $latest
                     Install-Mcp
                     if (Update-ExakitMcpConfigs) { Test-McpServer }
