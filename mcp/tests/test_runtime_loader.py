@@ -115,6 +115,26 @@ class RuntimeLoaderEdgeCaseTests(unittest.TestCase):
         context = self.loader.load(self.runtime_root)
         self.assertEqual(context.server_definition.env["EXA_SSL_CERT_VALIDATION"], "no")
 
+    def test_load_enables_read_only_mcp_query_tools(self) -> None:
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    }
+                }
+            }
+        )
+        context = self.loader.load(self.runtime_root)
+        settings = json.loads(context.server_definition.env["EXA_MCP_SETTINGS"])
+        self.assertTrue(settings["enable_read_query"])
+        self.assertTrue(settings["enable_summarize_table"])
+        self.assertTrue(settings["enable_query_profiling"])
+        self.assertFalse(settings["enable_write_query"])
+        self.assertFalse(settings["enable_write_bucketfs"])
+
     def test_load_falls_back_to_managed_home_local_bin_command(self) -> None:
         managed_command = self._temp_dir / ".local" / "bin" / "uvx"
         managed_command.parent.mkdir(parents=True, exist_ok=True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import shutil
 
@@ -19,6 +20,13 @@ DEFAULT_MCP_PACKAGE = "exasol-mcp-server"
 DEFAULT_MCP_VERSION = "1.10.1"
 DEFAULT_SERVER_NAME = "exasol"
 LOCAL_SELF_SIGNED_TLS_ENV = {"EXA_SSL_CERT_VALIDATION": "no"}
+DEFAULT_READ_ONLY_MCP_SETTINGS = {
+    "enable_read_query": True,
+    "enable_summarize_table": True,
+    "enable_query_profiling": True,
+    "enable_write_query": False,
+    "enable_write_bucketfs": False,
+}
 
 
 @dataclass
@@ -108,6 +116,7 @@ class ExakitRuntimeLoader:
             "EXA_DSN": dsn,
             "EXA_USER": connection_user,
             "EXA_PASSWORD": password,
+            "EXA_MCP_SETTINGS": json.dumps(DEFAULT_READ_ONLY_MCP_SETTINGS),
         }
         env.update(self._ssl_environment(runtime, dsn))
         definition = ServerDefinition(
