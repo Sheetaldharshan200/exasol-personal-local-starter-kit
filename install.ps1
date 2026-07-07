@@ -115,6 +115,10 @@ if ($env:EXAKIT_DRY_RUN -eq "1") {
 # --- 4. hand off -----------------------------------------------------------------
 Write-Host "==> Starting setup: setup\setup-windows-docker.ps1" -ForegroundColor Blue
 Write-Host ""
+# We already showed the banner above; tell the setup script to skip its own so
+# the wordmark appears exactly once through the installer. A direct
+# `-File setup\setup-windows-docker.ps1` run (no installer) still shows it.
+$env:EXAKIT_BANNER_SHOWN = "1"
 & powershell -ExecutionPolicy Bypass -File (Join-Path $KitDir "setup\setup-windows-docker.ps1")
 $setupExitCode = $LASTEXITCODE
 if ($setupExitCode -ne 0) {
