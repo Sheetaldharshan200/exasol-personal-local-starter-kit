@@ -31,11 +31,11 @@ mcp/
 - Public orchestration entry point: [service.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/service.py)
 - Verified live client adapters: [claude_desktop.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/adapters/claude_desktop.py), [cursor.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/adapters/cursor.py), [codex.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/adapters/codex.py)
 - Runtime manifest and snapshots: [manifest.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/manifest.py), [snapshots.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/snapshots.py)
-- Installed-runtime MCP bundle export: [exakit.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/exakit.py), [exporter.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/exporter.py), [cli.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/cli.py)
+- Installed-runtime permanent client setup: [exakit.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/exakit.py), [cli.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/cli.py)
 
-## Exported Client Bundle
+## Runtime Client Setup
 
-When the starter kit runtime is already installed and its manifest contains the MCP connection details, the MCP package can export ready-made client config files under `~/.exasol-starter-kit/mcp/` for:
+When the starter kit runtime is already installed and its manifest contains the MCP connection details, the MCP package can permanently configure:
 
 - Claude Desktop
 - Cursor

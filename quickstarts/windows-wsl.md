@@ -31,7 +31,7 @@ What happens, in order:
 2. The pinned `exasol/nano` image is pulled (with retries)
 3. The container starts with a persistent volume and a generated password; the SQL port is bound to `127.0.0.1:8563` only
 4. The installer waits until the database reports ready (a few minutes)
-5. exapump is installed with a ready connection profile; the MCP server is set up, a dedicated `mcp_readonly` database user is created and validated, and the ready-made client config bundle is generated for you
+5. exapump is installed with a ready connection profile; the MCP server is set up, a dedicated `mcp_readonly` database user is created and validated, and the selected AI client configs are backed up and updated
 6. You get the connection panel
 
 ## Verify
@@ -49,16 +49,16 @@ Open the guided data loading menu any time:
 exakit data-load
 ```
 
-Use `exakit load-data` when you only want the bundled sample dataset.
+Use `exakit data-load --force` when you only want to reload the bundled sample dataset directly.
 
 ## Connect your AI assistant
 
-Configs are generated in WSL at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.
+Run `exakit mcp-setup` to permanently configure Claude Desktop, Cursor, or Codex. The setup backs up the selected client config files before updating them.
 
-Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. For Claude Desktop on Windows: open **Settings → Developer → Edit Config** and merge `claude-config.json` — one adjustment: the generated WSL bundle contains the Linux-side launcher path, so the `command` must be replaced with something Windows can run. The two practical options are:
+Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. If you configure a Windows desktop app from inside WSL, make sure the selected client config uses a launcher command Windows can run. The two practical options are:
 
 - Install `uv` on Windows too and replace `command` with the output of `(Get-Command uvx).Source`
-- Keep the same `env` block and wrap the launch as `wsl uvx exasol-mcp-server@<version>`
+- Keep the same environment block and wrap the launch as `wsl uvx exasol-mcp-server@<version>`
 
 **Using Claude Code or Codex CLI inside WSL?** Run `exakit skills-install`, then say **"setup starter kit"** in a fresh session — the kit's AI skill drives setup and the first query for you. See [`skills/README.md`](../skills/README.md).
 

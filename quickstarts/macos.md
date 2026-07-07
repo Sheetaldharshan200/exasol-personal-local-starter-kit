@@ -28,7 +28,7 @@ What happens, in order:
 2. The Exasol launcher is downloaded (pinned version, checksum-verified) into `~/.local/bin`
 3. `exasol install local` deploys the database — **this is the 10–20 minute step**; output streams so you can watch it work
 4. exapump (data loading CLI) is installed and a connection profile is created for you
-5. The MCP server (AI agent bridge) is set up, a dedicated `mcp_readonly` database user is created and validated, and the ready-made client config bundle is generated for you
+5. The MCP server (AI agent bridge) is set up, a dedicated `mcp_readonly` database user is created and validated, and the selected AI client configs are backed up and updated
 6. You get a connection panel: DSN, admin user, MCP user, where the passwords are stored, config paths
 
 Safe to interrupt and re-run at any point — completed steps are skipped.
@@ -50,13 +50,13 @@ The installer offers a guided data loading menu after exapump is ready. Open it 
 exakit data-load
 ```
 
-Use `exakit load-data` when you only want the bundled sample dataset.
+Use `exakit data-load --force` when you only want to reload the bundled sample dataset directly.
 
 ## Connect your AI assistant
 
-Your ready-made configs are at `~/.exasol-starter-kit/mcp/` for Claude Desktop, Cursor, and Codex. No separate Python command is needed from the user.
+Run `exakit mcp-setup` to permanently configure Claude Desktop, Cursor, or Codex. The setup backs up the selected client config files before updating them.
 
-For Claude Desktop: **Settings → Developer → Edit Config**, merge the file's contents into `claude_desktop_config.json` (on macOS that file lives at `~/Library/Application Support/Claude/claude_desktop_config.json`), restart the app.
+For Claude Desktop: after setup, restart the app and look for an MCP server named `exasol`.
 
 **Using Claude Code or Codex CLI?** Run `exakit skills-install`, then say **"setup starter kit"** in a fresh session — the kit's AI skill drives setup and the first query for you. See [`skills/README.md`](../skills/README.md).
 

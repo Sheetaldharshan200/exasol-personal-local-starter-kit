@@ -39,13 +39,13 @@ Any SQL client (DBeaver etc.) connects with: host `127.0.0.1`, port `8563`, admi
 
 ## Connect your AI assistant
 
-The installer offers to set this up for you (temporary: generated config files only, or permanent: it edits the client config directly). Run it again any time with:
+The installer offers to permanently set this up for you. Run it again any time with:
 
 ```powershell
 exakit mcp-setup
 ```
 
-Prefer to do it by hand? The kit generates ready-made config fragments under `~\.exasol-starter-kit\mcp\` — copy the one for your client (Claude Desktop: **Settings → Developer → Edit Config**; config file: `%APPDATA%\Claude\claude_desktop_config.json`) and restart the client. The generated config already points at the dedicated read-only `mcp_readonly` database user, not the admin user.
+The setup backs up and edits the selected client config files. The managed config points at the dedicated read-only `mcp_readonly` database user, not the admin user.
 
 Restart your AI client, then continue with the [first workflow](../demo/first-revenue-analysis.md).
 
@@ -54,8 +54,8 @@ Restart your AI client, then continue with the [first workflow](../demo/first-re
 ## Load or manage sample data
 
 ```powershell
-exakit load-data           # load the bundled TPC-H sample (safe to re-run; -Force to reload)
-exakit data-load            # guided menu: local/remote file, another database, SQL script, or the sample data
+exakit data-load            # guided menu: bundled sample data or a local CSV/text/Parquet file
+exakit data-load -Force     # reload the bundled TPC-H sample directly
 ```
 
 ## Windows-specific notes

@@ -545,11 +545,11 @@ function Invoke-McpModule {
 }
 
 function Invoke-McpSetupCli {
-    param([Parameter(Mandatory)][string]$Mode, [Parameter(Mandatory)][string[]]$Clients)
+    param([Parameter(Mandatory)][string[]]$Clients)
     $repoRoot = Get-ExakitRepoRoot
     if (-not $repoRoot) { Warn2 "Could not find the MCP package source to configure MCP clients."; return $null }
     try { Set-McpReadonlyAccess } catch { return $null }
-    $result = Invoke-McpModule (@("setup-runtime-clients", "--runtime-root", $script:ExakitHome, "--mode", $Mode, "--clients") + $Clients)
+    $result = Invoke-McpModule (@("setup-runtime-clients", "--runtime-root", $script:ExakitHome, "--clients") + $Clients)
     if ($result.ExitCode -ne 0) {
         if ($script:LogFile) { $result.Output | Add-Content -Path $script:LogFile }
         Warn2 "MCP client setup failed (see log)."
@@ -689,7 +689,6 @@ function Get-McpClientsFromArgs {
 }
 
 function Invoke-McpSetup {
-    $mode = "permanent"
     Info "MCP setup will permanently edit the selected AI client config files."
 
     Write-Host ""
@@ -706,10 +705,10 @@ function Invoke-McpSetup {
     }
 
     Info "Applying permanent MCP setup"
-    $resultJson = Invoke-McpSetupCli -Mode $mode -Clients $clients
+    $resultJson = Invoke-McpSetupCli -Clients $clients
     if ($resultJson) { Show-McpSetupSummary $resultJson }
     if (-not $resultJson) { return $false }
-    Show-McpReadyPanel $mode
+    Show-McpReadyPanel "permanent"
     Ok "MCP setup guidance is ready."
     return $true
 }

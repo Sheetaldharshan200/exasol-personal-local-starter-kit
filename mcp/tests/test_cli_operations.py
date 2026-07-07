@@ -49,8 +49,6 @@ class RuntimeClientOperationCLITests(unittest.TestCase):
                 "setup-runtime-clients",
                 "--runtime-root",
                 str(self.runtime_root),
-                "--mode",
-                "permanent",
                 "--clients",
                 "cursor",
                 "codex",

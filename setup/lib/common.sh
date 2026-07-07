@@ -1365,9 +1365,8 @@ exakit_configure_mcp_readonly_access() {
 }
 
 exakit_run_mcp_setup_cli() {
-    _mode="$1"
-    _clients_csv="$2"
-    _output_file="$3"
+    _clients_csv="$1"
+    _output_file="$2"
     require_python3
     _repo_root="$(exakit_repo_root)" || {
         warn "Could not find the MCP package source to configure MCP clients."
@@ -1383,7 +1382,6 @@ exakit_run_mcp_setup_cli() {
         PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
             run_python -m mcp setup-runtime-clients \
                 --runtime-root "$EXAKIT_HOME" \
-                --mode "$_mode" \
                 --clients "$@"
     ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
         warn "MCP client setup failed (see log)."
@@ -1601,7 +1599,6 @@ exakit_parse_mcp_client_selection() {
 }
 
 exakit_mcp_setup() {
-    _mode="permanent"
     info "MCP setup will permanently edit the selected AI client config files."
 
     printf '\n'
@@ -1619,7 +1616,7 @@ exakit_mcp_setup() {
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX")"
     info "Applying permanent MCP setup"
     _setup_status=0
-    if exakit_run_mcp_setup_cli "$_mode" "$_clients_csv" "$_result_file"; then
+    if exakit_run_mcp_setup_cli "$_clients_csv" "$_result_file"; then
         :
     else
         _setup_status=$?
@@ -1631,7 +1628,7 @@ exakit_mcp_setup() {
     if [ "$_setup_status" -ne 0 ]; then
         return "$_setup_status"
     fi
-    exakit_print_mcp_ready_panel "$_mode"
+    exakit_print_mcp_ready_panel "permanent"
     ok "MCP setup guidance is ready."
     return 0
 }
