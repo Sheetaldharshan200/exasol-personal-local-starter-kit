@@ -125,8 +125,7 @@ exakit stop
 exakit start
 exakit data-load
 exakit skills-install
-exakit mcp-status
-exakit mcp-validate
+exakit mcp-doctor
 ```
 
 Something failed mid-install? Re-run the install command. Finished steps are skipped, and failed steps are retried.

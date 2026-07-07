@@ -28,7 +28,7 @@ kit's own commands over improvising.
 
 ```bash
 exakit status      # is the kit installed and is the database running?
-exakit mcp-status  # is an AI client connected over MCP?
+exakit mcp-doctor  # is an AI client connected over MCP?
 ```
 
 Branch on the result — **do not blindly reinstall**:
@@ -40,7 +40,7 @@ Branch on the result — **do not blindly reinstall**:
 | running, no MCP client configured | Step 3 (connect MCP) |
 | running + MCP configured, no data | Step 4 (load data) |
 | everything ready | Step 5 (first query) |
-| **anything else** — a command errors, `mcp-validate` fails, a half-finished install | Treat as *not ready*: re-run the installer (safe — it skips finished steps and retries failed ones), check `exakit logs`, then re-check `exakit status`. Do not improvise a fix. |
+| **anything else** — a command errors, `mcp-doctor` reports problems, a half-finished install | Treat as *not ready*: re-run the installer (safe — it skips finished steps and retries failed ones), check `exakit logs`, then re-check `exakit status`. Do not improvise a fix. |
 
 Re-running the installer is always safe — completed steps are skipped — so when in doubt,
 verify rather than assume.
@@ -99,7 +99,7 @@ Tell the user that setup backs up and edits the selected client configs (Claude 
 Cursor, Codex) directly. The user restarts the client afterward.
 
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not
-a background service). Verify with `exakit mcp-status` / `exakit mcp-validate`.
+a background service). Verify with `exakit mcp-doctor`.
 
 The MCP login is a **dedicated, least-privilege, read-only database user** — this is enforced
 by the database, not by trust. That is what makes the next steps safe.
@@ -176,7 +176,7 @@ Follow these on every interaction, no exceptions:
 
 - `exakit status` — is the runtime running?
 - `exakit logs` — path to the latest log; every error message names its remedy.
-- `exakit mcp-status` / `exakit mcp-validate` / `exakit mcp-repair` — MCP connectivity.
+- `exakit mcp-doctor` / `exakit mcp-repair` — MCP connectivity.
 - Assistant can't see the database → confirm the runtime is running and the client was
   restarted after the MCP config change.
 - Fuller guidance: `~/.exasol-starter-kit/kit/QUICKSTART.md` and the README troubleshooting

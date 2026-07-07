@@ -460,7 +460,7 @@ function Set-McpReadonlyAccess {
 
 # Confirm-McpReadonlyPosture - re-run the grant-posture check against the
 # database using the credentials already on file, without re-provisioning
-# anything. Used by `exakit mcp-doctor`/`mcp-validate` so privilege drift
+# anything. Used by `exakit mcp-doctor` so privilege drift
 # after install (e.g. someone widening a grant by hand) is actually caught.
 function Confirm-McpReadonlyPosture {
     $runtimeUser = Get-ExakitManifestValue "runtime.user"

@@ -71,12 +71,12 @@ Expected behavior:
 
 ### 5. Lifecycle CRUD Edge Cases
 
-- `mcp-status` with no managed artifacts
-- `mcp-status` with one managed artifact
-- `mcp-status` with multiple managed artifacts
-- `mcp-validate` on healthy managed state
-- `mcp-validate` with invalid DSN literal
-- `mcp-validate` with TCP connectivity failure
+- `mcp-doctor` (status view) with no managed artifacts
+- `mcp-doctor` (status view) with one managed artifact
+- `mcp-doctor` (status view) with multiple managed artifacts
+- `mcp-doctor` (validation) on healthy managed state
+- `mcp-doctor` (validation) with invalid DSN literal
+- `mcp-doctor` (validation) with TCP connectivity failure
 - `mcp-repair` when nothing is wrong
 - `mcp-repair` when managed config drift exists
 - `mcp-remove` for one selected client

@@ -1088,7 +1088,7 @@ _exakit_assert_mcp_readonly_posture() {
 
 # _exakit_reassert_mcp_readonly_posture — re-run the grant-posture check
 # against the database using the credentials already on file, without
-# re-provisioning anything. Used by `exakit mcp-doctor`/`mcp-validate` so
+# re-provisioning anything. Used by `exakit mcp-doctor` so
 # privilege drift after install (e.g. someone widening a grant by hand) is
 # actually caught, not just checked once at setup time.
 # Runs the (die()-on-failure) assertion in a subshell so a posture failure
