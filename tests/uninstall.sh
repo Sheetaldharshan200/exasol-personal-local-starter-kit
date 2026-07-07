@@ -56,6 +56,7 @@ seed() { # (re)create the fake install artifacts
              "$SANDBOX/home/.claude/skills/trusted-ai-workflow" \
              "$SANDBOX/home/.agents/skills/local-agent-ready-starter" \
              "$SANDBOX/home/.exapump" \
+             "$SANDBOX/home/.exasol-starter-kit/pyexasol-venv/bin" \
              "$SANDBOX/home/.exasol-starter-kit/credentials"
     : > "$SANDBOX/home/.local/bin/exasol"
     : > "$SANDBOX/home/.local/bin/exakit"
@@ -86,6 +87,7 @@ check "real: teardown got --data" "--data" "$(cat "$SANDBOX/marker_personal" 2>/
 check "real: mcp removal called"  yes "$(exists "$SANDBOX/marker_mcp")"
 check "real: mcp got uninstall"   "uninstall" "$(cat "$SANDBOX/marker_mcp" 2>/dev/null)"
 check "real: kit home gone"       no  "$(exists "$H/.exasol-starter-kit")"
+check "real: pyexasol venv gone"  no  "$(exists "$H/.exasol-starter-kit/pyexasol-venv")"
 check "real: exapump gone"        no  "$(exists "$H/.exapump")"
 check "real: exasol bin gone"     no  "$(exists "$H/.local/bin/exasol")"
 check "real: exakit bin gone"     no  "$(exists "$H/.local/bin/exakit")"

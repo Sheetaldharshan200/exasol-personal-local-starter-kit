@@ -1972,9 +1972,10 @@ exakit_uninstall_run() {
         _rm "$HOME/.exapump"
     fi
 
-    # 5) Kit home: credentials, logs, manifest, cached kit copy, MCP snapshots.
+    # 5) Kit home: credentials, logs, manifest, cached kit copy, MCP snapshots,
+    #    and the pyexasol virtual environment (it lives under the kit home).
     if [ -e "$EXAKIT_HOME" ]; then
-        _step "kit home $EXAKIT_HOME (credentials, logs, manifest, snapshots)"
+        _step "kit home $EXAKIT_HOME (credentials, logs, manifest, snapshots, pyexasol venv)"
         _rm "$EXAKIT_HOME"
     fi
 
