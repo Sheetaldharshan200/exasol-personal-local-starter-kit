@@ -330,7 +330,7 @@ function Assert-McpReadonlyPosture {
         if ($probe.Success) {
             $cleanup = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "admin" -Sql "DROP TABLE $schemaUc.EXAKIT_MCP_PERMISSION_PROBE"
             if ($script:LogFile) { $cleanup.Output | Add-Content -Path $script:LogFile }
-            Fail "The MCP read-only user unexpectedly succeeded in a write operation on schema $schemaUc."
+            Fail "Security check failed: the MCP read-only user was able to write to schema $schemaUc, but it must be read-only. Setup stopped to protect your database."
         }
     }
 }

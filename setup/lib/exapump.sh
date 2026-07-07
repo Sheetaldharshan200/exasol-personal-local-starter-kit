@@ -226,7 +226,7 @@ exapump_validate_connection() {
         _tries=$((_tries + 1))
         sleep 5
     done
-    die "SELECT 1 failed through profile '$EXAKIT_EXAPUMP_PROFILE'. Try: exapump sql -p $EXAKIT_EXAPUMP_PROFILE 'SELECT 1'"
+    die "SELECT 1 failed via profile '$EXAKIT_EXAPUMP_PROFILE'. Try: exapump sql -p $EXAKIT_EXAPUMP_PROFILE 'SELECT 1'"
 }
 
 # exapump_run_sql_file <file> [description] — execute a SQL file, logged.
@@ -513,7 +513,7 @@ exakit_data_load_menu() {
                 if [ "$_mode" = "install" ]; then
                     info "Skipping data load. Run it any time with: exakit data-load"
                 else
-                    info "Data loading terminated."
+                    info "Data loading cancelled."
                 fi
                 return 0
                 ;;
@@ -522,14 +522,14 @@ exakit_data_load_menu() {
                     warn "Unknown data loading option: $_choice"
                     continue
                 fi
-                info "Data loading terminated."
+                info "Data loading cancelled."
                 return 0
                 ;;
             "")
                 if [ "$_mode" = "install" ]; then
                     info "Skipping data load. Run it any time with: exakit data-load"
                 else
-                    info "Data loading terminated."
+                    info "Data loading cancelled."
                 fi
                 return 0
                 ;;
@@ -566,7 +566,7 @@ exakit_load_sample_data() {
     if [ -s "$_kit_root/sql/01_create_schema.sql" ]; then
         exapump_run_sql_file "$_kit_root/sql/01_create_schema.sql" "schema creation (01_create_schema.sql)"
     else
-        info "Pending: sql/01_create_schema.sql not present — skipping schema step"
+        info "No schema script found (sql/01_create_schema.sql); skipping schema creation."
     fi
 
     # 2. data files
@@ -578,7 +578,7 @@ exakit_load_sample_data() {
         _loaded_any=1
     done
     if [ "$_loaded_any" -eq 0 ]; then
-        info "Pending: no data files in data/ — nothing to load"
+        info "No data files found in data/; nothing to load."
         return 0
     fi
 

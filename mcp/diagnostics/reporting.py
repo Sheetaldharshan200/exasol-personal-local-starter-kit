@@ -13,7 +13,7 @@ def summarize_findings(findings: list[Finding]) -> str:
     counts = {"critical": 0, "error": 0, "warning": 0, "info": 0}
     for finding in findings:
         counts[finding.severity.value] += 1
-    parts = [f"{count} {label}" for label, count in counts.items() if count]
+    parts = [f"{count} {label if count == 1 else label + 's'}" for label, count in counts.items() if count]
     return ", ".join(parts)
 
 

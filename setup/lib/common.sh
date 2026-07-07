@@ -663,11 +663,11 @@ exakit_update_component() {
     case "$_component" in
         exakit) exakit_update_self ;;
         exapump)
-            command -v exapump_update >/dev/null 2>&1 || die "exapump module is not available in this kit build."
+            command -v exapump_update >/dev/null 2>&1 || die "exapump module is not available in this version."
             exapump_update
             ;;
         mcp)
-            command -v mcp_update >/dev/null 2>&1 || die "MCP module is not available in this kit build."
+            command -v mcp_update >/dev/null 2>&1 || die "MCP module is not available in this version."
             mcp_update
             ;;
         runtime)
@@ -1163,7 +1163,7 @@ _exakit_assert_mcp_readonly_posture() {
                 "$_config_path" "admin" \
                 "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
                 >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
-            die "The MCP read-only user unexpectedly succeeded in a write operation on schema $_schema_uc."
+            die "Security check failed: the MCP read-only user was able to write to schema $_schema_uc, but it must be read-only. Setup stopped to protect your database."
         fi
     done
 }
@@ -1849,7 +1849,7 @@ kit_shared_steps() {
             mark_step exapump
         fi
     else
-        info "Step ${_step_no}/${_total}  exapump — module not included in this kit build yet, skipping"
+        info "Step ${_step_no}/${_total}  exapump — not part of this installation, skipping"
     fi
     _step_no=$((_step_no + 1))
 
@@ -1867,7 +1867,7 @@ kit_shared_steps() {
             mark_step mcp
         fi
     else
-        info "Step ${_step_no}/${_total}  MCP server — module not included in this kit build yet, skipping"
+        info "Step ${_step_no}/${_total}  MCP server — not part of this installation, skipping"
     fi
     _step_no=$((_step_no + 1))
 
@@ -1878,7 +1878,7 @@ kit_shared_steps() {
             mark_step pyexasol
         fi
     else
-        info "Step ${_step_no}/${_total}  pyexasol — module not included in this kit build yet, skipping"
+        info "Step ${_step_no}/${_total}  pyexasol — not part of this installation, skipping"
     fi
     _step_no=$((_step_no + 1))
 
