@@ -46,6 +46,9 @@ $script:ExapumpVersion  = if ($env:EXAKIT_EXAPUMP_VERSION) { $env:EXAKIT_EXAPUMP
 $script:ExapumpRepo     = "exasol-labs/exapump"
 $script:McpPackage      = if ($env:EXAKIT_MCP_PACKAGE) { $env:EXAKIT_MCP_PACKAGE } else { "exasol-mcp-server" }
 $script:McpVersion      = if ($env:EXAKIT_MCP_VERSION) { $env:EXAKIT_MCP_VERSION } else { "" }
+$script:PyexasolPackage = if ($env:EXAKIT_PYEXASOL_PACKAGE) { $env:EXAKIT_PYEXASOL_PACKAGE } else { "pyexasol" }
+$script:PyexasolVersionFallback = if ($env:EXAKIT_PYEXASOL_VERSION_FALLBACK) { $env:EXAKIT_PYEXASOL_VERSION_FALLBACK } else { "2.2.2" }
+$script:PyexasolVersion = if ($env:EXAKIT_PYEXASOL_VERSION) { $env:EXAKIT_PYEXASOL_VERSION } else { "" }
 $script:DbPort          = if ($env:EXAKIT_DB_PORT) { $env:EXAKIT_DB_PORT } else { "8563" }
 
 New-Item -ItemType Directory -Force -Path $script:ExakitHome, $script:LogDir, $script:CredsDir, $script:BinDir | Out-Null
@@ -365,6 +368,7 @@ function Set-ExakitDesiredVersions {
     Set-ExakitManifestValue "desired.runtime.nano" $script:NanoTag
     Set-ExakitManifestValue "desired.exapump" $script:ExapumpVersion
     Set-ExakitManifestValue "desired.mcp" $script:McpVersion
+    Set-ExakitManifestValue "desired.pyexasol" $script:PyexasolVersion
 }
 
 function Resolve-ExakitInstallVersions {
@@ -372,6 +376,7 @@ function Resolve-ExakitInstallVersions {
         if (-not $script:NanoTag) { $script:NanoTag = $script:NanoTagFallback }
         if (-not $script:ExapumpVersion) { $script:ExapumpVersion = $script:ExapumpVersionFallback }
         if (-not $script:McpVersion) { $script:McpVersion = $script:McpVersionFallback }
+        if (-not $script:PyexasolVersion) { $script:PyexasolVersion = $script:PyexasolVersionFallback }
         Set-ExakitDesiredVersions
         return
     }
@@ -387,6 +392,10 @@ function Resolve-ExakitInstallVersions {
     if (-not $script:McpVersion) {
         $script:McpVersion = Get-ExakitLatestPypiVersion $script:McpPackage
         if (-not $script:McpVersion) { $script:McpVersion = $script:McpVersionFallback }
+    }
+    if (-not $script:PyexasolVersion) {
+        $script:PyexasolVersion = Get-ExakitLatestPypiVersion $script:PyexasolPackage
+        if (-not $script:PyexasolVersion) { $script:PyexasolVersion = $script:PyexasolVersionFallback }
     }
     Set-ExakitDesiredVersions
 }

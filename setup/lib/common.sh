@@ -34,6 +34,7 @@ EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-}"
 EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-}"
 EXAKIT_MCP_PACKAGE="${EXAKIT_MCP_PACKAGE:-exasol-mcp-server}"
 EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-}"
+EXAKIT_PYEXASOL_VERSION="${EXAKIT_PYEXASOL_VERSION:-}"
 
 # Last-known-good fallbacks are used only when a latest-version lookup is not
 # possible (offline install, API rate limit, private mirror). Successful latest
@@ -43,6 +44,7 @@ EXAKIT_PERSONAL_VERSION_FALLBACK="${EXAKIT_PERSONAL_VERSION_FALLBACK:-2.0.0-rc4}
 EXAKIT_NANO_TAG_FALLBACK="${EXAKIT_NANO_TAG_FALLBACK:-2026.2.0-nano.2}"
 EXAKIT_EXAPUMP_VERSION_FALLBACK="${EXAKIT_EXAPUMP_VERSION_FALLBACK:-0.11.2}"
 EXAKIT_MCP_VERSION_FALLBACK="${EXAKIT_MCP_VERSION_FALLBACK:-1.10.1}"
+EXAKIT_PYEXASOL_VERSION_FALLBACK="${EXAKIT_PYEXASOL_VERSION_FALLBACK:-2.2.2}"
 
 EXAKIT_PERSONAL_REPO="exasol/exasol-personal"
 EXAKIT_EXAPUMP_REPO="exasol-labs/exapump"
@@ -313,6 +315,7 @@ exakit_record_desired_versions() {
     manifest_set desired.runtime.nano "$EXAKIT_NANO_TAG"
     manifest_set desired.exapump "$EXAKIT_EXAPUMP_VERSION"
     manifest_set desired.mcp "$EXAKIT_MCP_VERSION"
+    manifest_set desired.pyexasol "$EXAKIT_PYEXASOL_VERSION"
 }
 
 exakit_update_actual_target() {
@@ -410,7 +413,8 @@ exakit_resolve_install_versions() {
         EXAKIT_NANO_TAG="${EXAKIT_NANO_TAG:-$EXAKIT_NANO_TAG_FALLBACK}"
         EXAKIT_EXAPUMP_VERSION="${EXAKIT_EXAPUMP_VERSION:-$EXAKIT_EXAPUMP_VERSION_FALLBACK}"
         EXAKIT_MCP_VERSION="${EXAKIT_MCP_VERSION:-$EXAKIT_MCP_VERSION_FALLBACK}"
-        export EXAKIT_PERSONAL_VERSION EXAKIT_NANO_TAG EXAKIT_EXAPUMP_VERSION EXAKIT_MCP_VERSION
+        EXAKIT_PYEXASOL_VERSION="${EXAKIT_PYEXASOL_VERSION:-$EXAKIT_PYEXASOL_VERSION_FALLBACK}"
+        export EXAKIT_PERSONAL_VERSION EXAKIT_NANO_TAG EXAKIT_EXAPUMP_VERSION EXAKIT_MCP_VERSION EXAKIT_PYEXASOL_VERSION
         return 0
     }
 
@@ -435,7 +439,12 @@ exakit_resolve_install_versions() {
         [ -n "$EXAKIT_MCP_VERSION" ] || EXAKIT_MCP_VERSION="$EXAKIT_MCP_VERSION_FALLBACK"
         _resolved=1
     fi
-    export EXAKIT_PERSONAL_VERSION EXAKIT_NANO_TAG EXAKIT_EXAPUMP_VERSION EXAKIT_MCP_VERSION
+    if [ -z "$EXAKIT_PYEXASOL_VERSION" ]; then
+        EXAKIT_PYEXASOL_VERSION="$(exakit_latest_pypi_version pyexasol || true)"
+        [ -n "$EXAKIT_PYEXASOL_VERSION" ] || EXAKIT_PYEXASOL_VERSION="$EXAKIT_PYEXASOL_VERSION_FALLBACK"
+        _resolved=1
+    fi
+    export EXAKIT_PERSONAL_VERSION EXAKIT_NANO_TAG EXAKIT_EXAPUMP_VERSION EXAKIT_MCP_VERSION EXAKIT_PYEXASOL_VERSION
     if [ "$_resolved" -eq 1 ] && [ -f "$EXAKIT_MANIFEST" ]; then
         exakit_record_desired_versions
     fi
@@ -1775,6 +1784,17 @@ kit_shared_steps() {
         fi
     else
         info "Step ${_step_no}/${_total}  MCP server — module not included in this kit build yet, skipping"
+    fi
+    _step_no=$((_step_no + 1))
+
+    if command -v pyexasol_install >/dev/null 2>&1; then
+        if begin_step pyexasol "Step ${_step_no}/${_total}  pyexasol (Exasol Python driver)"; then
+            pyexasol_install
+            pyexasol_validate
+            mark_step pyexasol
+        fi
+    else
+        info "Step ${_step_no}/${_total}  pyexasol — module not included in this kit build yet, skipping"
     fi
     _step_no=$((_step_no + 1))
 

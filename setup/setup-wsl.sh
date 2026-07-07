@@ -2,8 +2,8 @@
 # setup-wsl.sh — Exasol Personal Local Starter Kit, Linux and WSL path.
 #
 # Installs and connects: Exasol Nano (container, Docker preferred with Podman
-# fallback), exapump, and the Exasol MCP server. Prints connection details
-# when done.
+# fallback), exapump, the Exasol MCP server, and pyexasol. Prints connection
+# details when done.
 #
 # Usually launched by install.sh, but runs standalone from a checkout too:
 #   bash setup/setup-wsl.sh
@@ -20,8 +20,9 @@ KIT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$LIB_DIR/common.sh"
 . "$LIB_DIR/detect.sh"
 . "$LIB_DIR/runtime-nano.sh"
-[ -f "$LIB_DIR/exapump.sh" ] && . "$LIB_DIR/exapump.sh"
-[ -f "$LIB_DIR/mcp.sh" ]     && . "$LIB_DIR/mcp.sh"
+[ -f "$LIB_DIR/exapump.sh" ]  && . "$LIB_DIR/exapump.sh"
+[ -f "$LIB_DIR/mcp.sh" ]      && . "$LIB_DIR/mcp.sh"
+[ -f "$LIB_DIR/pyexasol.sh" ] && . "$LIB_DIR/pyexasol.sh"
 
 exakit_init_logging
 manifest_init
@@ -41,7 +42,7 @@ EXAKIT_CURRENT_STEP="requirements"
 nano_check_requirements
 
 # --- step 2: Nano container --------------------------------------------------
-if begin_step runtime "Step 1/4  Exasol Nano container"; then
+if begin_step runtime "Step 1/5  Exasol Nano container"; then
     nano_install
     mark_step runtime
 else
@@ -51,8 +52,8 @@ else
     fi
 fi
 
-# --- steps 2-4: exapump, MCP server, exakit helper (shared) --------------------
-kit_shared_steps 2 4 "$SCRIPT_DIR" "$KIT_ROOT"
+# --- steps 2-5: exapump, MCP server, pyexasol, exakit helper (shared) ---------
+kit_shared_steps 2 5 "$SCRIPT_DIR" "$KIT_ROOT"
 
 exakit_finish
 ok "Setup complete"

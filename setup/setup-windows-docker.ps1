@@ -1,8 +1,8 @@
 # setup-windows-docker.ps1 - Exasol Personal Local Starter Kit, Windows path.
 #
 # Installs and connects: Exasol Nano (container via Docker Desktop, Podman
-# fallback), exapump, and the Exasol MCP server. Prints connection details
-# when done.
+# fallback), exapump, the Exasol MCP server, and pyexasol. Prints connection
+# details when done.
 #
 # Usually launched by install.ps1, but runs standalone from a checkout too:
 #   powershell -ExecutionPolicy Bypass -File setup\setup-windows-docker.ps1
@@ -19,6 +19,7 @@ $KitRoot = Split-Path -Parent $ScriptDir
 . (Join-Path $LibDir "nano.ps1")
 . (Join-Path $LibDir "exapump.ps1")
 . (Join-Path $LibDir "mcp.ps1")
+. (Join-Path $LibDir "pyexasol.ps1")
 
 Initialize-ExakitLogging
 Initialize-ExakitManifest
@@ -38,7 +39,7 @@ try {
     Test-NanoRequirements
 
     # --- step 2: Nano container -----------------------------------------------
-    if (Begin-ExakitStep "runtime" "Step 1/5  Exasol Nano container") {
+    if (Begin-ExakitStep "runtime" "Step 1/6  Exasol Nano container") {
         Install-Nano
         Set-ExakitStepDone "runtime"
     } elseif ((Get-NanoStatus) -ne "running") {
@@ -57,7 +58,7 @@ try {
     }
 
     # --- step 3: exapump (data loading CLI) ------------------------------------
-    if ($exapumpSupported -and (Begin-ExakitStep "exapump" "Step 2/5  exapump (data loading CLI)")) {
+    if ($exapumpSupported -and (Begin-ExakitStep "exapump" "Step 2/6  exapump (data loading CLI)")) {
         Install-Exapump
         New-ExapumpProfile
         Test-ExapumpConnection
@@ -79,18 +80,27 @@ try {
     }
 
     # --- step 4: MCP server (AI agent bridge) ----------------------------------
-    if ($exapumpSupported -and (Begin-ExakitStep "mcp" "Step 3/5  MCP server (AI agent bridge)")) {
+    if ($exapumpSupported -and (Begin-ExakitStep "mcp" "Step 3/6  MCP server (AI agent bridge)")) {
         Install-Mcp
         Test-McpServer
         Set-ExakitStepDone "mcp"
     }
 
-    # --- step 5: exakit helper command ------------------------------------------
+    # --- step 5: pyexasol (Exasol Python driver) --------------------------------
+    # Not gated on $exapumpSupported: pyexasol is pure Python via uv, so it
+    # works on Windows-on-ARM too, where only exapump's binary is missing.
+    if (Begin-ExakitStep "pyexasol" "Step 4/6  pyexasol (Exasol Python driver)") {
+        Install-Pyexasol
+        Test-PyexasolConnection
+        Set-ExakitStepDone "pyexasol"
+    }
+
+    # --- step 6: exakit helper command ------------------------------------------
     # The step flag alone is not trusted: if the shim was removed (cleanup,
     # testing, older builds), a re-run must reinstall it rather than skip —
     # and the PATH check must run either way, since the PATH entry can be
     # missing even when the step is marked done.
-    $helperNeeded = Begin-ExakitStep "exakit_helper" "Step 4/5  exakit helper command"
+    $helperNeeded = Begin-ExakitStep "exakit_helper" "Step 5/6  exakit helper command"
     if (-not $helperNeeded -and -not (Test-Path (Join-Path $script:BinDir "exakit.cmd"))) {
         Info "exakit command is missing - reinstalling it"
         $helperNeeded = $true
