@@ -382,8 +382,24 @@ exakit_latest_pypi_version() {
     printf '%s' "$_json" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
 }
 
+# Normalise the host CPU to a docker image arch token: amd64 | arm64 | "".
+_exakit_docker_arch() {
+    case "$(uname -m)" in
+        arm64|aarch64) echo arm64 ;;
+        x86_64|amd64)  echo amd64 ;;
+        *) echo "" ;;
+    esac
+}
+
 exakit_latest_docker_tag() {
     _image="$1"
+    # Pick the newest tag that fits THIS machine's architecture. Exasol Nano
+    # publishes arch-suffixed tags (…-arm64, …-amd64) next to the plain
+    # multi-arch tag; without filtering, the version sort lands on -arm64 (it
+    # sorts after -amd64), so an x86_64 host would pull an arm64 image and run
+    # it under slow emulation. Keep the plain (multi-arch) tags plus this
+    # host's own arch, and drop the other architecture's tags.
+    _dt_arch="$(_exakit_docker_arch)"
     _json="$(curl -fsSL --retry 1 --connect-timeout "$EXAKIT_VERSION_LOOKUP_CONNECT_TIMEOUT" --max-time "$EXAKIT_VERSION_LOOKUP_MAX_TIME" \
         "https://hub.docker.com/v2/repositories/${_image}/tags?page_size=100&ordering=last_updated" 2>/dev/null || true)"
     [ -n "$_json" ] || return 1
@@ -391,20 +407,34 @@ exakit_latest_docker_tag() {
         printf '%s' "$_json" | run_python -c '
 import json, re, sys
 doc = json.load(sys.stdin)
+arch = sys.argv[1] if len(sys.argv) > 1 else ""
 tags = [r.get("name","") for r in doc.get("results", [])]
 pattern = re.compile(r"^\d+(?:\.\d+)+(?:[-._A-Za-z0-9]+)?$")
-candidates = [t for t in tags if pattern.match(t) and "latest" not in t.lower()]
+amd = {"amd64", "x86_64", "x86-64"}
+arm = {"arm64", "aarch64"}
+wrong = arm if arch in amd else (amd if arch in arm else set())
+def ok_arch(tag):
+    return not any(seg in wrong for seg in re.split(r"[-._]", tag.lower()))
+candidates = [t for t in tags if pattern.match(t) and "latest" not in t.lower() and ok_arch(t)]
 def key(tag):
     parts = re.split(r"([0-9]+)", tag)
     return [int(p) if p.isdigit() else p for p in parts]
 print(sorted(candidates, key=key)[-1] if candidates else "")
-' 2>/dev/null
+' "$_dt_arch" 2>/dev/null
         return $?
     fi
-    # Shell fallback: Docker Hub returns newest first with ordering=last_updated.
-    # Pick the first version-like tag rather than failing if Python/uv is absent.
-    printf '%s' "$_json" | tr ',' '\n' | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | \
-        grep -E '^[0-9]+(\.[0-9]+)+[-._A-Za-z0-9]*$' | grep -vi latest | head -1
+    # Shell fallback (no Python/uv): Docker Hub returns newest-first with
+    # ordering=last_updated. Drop the other architecture's suffixed tags, then
+    # take the newest of what remains.
+    _dt_reject=""
+    case "$_dt_arch" in
+        amd64) _dt_reject='[-._](arm64|aarch64)$' ;;
+        arm64) _dt_reject='[-._](amd64|x86_64|x86-64)$' ;;
+    esac
+    _dt_names="$(printf '%s' "$_json" | tr ',' '\n' | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | \
+        grep -E '^[0-9]+(\.[0-9]+)+[-._A-Za-z0-9]*$' | grep -vi latest)"
+    [ -n "$_dt_reject" ] && _dt_names="$(printf '%s\n' "$_dt_names" | grep -viE "$_dt_reject")"
+    printf '%s\n' "$_dt_names" | head -1
 }
 
 exakit_version_newer() {

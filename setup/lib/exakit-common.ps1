@@ -415,10 +415,33 @@ function Get-ExakitLatestPypiVersion {
     } catch { return "" }
 }
 
+# Return the docker image arch token for THIS machine: "amd64" or "arm64".
+# Prefer the true hardware arch (WMI) so an x64-emulated PowerShell on an ARM
+# device is not misread as amd64; fall back to the environment.
+function Get-ExakitHostArch {
+    try {
+        $a = (Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop | Select-Object -First 1).Architecture
+        if ($a -eq 12 -or $a -eq 5) { return "arm64" }
+        if ($a -eq 9 -or $a -eq 0) { return "amd64" }
+    } catch { }
+    $p = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    if ($p -match 'ARM') { return "arm64" }
+    return "amd64"
+}
+
 function Get-ExakitLatestDockerTag {
     try {
         $doc = Invoke-RestMethod -Uri "https://hub.docker.com/v2/repositories/$($script:NanoImage)/tags?page_size=100&ordering=last_updated" -UseBasicParsing -TimeoutSec 12
-        $candidates = @($doc.results | ForEach-Object { $_.name } | Where-Object { $_ -match '^\d+(\.\d+)+[-._A-Za-z0-9]*$' -and $_ -notmatch 'latest' })
+        # Keep the plain (multi-arch) tags plus this host's own arch, and drop
+        # the other architecture's suffixed tags - otherwise the sort lands on
+        # -arm64 (it sorts after -amd64) and an x86_64 host would pull an arm64
+        # image that only runs under slow emulation.
+        $arch = Get-ExakitHostArch
+        if ($arch -eq "arm64") { $wrong = @("amd64", "x86_64", "x86-64") } else { $wrong = @("arm64", "aarch64") }
+        $candidates = @($doc.results | ForEach-Object { $_.name } | Where-Object {
+            ($_ -match '^\d+(\.\d+)+[-._A-Za-z0-9]*$') -and ($_ -notmatch 'latest') -and
+            (-not (($_.ToLower() -split '[-._]') | Where-Object { $wrong -contains $_ }))
+        })
         if ($candidates.Count -eq 0) { return "" }
         return ($candidates | Sort-Object { [regex]::Replace($_, '\d+', { param($m) $m.Value.PadLeft(12, '0') }) } | Select-Object -Last 1)
     } catch { return "" }
