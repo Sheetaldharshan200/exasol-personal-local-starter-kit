@@ -146,7 +146,7 @@ confirm() {
         return
     fi
     if [ "$_default" = "y" ]; then _hint="[Y/n]"; else _hint="[y/N]"; fi
-    printf '\033[1;36m  ?\033[0m %s %s ' "$_question" "$_hint"
+    printf '  %s?%s %s %s%s%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_hint" "${UI_RESET:-}"
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     _answer="${_answer:-$_default}"
     case "$_answer" in
@@ -172,9 +172,9 @@ prompt_text() {
         return 0
     fi
     if [ -n "$_default" ]; then
-        printf '\033[1;36m  ?\033[0m %s [%s] ' "$_question" "$_default" >&2
+        printf '  %s?%s %s %s[%s]%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_default" "${UI_RESET:-}" >&2
     else
-        printf '\033[1;36m  ?\033[0m %s ' "$_question" >&2
+        printf '  %s?%s %s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" >&2
     fi
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     printf '%s\n' "${_answer:-$_default}"
