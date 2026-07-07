@@ -21,6 +21,33 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 # ---------------------------------------------------------------------------
+# Shared visual layer (banner, boxes, spinner, colour palette)
+# ---------------------------------------------------------------------------
+# ui.ps1 owns how the installer LOOKS (twin of setup/lib/ui.sh). Dot-source it
+# first so Info/Ok/Begin-ExakitStep/Show-ExakitConnectionPanel below can use
+# its palette and glyphs. If it is somehow absent, install no-op stubs and an
+# empty palette so nothing here breaks.
+try { . (Join-Path $PSScriptRoot "ui.ps1") } catch { }
+if (-not (Get-Command Start-ExakitSpinner -ErrorAction SilentlyContinue)) {
+    $script:UiFancy = $false
+    foreach ($v in 'UiReset','UiBold','UiDim','UiAccent','UiOk','UiWarn','UiErr','UiInfo','UiAsk') {
+        Set-Variable -Scope script -Name $v -Value ""
+    }
+    $script:UiTick = "+"; $script:UiCross = "x"; $script:UiArrow = ">"; $script:UiBullet = "-"
+    function Start-ExakitSpinner([string]$Label) { }
+    function Stop-ExakitSpinner { }
+    function Restore-ExakitCursor { }
+    function Get-ExakitTilde([string]$Path) { return $Path }
+    function Write-ExakitBanner {
+        param([string]$Title = "Exasol Personal Local Starter Kit", [string]$Subtitle = "")
+        Write-Host ""; Write-Host "  $Title"; if ($Subtitle) { Write-Host "  $Subtitle" }; Write-Host ""
+    }
+    function Start-ExakitPanel([string]$Title) { Write-Host ""; Write-Host "  -- $Title --" }
+    function Write-ExakitPanelLine([string]$Text) { Write-Host "   $Text" }
+    function Complete-ExakitPanel { Write-Host "" }
+}
+
+# ---------------------------------------------------------------------------
 # State locations
 # ---------------------------------------------------------------------------
 $script:ExakitHome   = if ($env:EXAKIT_HOME) { $env:EXAKIT_HOME } else { Join-Path $HOME ".exasol-starter-kit" }
@@ -71,9 +98,24 @@ function Write-ExakitLog([string]$Level, [string]$Msg) {
     if (-not $script:LogFile) { return }
     "{0} {1,-5} {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Msg | Add-Content -Path $script:LogFile
 }
-function Info([string]$Msg)  { Write-Host "==> $Msg" -ForegroundColor Blue;   Write-ExakitLog "INFO" $Msg }
-function Ok([string]$Msg)    { Write-Host "  + $Msg" -ForegroundColor Green;  Write-ExakitLog "OK" $Msg }
-function Warn2([string]$Msg) { Write-Host "  ! $Msg" -ForegroundColor Yellow; Write-ExakitLog "WARN" $Msg }
+# Glyphs/colours come from the shared palette (ui.ps1) when a fancy terminal
+# is available; otherwise fall back to Write-Host -ForegroundColor so basic
+# colour still works even if ANSI/VT could not be enabled.
+function Info([string]$Msg) {
+    if ($script:UiFancy) { Write-Host ("{0}==>{1} {2}" -f $script:UiInfo, $script:UiReset, $Msg) }
+    else { Write-Host "==> $Msg" -ForegroundColor Blue }
+    Write-ExakitLog "INFO" $Msg
+}
+function Ok([string]$Msg) {
+    if ($script:UiFancy) { Write-Host ("  {0}{1}{2} {3}" -f $script:UiOk, $script:UiTick, $script:UiReset, $Msg) }
+    else { Write-Host ("  {0} {1}" -f $script:UiTick, $Msg) -ForegroundColor Green }
+    Write-ExakitLog "OK" $Msg
+}
+function Warn2([string]$Msg) {
+    if ($script:UiFancy) { Write-Host ("  {0}!{1} {2}" -f $script:UiWarn, $script:UiReset, $Msg) }
+    else { Write-Host "  ! $Msg" -ForegroundColor Yellow }
+    Write-ExakitLog "WARN" $Msg
+}
 # ExakitFailException - a distinct exception type so callers can tell a
 # deliberate Fail() apart from an unexpected error. Bash's die() only halts
 # the current subshell (kit_shared_steps runs risky steps in one so a
@@ -87,7 +129,10 @@ class ExakitFailException : System.Exception {
 }
 
 function Fail([string]$Msg) {
-    Write-Host "  x $Msg" -ForegroundColor Red
+    Stop-ExakitSpinner
+    Restore-ExakitCursor
+    if ($script:UiFancy) { Write-Host ("  {0}{1}{2} {3}" -f $script:UiErr, $script:UiCross, $script:UiReset, $Msg) }
+    else { Write-Host ("  {0} {1}" -f $script:UiCross, $Msg) -ForegroundColor Red }
     Write-ExakitLog "ERROR" $Msg
     if ($script:LogFile) { Write-Host "Full log: $script:LogFile" }
     throw [ExakitFailException]::new($Msg)
@@ -111,6 +156,11 @@ function Invoke-ExakitLogged {
     param([Parameter(Mandatory)][string]$Cmd, [Parameter(ValueFromRemainingArguments)]$CmdArgs)
     Write-ExakitLog "CMD" "$Cmd $($CmdArgs -join ' ')"
     $previousErrorActionPreference = $ErrorActionPreference
+    # Animate a spinner (in a background runspace) while the command runs. Its
+    # output goes to the log, not the console, so the spinner is the only
+    # console writer during the spin. The command execution below is unchanged.
+    $spinLabel = if ($script:ExakitActiveLabel) { $script:ExakitActiveLabel } else { "working" }
+    Start-ExakitSpinner $spinLabel
     try {
         # Native tools such as uvx and Docker can write progress/status to
         # stderr while still succeeding. With ErrorActionPreference = Stop,
@@ -128,6 +178,7 @@ function Invoke-ExakitLogged {
         return 1
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
+        Stop-ExakitSpinner
     }
 }
 # Confirm-ExakitPrompt "Question?" [DefaultYes] - non-interactive runs
@@ -138,7 +189,11 @@ function Confirm-ExakitPrompt {
         return $DefaultYes
     }
     $hint = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
-    Write-Host "  ? $Question $hint " -ForegroundColor Cyan -NoNewline
+    if ($script:UiFancy) {
+        Write-Host ("  {0}?{1} {2} {3}{4}{5} " -f $script:UiAsk, $script:UiReset, $Question, $script:UiDim, $hint, $script:UiReset) -NoNewline
+    } else {
+        Write-Host "  ? $Question $hint " -ForegroundColor Cyan -NoNewline
+    }
     $answer = Read-Host
     if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultYes }
     return $answer -match '^(y|yes)$'
@@ -151,7 +206,13 @@ function Read-ExakitPrompt {
     if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
         return $Default
     }
-    if ($Default) {
+    if ($script:UiFancy) {
+        if ($Default) {
+            Write-Host ("  {0}?{1} {2} {3}[{4}]{5} " -f $script:UiAsk, $script:UiReset, $Question, $script:UiDim, $Default, $script:UiReset) -NoNewline
+        } else {
+            Write-Host ("  {0}?{1} {2} " -f $script:UiAsk, $script:UiReset, $Question) -NoNewline
+        }
+    } elseif ($Default) {
         Write-Host "  ? $Question [$Default] " -ForegroundColor Cyan -NoNewline
     } else {
         Write-Host "  ? $Question " -ForegroundColor Cyan -NoNewline
@@ -427,11 +488,18 @@ function Set-ExakitStepDone {
 # (caller should skip) if already done.
 function Begin-ExakitStep {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Description)
+    $script:ExakitActiveLabel = $Description   # spinner label for Invoke-ExakitLogged in this step
     if (Test-ExakitStepDone $Name) {
         Ok "$Description - already done, skipping"
         return $false
     }
-    Info $Description
+    Write-Host ""
+    if ($script:UiFancy) {
+        Write-Host ("  {0}{1}{2} {3}{4}{5}" -f $script:UiAccent, $script:UiArrow, $script:UiReset, $script:UiBold, $Description, $script:UiReset)
+    } else {
+        Write-Host ("  {0} {1}" -f $script:UiArrow, $Description) -ForegroundColor Blue
+    }
+    Write-ExakitLog "STEP" $Description
     return $true
 }
 
@@ -683,20 +751,18 @@ function Show-ExakitConnectionPanel {
     $mcpConfigs     = Get-ExakitManifestValue "components.mcp_server.configs"
 
     Write-Host ""
-    Write-Host "  --------------------------------------------------------"
-    Write-Host "   Exasol Starter Kit - connection details"
-    Write-Host "  --------------------------------------------------------"
-    Write-Host "   Runtime:      $(if ($type) { $type } else { 'unknown' })"
-    Write-Host "   DSN:          $(if ($dsn) { $dsn } else { 'unknown' })"
-    Write-Host "   Admin user:   $(if ($user) { $user } else { 'sys' })"
-    if ($pwFile) { Write-Host "   Admin pass:   stored in $pwFile" }
-    if ($mcpUser) { Write-Host "   MCP user:     $mcpUser" }
-    if ($mcpPwf)  { Write-Host "   MCP pass:     stored in $mcpPwf" }
-    Write-Host "   TLS:          enabled (self-signed certificate)"
-    if ($exapumpPath) { Write-Host "   exapump:      $exapumpPath (profile: $exapumpProfile)" }
-    if ($mcpConfigs) { Write-Host "   MCP configs:  $script:McpDir" }
-    Write-Host "   Manifest:     $script:ManifestPath"
-    Write-Host "   Logs:         $script:LogDir"
-    Write-Host "  --------------------------------------------------------"
+    Start-ExakitPanel "Connection details"
+    Write-ExakitPanelLine ("Runtime:      {0}" -f $(if ($type) { $type } else { 'unknown' }))
+    Write-ExakitPanelLine ("DSN:          {0}" -f $(if ($dsn) { $dsn } else { 'unknown' }))
+    Write-ExakitPanelLine ("Admin user:   {0}" -f $(if ($user) { $user } else { 'sys' }))
+    if ($pwFile) { Write-ExakitPanelLine "Admin pass:   stored in $(Get-ExakitTilde $pwFile)" }
+    if ($mcpUser) { Write-ExakitPanelLine "MCP user:     $mcpUser" }
+    if ($mcpPwf)  { Write-ExakitPanelLine "MCP pass:     stored in $(Get-ExakitTilde $mcpPwf)" }
+    Write-ExakitPanelLine "TLS:          enabled (self-signed certificate)"
+    if ($exapumpPath) { Write-ExakitPanelLine "exapump:      $(Get-ExakitTilde $exapumpPath) (profile: $exapumpProfile)" }
+    if ($mcpConfigs) { Write-ExakitPanelLine "MCP configs:  $(Get-ExakitTilde $script:McpDir)" }
+    Write-ExakitPanelLine "Manifest:     $(Get-ExakitTilde $script:ManifestPath)"
+    Write-ExakitPanelLine "Logs:         $(Get-ExakitTilde $script:LogDir)"
+    Complete-ExakitPanel
     Write-Host ""
 }

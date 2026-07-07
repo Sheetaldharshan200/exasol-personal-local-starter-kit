@@ -36,11 +36,6 @@ $Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "ranjanm-chn/exa
 $Ref        = if ($env:EXAKIT_REF)  { $env:EXAKIT_REF }  else { "main" }
 $KitDir     = Join-Path $ExakitHome "kit"
 
-Write-Host ""
-Write-Host "  Exasol Personal Local Starter Kit" -ForegroundColor Cyan
-Write-Host "  Local database + AI agent bridge, one command."
-Write-Host ""
-
 # --- 1. preflight ------------------------------------------------------------
 if ($env:OS -notlike "*Windows*") {
     throw "This installer is for Windows. On macOS/Linux/WSL use install.sh."
@@ -73,15 +68,30 @@ Remove-Item -Recurse -Force $tmpZip, $tmpExtract
 
 # --- 3. show the plan -----------------------------------------------------------
 $ramGb = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-Write-Host ""
-Write-Host "  Installation plan"
-Write-Host "  -----------------"
-Write-Host "   Platform:   windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)"
-Write-Host "   Database:   Exasol Nano (container via Docker Desktop)"
-Write-Host "   Components: local database, exapump (data loading CLI), MCP server (AI agent bridge), pyexasol (Python driver)"
-Write-Host "   Kit copy:   $KitDir (read the scripts any time)"
-Write-Host "   State/logs: $ExakitHome"
-Write-Host ""
+# Banner + plan via the kit's shared visual layer (setup\lib\ui.ps1) so the
+# EXASOL wordmark and palette match the rest of the install exactly. Available
+# now that the kit is downloaded; plain fallback if the lib is missing.
+$uiLib = Join-Path $KitDir "setup\lib\ui.ps1"
+if (Test-Path $uiLib) {
+    . $uiLib
+    Write-ExakitInstallPlan `
+        -Platform "windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)" `
+        -Database "Exasol Nano (container via Docker Desktop)" `
+        -KitDir $KitDir -StateDir $ExakitHome
+} else {
+    Write-Host ""
+    Write-Host "  Personal Local Starter Kit"
+    Write-Host "  Local database + exapump + MCP server + pyexasol"
+    Write-Host ""
+    Write-Host "  Installation plan"
+    Write-Host "  -----------------"
+    Write-Host "   Platform:   windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)"
+    Write-Host "   Database:   Exasol Nano (container via Docker Desktop)"
+    Write-Host "   Components: local database, exapump, MCP server, pyexasol"
+    Write-Host "   Kit copy:   $KitDir (read the scripts any time)"
+    Write-Host "   State/logs: $ExakitHome"
+    Write-Host ""
+}
 
 if ($env:EXAKIT_DRY_RUN -eq "1") {
     Write-Host "==> Dry run requested (EXAKIT_DRY_RUN=1) - nothing was installed." -ForegroundColor Blue
