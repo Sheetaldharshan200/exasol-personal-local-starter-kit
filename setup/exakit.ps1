@@ -392,7 +392,7 @@ function Invoke-CmdUpdate {
                     $script:McpVersion = $latest
                     Install-Mcp
                     Test-McpServer
-                    Warn2 "Run exakit mcp-setup to refresh permanent AI client configs with the new MCP version."
+                    Warn2 "Run exakit mcp-setup to refresh AI client configs with the new MCP version."
                     Set-ExakitManifestValue "desired.mcp" $script:McpVersion
                 }
             }

@@ -586,7 +586,7 @@ function Show-McpSetupSummary {
     $clients = @($doc.selected_clients) | ForEach-Object { if ($script:McpClientLabels.ContainsKey($_)) { $script:McpClientLabels[$_] } else { $_ } }
     Write-Host ""
     Write-Host "  MCP setup summary"
-    Write-Host "  Mode:     permanent"
+    Write-Host "  Mode:     managed"
     Write-Host "  Meaning:  Wrote managed MCP entries into the selected client config files."
     Write-Host "  Clients:  $(if ($clients) { $clients -join ', ' } else { 'none' })"
     Write-Host "  Status:   $($doc.status)"
@@ -626,7 +626,7 @@ function Show-McpReadyPanel {
     if ($tls -eq "self-signed") { Write-Host "  TLS:           local self-signed certificate accepted for 127.0.0.1" }
     Write-Host "  Managed state: $script:McpDir"
     Write-Host ""
-    Write-Host "  Permanent setup updated the selected client config files."
+    Write-Host "  MCP setup updated the selected client config files."
     Write-Host "  Next step: restart the selected client now."
     Write-Host "  After setup/restart, look for an MCP server named: exasol"
     Write-Host ""
@@ -689,7 +689,7 @@ function Get-McpClientsFromArgs {
 }
 
 function Invoke-McpSetup {
-    Info "MCP setup will permanently edit the selected AI client config files."
+    Info "MCP setup will edit the selected AI client config files."
 
     Write-Host ""
     Info "Choose one or more clients"
@@ -704,7 +704,7 @@ function Invoke-McpSetup {
         if (-not $clients) { Warn2 "Please choose valid client numbers, for example 1,2,3 or all." }
     }
 
-    Info "Applying permanent MCP setup"
+    Info "Applying MCP setup"
     $resultJson = Invoke-McpSetupCli -Clients $clients
     if ($resultJson) { Show-McpSetupSummary $resultJson }
     if (-not $resultJson) { return $false }

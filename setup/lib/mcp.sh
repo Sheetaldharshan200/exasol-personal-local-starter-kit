@@ -110,7 +110,7 @@ mcp_update() {
     EXAKIT_MCP_VERSION="$_latest"
     export EXAKIT_MCP_VERSION
     mcp_install
-    warn "Run exakit mcp-setup to refresh permanent AI client configs with the new MCP version."
+    warn "Run exakit mcp-setup to refresh AI client configs with the new MCP version."
     mcp_validate || true
     manifest_set desired.mcp "$EXAKIT_MCP_VERSION"
     ok "MCP server updated; database data was not changed"
