@@ -70,7 +70,13 @@ _exakit_ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
 _exakit_log_file() {
     [ -n "${EXAKIT_LOG_FILE:-}" ] || return 0
-    printf '%s %s\n' "$(_exakit_ts)" "$*" >> "$EXAKIT_LOG_FILE"
+    # Best-effort: the log directory may already be gone (e.g. during
+    # `uninstall`, which deletes the kit home). A failed redirection-open is
+    # reported to the *group's* stderr before a trailing `2>/dev/null` on the
+    # printf would apply, so redirect at the group level and also skip early if
+    # the directory is missing. Never let logging fail a command.
+    [ -d "$(dirname "$EXAKIT_LOG_FILE")" ] || return 0
+    { printf '%s %s\n' "$(_exakit_ts)" "$*" >> "$EXAKIT_LOG_FILE"; } 2>/dev/null || return 0
 }
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*";      _exakit_log_file "INFO  $*"; }

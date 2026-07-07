@@ -63,14 +63,18 @@ start_foreign() { # start_foreign <port> -> echoes pid, a non-Exasol listener
 alive() { kill -0 "$1" 2>/dev/null && echo yes || echo no; }
 
 # Harness: stub the loggers + port_in_use, source the real module, run reaper.
+# FORCE_PORT_IN_USE=1 makes the connect-based port_in_use always report "busy",
+# simulating lingering CLOSE_WAIT/TIME_WAIT client sockets after a teardown — the
+# reaper must still key its verdict off the LISTEN process, not the connect test.
 cat > "$TMP/run.sh" <<HARNESS
 info(){ :; }; warn(){ :; }; ok(){ :; }
-port_in_use(){ (exec 3<>"/dev/tcp/127.0.0.1/\$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; }; return 1; }
+port_in_use(){ [ "\${FORCE_PORT_IN_USE:-0}" = 1 ] && return 0; (exec 3<>"/dev/tcp/127.0.0.1/\$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; }; return 1; }
 source "$ROOT/setup/lib/runtime-personal.sh"
 EXAKIT_PERSONAL_PORT="\$1"
 personal_reap_orphan_daemon
 HARNESS
-run_reaper() { bash "$TMP/run.sh" "$1"; echo $?; }
+run_reaper()      { bash "$TMP/run.sh" "$1"; echo $?; }
+run_reaper_busy() { FORCE_PORT_IN_USE=1 bash "$TMP/run.sh" "$1"; echo $?; }
 
 # pick_port <start> — first free TCP port at or above <start>, so a stray
 # listener left by an aborted earlier run can't make this suite flaky.
@@ -100,6 +104,12 @@ check "foreign return code"  1   "$RC"
 # Case 3 — nothing on the port: no-op, returns 0.
 RC="$(run_reaper "$P3")"
 check "free-port return code" 0  "$RC"
+
+# Case 4 — no listener, but the port "looks" busy (lingering client sockets):
+# must return 0 (freed), not a false failure. Regression for the uninstall bug
+# where a connect-based check reported the port still in use after the kill.
+RC="$(run_reaper_busy "$P3")"
+check "lingering-socket false positive" 0 "$RC"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

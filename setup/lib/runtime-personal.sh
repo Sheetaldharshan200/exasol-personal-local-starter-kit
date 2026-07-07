@@ -134,14 +134,22 @@ personal_is_orphan_daemon() {
 # genuinely foreign process on the port is reported and left untouched.
 # Returns 0 if the port ends up free (or was never held), 1 otherwise.
 personal_reap_orphan_daemon() {
-    port_in_use "$EXAKIT_PERSONAL_PORT" || return 0
+    # Judge the port by whether a process is actually LISTENing on it, not by a
+    # bare TCP connect: after a teardown, client sockets linger in
+    # CLOSE_WAIT/TIME_WAIT and would make a connect test wrongly report "in use".
     if ! command -v lsof >/dev/null 2>&1; then
-        warn "Port $EXAKIT_PERSONAL_PORT is in use but 'lsof' is unavailable to identify the process; cannot auto-clean a leftover Exasol daemon."
-        return 1
+        if port_in_use "$EXAKIT_PERSONAL_PORT"; then
+            warn "Port $EXAKIT_PERSONAL_PORT is in use but 'lsof' is unavailable to identify the process; cannot auto-clean a leftover Exasol daemon."
+            return 1
+        fi
+        return 0
     fi
 
+    _listeners="$(personal_db_port_pids)"
+    [ -n "$_listeners" ] || return 0   # nothing listening → port is free
+
     _reaped=""
-    for _pid in $(personal_db_port_pids); do
+    for _pid in $_listeners; do
         if personal_is_orphan_daemon "$_pid"; then
             info "Reaping orphaned Exasol runner daemon (pid $_pid) still holding port $EXAKIT_PERSONAL_PORT"
             pkill -P "$_pid" 2>/dev/null || true
@@ -152,12 +160,13 @@ personal_reap_orphan_daemon() {
         fi
     done
 
-    # Nothing of ours to reap: report free/busy based on the port alone.
-    [ -n "$_reaped" ] || { port_in_use "$EXAKIT_PERSONAL_PORT" && return 1 || return 0; }
+    # Only a foreign listener remains (nothing of ours to reap) → not our port.
+    [ -n "$_reaped" ] || return 1
 
-    # Give SIGTERM a moment to release the socket, then force-kill any survivor.
+    # Wait for the listener to release the port (SIGTERM path, up to ~5s), then
+    # force-kill any survivor and its children and give it a moment to settle.
     _waited=0
-    while [ "$_waited" -lt 5 ] && port_in_use "$EXAKIT_PERSONAL_PORT"; do
+    while [ "$_waited" -lt 5 ] && [ -n "$(personal_db_port_pids)" ]; do
         sleep 1
         _waited=$((_waited + 1))
     done
@@ -167,9 +176,14 @@ personal_reap_orphan_daemon() {
             kill -9 "$_pid" 2>/dev/null || true
         fi
     done
+    _waited=0
+    while [ "$_waited" -lt 3 ] && [ -n "$(personal_db_port_pids)" ]; do
+        sleep 1
+        _waited=$((_waited + 1))
+    done
 
-    if port_in_use "$EXAKIT_PERSONAL_PORT"; then
-        warn "Port $EXAKIT_PERSONAL_PORT is still in use after reaping the Exasol daemon."
+    if [ -n "$(personal_db_port_pids)" ]; then
+        warn "Port $EXAKIT_PERSONAL_PORT still has a listening process after reaping the Exasol daemon."
         return 1
     fi
     ok "Freed port $EXAKIT_PERSONAL_PORT (removed a leftover Exasol runner daemon)"
