@@ -181,6 +181,36 @@ personal_update --plan
 " 2>&1 | grep -c 'exakit update personal --backup')"
 check "personal_major(plan)" "1" "$personal_major_plan"
 
+personal_reuse_guard="$(bash -c "
+. '$ROOT/setup/lib/common.sh'
+. '$ROOT/setup/lib/detect.sh'
+. '$ROOT/setup/lib/runtime-personal.sh'
+EXAKIT_PERSONAL_PORT=8563
+_stub_dir=\"\$(mktemp -d)\"
+printf '#!/bin/sh\n[ \"\$1\" = info ] && exit 0\nexit 1\n' > \"\$_stub_dir/exasol\"
+chmod +x \"\$_stub_dir/exasol\"
+personal_cli() { printf '%s\n' \"\$_stub_dir/exasol\"; }
+port_in_use() { return 1; }
+if personal_deployment_running; then printf reuse; else printf deploy; fi
+rm -rf \"\$_stub_dir\"
+")"
+check "personal_reuse_guard(no-port)" "deploy" "$personal_reuse_guard"
+
+personal_reuse_when_port_open="$(bash -c "
+. '$ROOT/setup/lib/common.sh'
+. '$ROOT/setup/lib/detect.sh'
+. '$ROOT/setup/lib/runtime-personal.sh'
+EXAKIT_PERSONAL_PORT=8563
+_stub_dir=\"\$(mktemp -d)\"
+printf '#!/bin/sh\n[ \"\$1\" = info ] && exit 0\nexit 1\n' > \"\$_stub_dir/exasol\"
+chmod +x \"\$_stub_dir/exasol\"
+personal_cli() { printf '%s\n' \"\$_stub_dir/exasol\"; }
+port_in_use() { return 0; }
+if personal_deployment_running; then printf reuse; else printf deploy; fi
+rm -rf \"\$_stub_dir\"
+")"
+check "personal_reuse_guard(open-port)" "reuse" "$personal_reuse_when_port_open"
+
 _personal_backup_dir="$(mktemp -d)"
 mkdir -p "$_personal_backup_dir/deploy"
 printf 'deployment state\n' > "$_personal_backup_dir/deploy/marker.txt"

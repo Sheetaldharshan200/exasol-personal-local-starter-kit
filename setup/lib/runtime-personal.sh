@@ -102,11 +102,11 @@ personal_deployment_exists() {
 }
 
 # personal_deployment_running — is a local Exasol deployment actually up and
-# reachable right now? `exasol info` is the launcher's own source of truth, so
-# this trusts it directly (no deploy-dir guard). Used to adopt an
-# already-running database instead of failing on a busy port.
+# reachable right now? Some launcher versions can answer `exasol info` even
+# before the SQL listener exists, so require both signals before reusing an
+# existing database.
 personal_deployment_running() {
-    "$(personal_cli)" info >/dev/null 2>&1
+    port_in_use "$EXAKIT_PERSONAL_PORT" && "$(personal_cli)" info >/dev/null 2>&1
 }
 
 # personal_deploy_local — run the local deployment. This is the long step
@@ -154,7 +154,7 @@ personal_wait_ready() {
     info "Checking deployment health"
     _tries=0
     while [ "$_tries" -lt 30 ]; do
-        if "$(personal_cli)" info >/dev/null 2>&1; then
+        if port_in_use "$EXAKIT_PERSONAL_PORT" && "$(personal_cli)" info >/dev/null 2>&1; then
             ok "Deployment is reachable"
             return 0
         fi
