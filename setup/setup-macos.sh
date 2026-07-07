@@ -16,6 +16,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 KIT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Core libraries must exist; a truncated/partial download otherwise collapses
+# into a wall of "command not found". die() isn't defined until common.sh
+# loads, so report with a plain printf.
+for _lib in common.sh detect.sh runtime-personal.sh; do
+    [ -f "$LIB_DIR/$_lib" ] || {
+        printf '\033[1;31m  ✗\033[0m Kit file missing: %s — the download looks incomplete. Re-run the installer.\n' "$LIB_DIR/$_lib" >&2
+        exit 1
+    }
+done
 . "$LIB_DIR/common.sh"
 . "$LIB_DIR/detect.sh"
 . "$LIB_DIR/runtime-personal.sh"

@@ -31,6 +31,16 @@ $ErrorActionPreference = "Stop"
 # faster (a visible progress bar throttles it by an order of magnitude).
 $ProgressPreference = "SilentlyContinue"
 
+# Any unhandled terminating error below should end with a clean message, not a
+# raw PowerShell stack trace. install.ps1 runs as an `irm | iex` string, so a
+# script-scope trap is the simplest top-level guard.
+trap {
+    Write-Host ""
+    Write-Host "  Installation failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  Fix the issue above and re-run. If it keeps happening, check your network or proxy." -ForegroundColor Red
+    exit 1
+}
+
 $ExakitHome = if ($env:EXAKIT_HOME) { $env:EXAKIT_HOME } else { Join-Path $HOME ".exasol-starter-kit" }
 $Repo       = if ($env:EXAKIT_REPO) { $env:EXAKIT_REPO } else { "ranjanm-chn/exasol-personal-local-starter-kit" }
 $Ref        = if ($env:EXAKIT_REF)  { $env:EXAKIT_REF }  else { "main" }
@@ -51,18 +61,25 @@ $urls = @(
 $fetched = $false
 foreach ($url in $urls) {
     try {
-        Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
+        Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing -TimeoutSec 300
         $fetched = $true
         break
     } catch { }
 }
-if (-not $fetched) { throw "Could not download the kit from github.com/$Repo ($Ref)." }
+if (-not $fetched) {
+    throw "Could not download the kit from github.com/$Repo ($Ref). Check your internet connection or proxy; if the repository is private, set `$env:GITHUB_TOKEN and re-run."
+}
 
 if (Test-Path $KitDir) { Remove-Item -Recurse -Force $KitDir }
 New-Item -ItemType Directory -Force -Path $KitDir | Out-Null
 $tmpExtract = Join-Path ([System.IO.Path]::GetTempPath()) "exakit-src-$([System.Guid]::NewGuid().ToString('N'))"
-Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract
+try {
+    Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract
+} catch {
+    throw "The downloaded kit archive could not be extracted (a partial or corrupt download). Re-run to download it again."
+}
 $inner = Get-ChildItem $tmpExtract | Select-Object -First 1
+if (-not $inner) { throw "The downloaded kit archive was empty or malformed. Re-run to download it again." }
 Get-ChildItem $inner.FullName | Move-Item -Destination $KitDir
 Remove-Item -Recurse -Force $tmpZip, $tmpExtract
 
