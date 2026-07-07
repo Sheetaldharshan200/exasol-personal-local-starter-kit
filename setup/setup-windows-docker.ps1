@@ -25,9 +25,7 @@ Initialize-ExakitLogging
 Initialize-ExakitManifest
 Resolve-ExakitInstallVersions
 
-Write-Host ""
-Write-Host "  Exasol Personal Local Starter Kit - Windows setup" -ForegroundColor Cyan
-Write-Host ""
+Write-ExakitBanner "Personal Local Starter Kit" "Local database + exapump + MCP server + pyexasol"
 
 Set-ExakitManifestValue "os" "windows"
 Set-ExakitManifestValue "arch" $env:PROCESSOR_ARCHITECTURE

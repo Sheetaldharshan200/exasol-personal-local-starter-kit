@@ -27,7 +27,7 @@ exakit_init_logging
 manifest_init
 exakit_enable_failure_handling
 
-printf '\n  Exasol Personal Local Starter Kit — macOS setup\n\n'
+ui_banner "Personal Local Starter Kit" "Local database + exapump + MCP server + pyexasol"
 detect_summary
 printf '\n'
 

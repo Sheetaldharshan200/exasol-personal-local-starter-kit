@@ -36,8 +36,31 @@ main() {
     say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
     fail() { printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2; exit 1; }
 
-    printf '\n  Exasol Personal Local Starter Kit\n'
-    printf '  Local database + AI agent bridge, one command.\n\n'
+    # Banner + plan: reuse the kit's shared visual layer (setup/lib/ui.sh) so
+    # the EXASOL wordmark and palette match the rest of the install exactly.
+    # install.sh is POSIX sh and can't source that bash lib, so bridge through
+    # `bash ui.sh __render_install_plan`; fall back to plain sh if bash or the
+    # lib isn't there. Called after the kit is fetched (once ui.sh exists).
+    render_banner_plan() {
+        _ui="$kit_dir/setup/lib/ui.sh"
+        if command -v bash >/dev/null 2>&1 && [ -f "$_ui" ]; then
+            EXAKIT_UI_PLATFORM="$platform ($arch)" \
+            EXAKIT_UI_TARGET="$target" \
+            EXAKIT_UI_KIT="$kit_dir" \
+            EXAKIT_UI_HOME="$EXAKIT_HOME" \
+            bash "$_ui" __render_install_plan && return 0
+        fi
+        printf '\n  Exasol Personal Local Starter Kit\n'
+        printf '  Local database + exapump + MCP server + pyexasol\n\n'
+        printf '  Installation plan\n'
+        printf '  -----------------\n'
+        printf '   Platform:   %s (%s)\n' "$platform" "$arch"
+        printf '   Database:   %s\n' "$target"
+        printf '   Components: local database, exapump, MCP server, pyexasol\n'
+        printf '   Kit copy:   %s (read the scripts any time)\n' "$kit_dir"
+        printf '   State/logs: %s\n' "$EXAKIT_HOME"
+        printf '\n'
+    }
 
     # --- 1. preflight --------------------------------------------------------
     [ "$(id -u)" -ne 0 ] || fail "Please run as a regular user, not root."
@@ -108,14 +131,7 @@ main() {
     fi
 
     # --- 4. show the plan ----------------------------------------------------
-    printf '\n  Installation plan\n'
-    printf '  ─────────────────\n'
-    printf '   Platform:   %s (%s)\n' "$platform" "$arch"
-    printf '   Database:   %s\n' "$target"
-    printf '   Components: local database, exapump, MCP server, pyexasol\n'
-    printf '   Kit copy:   %s (read the scripts any time)\n' "$kit_dir"
-    printf '   State/logs: %s\n' "$EXAKIT_HOME"
-    printf '\n'
+    render_banner_plan
 
     if [ "${EXAKIT_DRY_RUN:-0}" = "1" ]; then
         say "Dry run requested (EXAKIT_DRY_RUN=1) — nothing was installed."

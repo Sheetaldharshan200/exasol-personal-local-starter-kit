@@ -13,6 +13,25 @@
 #   - download + SHA-256 verification helpers
 
 # ---------------------------------------------------------------------------
+# Shared visual layer (banner, boxes, spinner, colour palette)
+# ---------------------------------------------------------------------------
+# ui.sh owns how the installer LOOKS. Source it first so info/ok/begin_step/
+# connection_panel below can use its glyphs and palette. If it is somehow
+# absent, install no-op stubs so nothing here breaks under `set -u`.
+_exakit_common_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _exakit_common_dir=''
+[ -n "$_exakit_common_dir" ] && [ -f "$_exakit_common_dir/ui.sh" ] && . "$_exakit_common_dir/ui.sh"
+if ! command -v ui_spin_begin >/dev/null 2>&1; then
+    UI_FANCY=0; UI_RESET=''; UI_BOLD=''; UI_DIM=''; UI_ACCENT=''
+    UI_INFO=''; UI_OK=''; UI_WARN=''; UI_ERR=''; UI_ASK=''
+    UI_TICK='[ok]'; UI_CROSS='[x]'; UI_ARROW='>'; UI_BULLET='-'
+    ui_spin_begin() { :; }; ui_spin_end() { :; }; ui_restore_cursor() { :; }
+    ui_banner()     { printf '\n  %s\n' "${1:-Exasol Personal Local Starter Kit}"; [ -n "${2:-}" ] && printf '  %s\n' "$2"; printf '\n'; }
+    ui_panel_begin() { printf '\n  -- %s --\n' "${1:-}"; }
+    ui_panel_line()  { printf '   %s\n' "$1"; }
+    ui_panel_end()   { printf '\n'; }
+fi
+
+# ---------------------------------------------------------------------------
 # State locations
 # ---------------------------------------------------------------------------
 EXAKIT_HOME="${EXAKIT_HOME:-$HOME/.exasol-starter-kit}"
@@ -81,10 +100,12 @@ _exakit_log_file() {
     { printf '%s %s\n' "$(_exakit_ts)" "$*" >> "$EXAKIT_LOG_FILE"; } 2>/dev/null || return 0
 }
 
-info() { printf '\033[1;34m==>\033[0m %s\n' "$*";      _exakit_log_file "INFO  $*"; }
-ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*";      _exakit_log_file "OK    $*"; }
-warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2;  _exakit_log_file "WARN  $*"; }
-error(){ printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2;  _exakit_log_file "ERROR $*"; }
+# Glyphs/colours come from the shared palette (ui.sh): bold + Unicode on an
+# interactive UTF-8 terminal, plain ASCII with no escapes when piped/CI/log.
+info() { printf '%s==>%s %s\n'   "${UI_INFO:-}" "${UI_RESET:-}" "$*";            _exakit_log_file "INFO  $*"; }
+ok()   { printf '  %s%s%s %s\n'  "${UI_OK:-}"   "${UI_TICK:-[ok]}"  "${UI_RESET:-}" "$*"; _exakit_log_file "OK    $*"; }
+warn() { printf '  %s!%s %s\n'   "${UI_WARN:-}" "${UI_RESET:-}" "$*" >&2;        _exakit_log_file "WARN  $*"; }
+error(){ printf '  %s%s%s %s\n'  "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:-}" "$*" >&2; _exakit_log_file "ERROR $*"; }
 
 die() {
     error "$*"
@@ -94,11 +115,19 @@ die() {
     exit 1
 }
 
-# Run a command, sending its output to the log file only.
+# Run a command, sending its output to the log file only. While it runs (and
+# only on an interactive terminal), show a spinner labelled with the current
+# step — this is the single hook that animates every silent, long-running
+# operation. run_logged never reads stdin, so the spinner is always safe;
+# interactive prompts use a separate /dev/tty path and are untouched.
 run_logged() {
     _exakit_log_file "CMD   $*"
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
+        ui_spin_begin "${EXAKIT_ACTIVE_LABEL:-working}"
         "$@" >> "$EXAKIT_LOG_FILE" 2>&1
+        _run_logged_rc=$?
+        ui_spin_end
+        return $_run_logged_rc
     else
         "$@"
     fi
@@ -117,7 +146,7 @@ confirm() {
         return
     fi
     if [ "$_default" = "y" ]; then _hint="[Y/n]"; else _hint="[y/N]"; fi
-    printf '\033[1;36m  ?\033[0m %s %s ' "$_question" "$_hint"
+    printf '  %s?%s %s %s%s%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_hint" "${UI_RESET:-}"
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     _answer="${_answer:-$_default}"
     case "$_answer" in
@@ -143,9 +172,9 @@ prompt_text() {
         return 0
     fi
     if [ -n "$_default" ]; then
-        printf '\033[1;36m  ?\033[0m %s [%s] ' "$_question" "$_default" >&2
+        printf '  %s?%s %s %s[%s]%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_default" "${UI_RESET:-}" >&2
     else
-        printf '\033[1;36m  ?\033[0m %s ' "$_question" >&2
+        printf '  %s?%s %s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" >&2
     fi
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     printf '%s\n' "${_answer:-$_default}"
@@ -714,16 +743,25 @@ rollback_discard() {
 # Returns 1 when the step can be skipped (caller should honor it).
 begin_step() {
     EXAKIT_CURRENT_STEP="$1"
+    EXAKIT_ACTIVE_LABEL="$2"     # spinner label for run_logged inside this step
     if step_done "$1"; then
         ok "$2 — already done, skipping"
         return 1
     fi
-    info "$2"
+    # Styled step header: accent arrow + bold title, set off by a blank line.
+    printf '\n  %s%s%s %s%s%s\n' \
+        "${UI_ACCENT:-}" "${UI_ARROW:->}" "${UI_RESET:-}" \
+        "${UI_BOLD:-}" "$2" "${UI_RESET:-}"
+    _exakit_log_file "STEP  $2"
     return 0
 }
 
 exakit_on_failure() {
     _status=$?
+    # Runs on EXIT (any status). Stop any live spinner and un-hide the cursor
+    # first, so a failure mid-animation never leaves a stuck/invisible cursor.
+    ui_spin_end 2>/dev/null || true
+    ui_restore_cursor
     [ $_status -eq 0 ] && return 0
     error "Setup failed${EXAKIT_CURRENT_STEP:+ during step: $EXAKIT_CURRENT_STEP}"
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
@@ -1846,40 +1884,27 @@ connection_panel() {
     _mcp_pwfile="$(manifest_get components.mcp_server.connection.password_file 2>/dev/null || true)"
 
     printf '\n'
-    printf '  ────────────────────────────────────────────────────────\n'
-    printf '   Exasol Starter Kit — connection details\n'
-    printf '  ────────────────────────────────────────────────────────\n'
-    printf '   Runtime:      %s\n' "${_type:-unknown}"
-    printf '   DSN:          %s\n' "${_dsn:-unknown}"
-    printf '   Admin user:   %s\n' "${_user:-sys}"
-    if [ -n "$_pwfile" ]; then
-        printf '   Admin pass:   stored in %s\n' "$_pwfile"
-    fi
-    if [ -n "$_mcp_user" ]; then
-        printf '   MCP user:     %s\n' "$_mcp_user"
-    fi
-    if [ -n "$_mcp_pwfile" ]; then
-        printf '   MCP pass:     stored in %s\n' "$_mcp_pwfile"
-    fi
-    printf '   TLS:          enabled (self-signed certificate)\n'
-    if [ "$_type" = "personal" ]; then
-        printf '   Details:      run '\''exasol info'\'' for deployment state\n'
-    fi
+    ui_panel_begin "Connection details"
+    ui_panel_line "Runtime:      ${_type:-unknown}"
+    ui_panel_line "DSN:          ${_dsn:-unknown}"
+    ui_panel_line "Admin user:   ${_user:-sys}"
+    [ -n "$_pwfile" ]    && ui_panel_line "Admin pass:   stored in $(ui_tilde "$_pwfile")"
+    [ -n "$_mcp_user" ]  && ui_panel_line "MCP user:     $_mcp_user"
+    [ -n "$_mcp_pwfile" ] && ui_panel_line "MCP pass:     stored in $(ui_tilde "$_mcp_pwfile")"
+    ui_panel_line "TLS:          enabled (self-signed certificate)"
+    [ "$_type" = "personal" ] && ui_panel_line "Details:      run 'exasol info' for deployment state"
 
     _exapump="$(manifest_get components.exapump.path 2>/dev/null)"
     if [ -n "$_exapump" ]; then
-        printf '   exapump:      %s (profile: %s)\n' "$_exapump" \
-            "$(manifest_get components.exapump.profile 2>/dev/null)"
+        ui_panel_line "exapump:      $(ui_tilde "$_exapump") (profile: $(manifest_get components.exapump.profile 2>/dev/null))"
     fi
 
     _mcp="$(manifest_get components.mcp_server.configs 2>/dev/null)"
-    if [ -n "$_mcp" ]; then
-        printf '   MCP configs:  %s\n' "$EXAKIT_MCP_DIR"
-    fi
+    [ -n "$_mcp" ] && ui_panel_line "MCP configs:  $(ui_tilde "$EXAKIT_MCP_DIR")"
 
-    printf '   Manifest:     %s\n' "$EXAKIT_MANIFEST"
-    printf '   Logs:         %s\n' "$EXAKIT_LOG_DIR"
-    printf '  ────────────────────────────────────────────────────────\n'
+    ui_panel_line "Manifest:     $(ui_tilde "$EXAKIT_MANIFEST")"
+    ui_panel_line "Logs:         $(ui_tilde "$EXAKIT_LOG_DIR")"
+    ui_panel_end
     printf '\n'
 }
 
