@@ -143,6 +143,12 @@ try {
         Warn2 "Retry any time with: exakit mcp-setup"
     }
 
+    try {
+        Request-ExakitSkillsInstallOffer
+    } catch [ExakitFailException] {
+        Warn2 "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
+    }
+
     Ok "Setup complete"
     Show-ExakitConnectionPanel
     Info "Next: exakit status | exakit info | exakit help"
