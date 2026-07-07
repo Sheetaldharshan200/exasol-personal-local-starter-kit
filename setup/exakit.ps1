@@ -23,6 +23,11 @@
 #                         (~\.claude\skills, ~\.agents\skills)
 #   teardown [-Data]      remove the runtime; -Data also deletes database
 #                         content (Nano volume)
+#   uninstall [-Yes] [-DryRun]
+#                         remove EVERYTHING the kit installed: database + all
+#                         data, MCP client configs, skills, exapump, the kit
+#                         home and the CLI binaries. -DryRun previews; -Yes
+#                         skips the typed confirmation
 #   logs                  print the path of the latest setup log
 #   catalog [search]      browse/search every exakit, exapump & exasol command
 #   help                  this text
@@ -99,6 +104,126 @@ function Invoke-CmdTeardown {
     switch ($type) { "nano" { Remove-Nano -Data:$Data } }
     Ok "Teardown finished. Credentials, logs and the manifest remain in $script:ExakitHome"
     Info "Remove them with: Remove-Item -Recurse -Force $script:ExakitHome"
+}
+
+# Invoke-ExakitUninstallRun -DryRun - remove every artifact the kit installs, in
+# dependency order: the local database and ALL its data, the managed MCP client
+# configs, the installed AI skills, the exapump profile, the kit home, and the
+# CLI binaries. With -DryRun it prints the plan and changes nothing. Mirrors
+# exakit_uninstall_run in setup/lib/common.sh. uv/uvx (a shared tool) and the
+# PATH entry are intentionally left in place and only reported.
+function Invoke-ExakitUninstallRun {
+    param([switch]$DryRun)
+
+    # 1) Database + all data (the Windows runtime is Nano).
+    $type = Get-RuntimeType
+    if ($type) {
+        if ($DryRun) {
+            Info "  will remove: local Exasol $type deployment and ALL its data"
+        } else {
+            Info "Removing the local Exasol $type deployment and all data"
+            switch ($type) {
+                "nano" { try { Remove-Nano -Data } catch { Warn2 "Database teardown reported errors (continuing uninstall)" } }
+                default { Warn2 "Unknown runtime type '$type'; skipping database teardown" }
+            }
+        }
+    }
+
+    # 2) Managed MCP configuration in the AI clients. Best-effort.
+    if (Get-Command Invoke-McpOperation -ErrorAction SilentlyContinue) {
+        if ($DryRun) {
+            Info "  will remove: managed MCP configuration in Claude Desktop, Cursor, and Codex"
+        } else {
+            Info "Removing managed MCP configuration from AI clients"
+            try { [void](Invoke-McpOperation -Operation "uninstall" -InputArgs @()) }
+            catch { Warn2 "Removing the managed MCP client config reported issues (continuing uninstall)" }
+        }
+    }
+
+    # 3) Installed AI skills. Prefer the live list from the kit's skills dir;
+    #    fall back to the known names when the checkout is already gone.
+    $skillNames = @()
+    try {
+        $repoRoot = Get-ExakitRepoRoot
+        if ($repoRoot -and (Test-Path (Join-Path $repoRoot "skills"))) {
+            $skillNames = Get-ChildItem -Directory (Join-Path $repoRoot "skills") -ErrorAction SilentlyContinue |
+                Where-Object { Test-Path (Join-Path $_.FullName "SKILL.md") } |
+                ForEach-Object { $_.Name }
+        }
+    } catch { $skillNames = @() }
+    if (-not $skillNames -or $skillNames.Count -eq 0) {
+        $skillNames = @("local-agent-ready-starter", "trusted-ai-workflow")
+    }
+    foreach ($root in @((Join-Path $HOME ".claude\skills"), (Join-Path $HOME ".agents\skills"))) {
+        foreach ($name in $skillNames) {
+            $p = Join-Path $root $name
+            if (Test-Path $p) {
+                if ($DryRun) { Info "  will remove: AI skill $p" }
+                else { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p }
+            }
+        }
+    }
+
+    # 4) exapump profile store (the kit created it; the binary goes in step 6).
+    $exapumpDir = Join-Path $HOME ".exapump"
+    if (Test-Path $exapumpDir) {
+        if ($DryRun) { Info "  will remove: exapump profiles at $exapumpDir" }
+        else { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $exapumpDir }
+    }
+
+    # 5) Kit home: credentials, logs, manifest, cached kit copy, MCP snapshots.
+    if (Test-Path $script:ExakitHome) {
+        if ($DryRun) { Info "  will remove: kit home $script:ExakitHome (credentials, logs, manifest, snapshots)" }
+        else { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $script:ExakitHome }
+    }
+
+    # 6) CLI binaries. Removed last so earlier steps can still call them.
+    foreach ($bin in @("exakit.cmd", "exapump.exe", "exasol.exe", "exakit.ps1")) {
+        $p = Join-Path $script:BinDir $bin
+        if (Test-Path $p) {
+            if ($DryRun) { Info "  will remove: CLI binary $p" }
+            else { Remove-Item -Force -ErrorAction SilentlyContinue $p }
+        }
+    }
+}
+
+function Invoke-CmdUninstall {
+    param([switch]$AssumeYes, [switch]$DryRun)
+    Initialize-ExakitLogging
+
+    if (-not (Test-Path $script:ManifestPath) -and
+        -not (Test-Path (Join-Path $script:BinDir "exakit.cmd")) -and
+        -not (Test-Path $script:ExakitHome)) {
+        Info "Nothing to uninstall - no manifest, kit home, or installed binaries were found."
+        return
+    }
+
+    Write-Host ""
+    Warn2 "exakit uninstall PERMANENTLY removes the Exasol Personal Local Starter Kit."
+    Info "The following will be removed:"
+    Invoke-ExakitUninstallRun -DryRun
+    Write-Host ""
+    Warn2 "This is IRREVERSIBLE - all local database data will be lost."
+    Info "Not touched: uv/uvx (shared tool) and any PATH entry in your profile."
+
+    if ($DryRun) { Write-Host ""; Info "Dry run only - nothing was removed."; return }
+
+    if (-not $AssumeYes) {
+        if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+            Fail "uninstall needs an interactive terminal to confirm; re-run with -Yes to proceed non-interactively."
+        }
+        Write-Host "  ! Type " -ForegroundColor Red -NoNewline
+        Write-Host "UNINSTALL" -ForegroundColor White -NoNewline
+        Write-Host " to confirm (anything else cancels): " -ForegroundColor Red -NoNewline
+        $answer = Read-Host
+        if ($answer -cne "UNINSTALL") { Info "Uninstall cancelled."; return }
+    }
+
+    Write-Host ""
+    Invoke-ExakitUninstallRun
+    Write-Host ""
+    Ok "Uninstall complete - the Exasol Personal Local Starter Kit has been removed."
+    Info "If a PATH entry for $script:BinDir remains in your profile, remove it manually if you no longer need it."
 }
 
 function Invoke-CmdVersion {
@@ -425,6 +550,7 @@ try {
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
         "skills-install" { Invoke-CmdSkillsInstall }
         "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
+        "uninstall"    { Invoke-CmdUninstall -AssumeYes:($RestArgs -contains "-Yes" -or $RestArgs -contains "--yes" -or $RestArgs -contains "-y") -DryRun:($RestArgs -contains "-DryRun" -or $RestArgs -contains "--dry-run" -or $RestArgs -contains "-n") }
         "logs"         { Invoke-CmdLogs }
         { $_ -in @("catalog", "catlog") } { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }
         { $_ -in @("help", "-h", "--help") } { Show-ExakitUsage }
