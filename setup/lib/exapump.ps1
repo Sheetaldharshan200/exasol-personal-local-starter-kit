@@ -591,10 +591,10 @@ function Show-ExakitDataLoadMenu {
         Info "Choose a data loading option"
         Write-Host "    1. Bundled sample dataset (TPC-H)"
         Write-Host "    2. Local CSV/text/Parquet file"
-        Write-Host "    3. Back"
         if ($InstallMode) {
-            Write-Host "    4. Skip for now"
+            Write-Host "    3. Skip for now"
         } else {
+            Write-Host "    3. Back"
             Write-Host "    4. Terminate"
         }
         $defaultChoice = "1"
@@ -613,13 +613,21 @@ function Show-ExakitDataLoadMenu {
             }
             { $_ -match '^(3|b|back)$' } {
                 if ($InstallMode) {
-                    Info "Returning to setup without loading data. Run it any time with: exakit data-load"
+                    Info "Skipping data load. Run it any time with: exakit data-load"
                 } else {
                     Info "Data loading terminated."
                 }
                 return
             }
-            { $_ -eq "4" -or $_ -eq "" } {
+            "4" {
+                if ($InstallMode) {
+                    Warn2 "Unknown data loading option: $choice"
+                    continue
+                }
+                Info "Data loading terminated."
+                return
+            }
+            "" {
                 if ($InstallMode) {
                     Info "Skipping data load. Run it any time with: exakit data-load"
                 } else {

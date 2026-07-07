@@ -489,10 +489,10 @@ exakit_data_load_menu() {
         info "Choose a data loading option"
         printf '    1. Bundled sample dataset (TPC-H)\n'
         printf '    2. Local CSV/text/Parquet file\n'
-        printf '    3. Back\n'
         if [ "$_mode" = "install" ]; then
-            printf '    4. Skip for now\n'
+            printf '    3. Skip for now\n'
         else
+            printf '    3. Back\n'
             printf '    4. Terminate\n'
         fi
         _default_choice="1"
@@ -511,13 +511,21 @@ exakit_data_load_menu() {
                 ;;
             3|b|B|back|Back|BACK)
                 if [ "$_mode" = "install" ]; then
-                    info "Returning to setup without loading data. Run it any time with: exakit data-load"
+                    info "Skipping data load. Run it any time with: exakit data-load"
                 else
                     info "Data loading terminated."
                 fi
                 return 0
                 ;;
-            4|"")
+            4)
+                if [ "$_mode" = "install" ]; then
+                    warn "Unknown data loading option: $_choice"
+                    continue
+                fi
+                info "Data loading terminated."
+                return 0
+                ;;
+            "")
                 if [ "$_mode" = "install" ]; then
                     info "Skipping data load. Run it any time with: exakit data-load"
                 else

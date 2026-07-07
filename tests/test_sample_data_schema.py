@@ -252,6 +252,31 @@ class LoadWiringTests(unittest.TestCase):
                         f"Guided data-load menu should not show advanced option: {removed_option}",
                     )
 
+    def test_install_data_load_menu_does_not_show_top_level_back(self) -> None:
+        menu_blocks = (
+            (
+                EXAPUMP_LIB.name,
+                _function_block(
+                    EXAPUMP_LIB.read_text(encoding="utf-8"),
+                    'if [ "$_mode" = "install" ]; then',
+                    'else\n            printf \'    3. Back',
+                ),
+            ),
+            (
+                EXAPUMP_PS1.name,
+                _function_block(
+                    EXAPUMP_PS1.read_text(encoding="utf-8"),
+                    "if ($InstallMode) {",
+                    "} else {\n            Write-Host \"    3. Back",
+                ),
+            ),
+        )
+        for menu_name, install_menu in menu_blocks:
+            with self.subTest(menu=menu_name):
+                self.assertIn("3. Skip for now", install_menu)
+                self.assertNotIn("3. Back", install_menu)
+                self.assertNotIn("4. Skip for now", install_menu)
+
     def test_local_file_data_load_can_return_to_menu(self) -> None:
         local_file_blocks = (
             (
