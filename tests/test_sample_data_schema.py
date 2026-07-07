@@ -22,6 +22,7 @@ SCHEMA_SQL = ROOT / "sql" / "01_create_schema.sql"
 LOAD_SQL = ROOT / "sql" / "02_load_data.sql"
 VERIFY_SQL = ROOT / "sql" / "03_verify_setup.sql"
 EXAPUMP_LIB = ROOT / "setup" / "lib" / "exapump.sh"
+EXAPUMP_PS1 = ROOT / "setup" / "lib" / "exapump.ps1"
 COMMON_LIB = ROOT / "setup" / "lib" / "common.sh"
 LOAD_DATA_SH = ROOT / "setup" / "load-data.sh"
 EXAKIT_CLI = ROOT / "setup" / "exakit"
@@ -66,6 +67,17 @@ def _csv_header(table_name: str) -> list[str]:
     csv_path = DATA_DIR / f"{table_name}.csv"
     with csv_path.open(newline="", encoding="utf-8") as handle:
         return next(csv.reader(handle))
+
+
+def _function_block(text: str, function_name: str, end_marker: str | None = None) -> str:
+    start = text.index(function_name)
+    if end_marker is not None:
+        next_function = text.find(end_marker, start + len(function_name))
+    else:
+        next_function = text.find("\nfunction ", start + len(function_name))
+    if next_function == -1:
+        next_function = len(text)
+    return text[start:next_function]
 
 
 class SchemaMatchesCsvTests(unittest.TestCase):
@@ -203,8 +215,100 @@ class LoadWiringTests(unittest.TestCase):
 
     def test_exakit_cli_exposes_load_data_command(self) -> None:
         cli = EXAKIT_CLI.read_text(encoding="utf-8")
-        self.assertIn("load-data)", cli, "exakit must dispatch a 'load-data' subcommand.")
-        self.assertIn("cmd_load_data", cli)
+        self.assertIn("data-load)", cli, "exakit must dispatch the single 'data-load' subcommand.")
+        self.assertNotIn("load-data)", cli, "exakit must not expose a duplicate 'load-data' subcommand.")
+        self.assertNotIn("mcp-configs)", cli, "exakit must not expose a temporary MCP config command.")
+        self.assertIn("cmd_data_load", cli)
+
+    def test_guided_data_load_menu_is_focused(self) -> None:
+        menu_blocks = (
+            (
+                EXAPUMP_LIB.name,
+                _function_block(
+                    EXAPUMP_LIB.read_text(encoding="utf-8"),
+                    "exakit_data_load_menu()",
+                    "\n# exakit_load_sample_data",
+                ),
+            ),
+            (EXAPUMP_PS1.name, _function_block(EXAPUMP_PS1.read_text(encoding="utf-8"), "function Show-ExakitDataLoadMenu")),
+        )
+        for menu_name, menu in menu_blocks:
+            with self.subTest(menu=menu_name):
+                self.assertIn("Bundled sample dataset (TPC-H)", menu)
+                self.assertIn("Local CSV/text/Parquet file", menu)
+                self.assertIn("Back", menu)
+                self.assertIn("Skip for now", menu)
+                self.assertIn("Terminate", menu)
+                for removed_option in (
+                    "Remote CSV/Text File",
+                    "Import from Another Database",
+                    "Import from Another Exasol",
+                    "Exapump",
+                    "SQL Script",
+                ):
+                    self.assertNotIn(
+                        removed_option,
+                        menu,
+                        f"Guided data-load menu should not show advanced option: {removed_option}",
+                    )
+
+    def test_install_data_load_menu_does_not_show_top_level_back(self) -> None:
+        menu_blocks = (
+            (
+                EXAPUMP_LIB.name,
+                _function_block(
+                    EXAPUMP_LIB.read_text(encoding="utf-8"),
+                    'if [ "$_mode" = "install" ]; then',
+                    'else\n            printf \'    3. Back',
+                ),
+            ),
+            (
+                EXAPUMP_PS1.name,
+                _function_block(
+                    EXAPUMP_PS1.read_text(encoding="utf-8"),
+                    "if ($InstallMode) {",
+                    "} else {\n            Write-Host \"    3. Back",
+                ),
+            ),
+        )
+        for menu_name, install_menu in menu_blocks:
+            with self.subTest(menu=menu_name):
+                self.assertIn("3. Skip for now", install_menu)
+                self.assertNotIn("3. Back", install_menu)
+                self.assertNotIn("4. Skip for now", install_menu)
+
+    def test_local_file_data_load_can_return_to_menu(self) -> None:
+        local_file_blocks = (
+            (
+                EXAPUMP_LIB.name,
+                _function_block(
+                    EXAPUMP_LIB.read_text(encoding="utf-8"),
+                    "exakit_load_local_file()",
+                    "\nexakit_load_remote_file()",
+                ),
+            ),
+            (EXAPUMP_PS1.name, _function_block(EXAPUMP_PS1.read_text(encoding="utf-8"), "function Import-ExakitLocalFile")),
+        )
+        for menu_name, local_file_flow in local_file_blocks:
+            with self.subTest(menu=menu_name):
+                self.assertIn("type back to return", local_file_flow)
+                self.assertIn("Please enter a local CSV/text/Parquet file path", local_file_flow)
+                self.assertIn("back to return", local_file_flow)
+                self.assertIn("Returning to data loading options.", local_file_flow)
+
+    def test_install_invokes_install_mode_menu(self) -> None:
+        common = COMMON_LIB.read_text(encoding="utf-8")
+        exapump_ps1 = EXAPUMP_PS1.read_text(encoding="utf-8")
+        self.assertIn(
+            "exakit_data_load_menu install",
+            common,
+            "Installer data-load offer must show 'Skip for now' instead of manual terminate wording.",
+        )
+        self.assertIn(
+            "Show-ExakitDataLoadMenu -InstallMode",
+            exapump_ps1,
+            "Windows installer data-load offer must show 'Skip for now' instead of manual terminate wording.",
+        )
 
 
 if __name__ == "__main__":

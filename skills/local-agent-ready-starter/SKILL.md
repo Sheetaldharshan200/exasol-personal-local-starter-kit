@@ -95,11 +95,8 @@ A returned timestamp means the local database works end to end. If `status` is n
 exakit mcp-setup
 ```
 
-Explain the two modes so the user chooses deliberately:
-- **temporary** — generates config files under `~/.exasol-starter-kit/mcp/`; changes **no**
-  client config. The user copies/merges them, then restarts the client. Safest default.
-- **permanent** — the kit backs up and edits the selected client configs (Claude Desktop,
-  Cursor, Codex) directly. The user just restarts the client afterward.
+Tell the user that setup backs up and edits the selected client configs (Claude Desktop,
+Cursor, Codex) directly. The user restarts the client afterward.
 
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not
 a background service). Verify with `exakit mcp-status` / `exakit mcp-validate`.
@@ -113,11 +110,11 @@ So the user is not staring at an empty database, load the bundled TPC-H sample (
 orders, line items, parts, suppliers) into the `STARTER_KIT` schema:
 
 ```bash
-bash ~/.exasol-starter-kit/kit/setup/load-data.sh
+exakit data-load
 ```
 
-Safe to run any time; it reports row counts and self-skips if already loaded (pass `--force`
-to reload). If it reports files as *pending*, the sample data has not shipped in this build —
+Safe to run any time; choose the bundled sample option to load it. Use `exakit data-load --force`
+to reload the bundled sample directly. If it reports files as *pending*, the sample data has not shipped in this build —
 the user can still continue with their own data:
 `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 

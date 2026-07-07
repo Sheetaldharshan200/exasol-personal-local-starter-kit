@@ -312,3 +312,86 @@ function Remove-Nano {
     }
     Set-ExakitManifestValue "runtime.status" "removed"
 }
+
+function Update-Nano {
+    param([Parameter(Mandatory)][string]$LatestTag)
+    Resolve-NanoNames
+    $currentImage = Get-ExakitManifestValue "runtime.image"
+    $currentTag = if ($currentImage -and $currentImage.Contains(":")) { ($currentImage -split ":")[-1] } else { "" }
+    if ($currentTag -eq $LatestTag) { Ok "Exasol Nano is already current ($currentTag)"; return }
+
+    $engine = Get-NanoEngine
+    $image = "docker.io/$($script:NanoImage):$LatestTag"
+    $oldImage = if ($currentTag) { "docker.io/$($script:NanoImage):$currentTag" } else { "" }
+    $snapshot = New-NanoUpdateSnapshot -CurrentTag $currentTag -LatestTag $LatestTag
+    Info "Updating Exasol Nano $currentTag -> $LatestTag"
+    Info "The container will be recreated; the data volume '$($script:NanoVolume)' is kept."
+    Info "Pre-update runtime snapshot: $snapshot"
+    $code = Invoke-ExakitLogged $engine "pull" $image
+    if ($code -ne 0) { Fail "Could not pull $image" }
+
+    if (Test-NanoContainerExists) {
+        if (Test-NanoContainerRunning) {
+            $code = Invoke-ExakitLogged $engine "stop" "-t" "60" $script:NanoContainer
+            if ($code -ne 0) { Fail "Could not stop $($script:NanoContainer)" }
+        }
+        $code = Invoke-ExakitLogged $engine "rm" "-f" $script:NanoContainer
+        if ($code -ne 0) { Fail "Could not remove old Nano container" }
+    }
+
+    $code = Invoke-ExakitLogged $engine "run" "-d" "--name" $script:NanoContainer `
+        "--shm-size=512mb" "--pids-limit=-1" `
+        "-p" "127.0.0.1:$($script:DbPort):8563" `
+        "-v" "$($script:NanoVolume):/exa" `
+        $image
+    if ($code -ne 0) {
+        Restore-PreviousNanoContainer -Image $oldImage
+        Fail "Could not start updated Nano container; attempted to restore the previous image."
+    }
+    $script:NanoTag = $LatestTag
+    try {
+        Wait-NanoReady
+    } catch [ExakitFailException] {
+        Restore-PreviousNanoContainer -Image $oldImage
+        Fail "Updated Nano container did not become ready; attempted to restore the previous image."
+    }
+    Set-NanoManifest
+    Set-ExakitManifestValue "desired.runtime.nano" $script:NanoTag
+    Set-ExakitManifestValue "backups.nano_update.latest" $snapshot
+    Ok "Nano updated; data volume kept: $($script:NanoVolume)"
+}
+
+function New-NanoUpdateSnapshot {
+    param([string]$CurrentTag, [Parameter(Mandatory)][string]$LatestTag)
+    $backupDir = Join-Path $script:ExakitHome "backups\nano-update"
+    New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+    $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $safeCurrent = if ($CurrentTag) { $CurrentTag } else { "unknown" }
+    $snapshot = Join-Path $backupDir "$stamp-$safeCurrent-to-$LatestTag.json"
+    $record = [pscustomobject]@{
+        created_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        operation = "nano_update"
+        from = $safeCurrent
+        to = $LatestTag
+        container = $script:NanoContainer
+        volume = $script:NanoVolume
+        image = Get-ExakitManifestValue "runtime.image"
+    }
+    $record | ConvertTo-Json -Depth 6 | Set-Content -Path $snapshot
+    try { Protect-ExakitFile $snapshot } catch { }
+    return $snapshot
+}
+
+function Restore-PreviousNanoContainer {
+    param([string]$Image)
+    if (-not $Image) { return }
+    Warn2 "Restoring the previous Nano container image ($Image)"
+    $engine = Get-NanoEngine
+    Invoke-ExakitLogged $engine "rm" "-f" $script:NanoContainer | Out-Null
+    $code = Invoke-ExakitLogged $engine "run" "-d" "--name" $script:NanoContainer `
+        "--shm-size=512mb" "--pids-limit=-1" `
+        "-p" "127.0.0.1:$($script:DbPort):8563" `
+        "-v" "$($script:NanoVolume):/exa" `
+        $Image
+    if ($code -ne 0) { Warn2 "Could not restore the previous Nano container automatically." }
+}

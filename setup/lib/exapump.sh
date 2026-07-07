@@ -2,7 +2,7 @@
 # exapump.sh — exapump installation and connection module.
 #
 # Sourced by setup scripts after common.sh, detect.sh, and a runtime module.
-# Installs the pinned exapump release binary (checksum-verified against the
+# Installs the resolved exapump release binary (checksum-verified against the
 # digests published by the release API), writes a dedicated connection
 # profile, and validates the connection with SELECT 1.
 #
@@ -29,7 +29,7 @@ exapump_asset_name() {
     echo "exapump-${_ver}-${_osname}-${_archname}"
 }
 
-# Digests of the pinned release (published by the release API). When the
+# Digests of the bundled fallback release (published by the release API). When the
 # version is overridden the digest is fetched from the API instead.
 exapump_pinned_sha256() {
     case "$1" in
@@ -42,10 +42,12 @@ exapump_pinned_sha256() {
 }
 
 exapump_release_digest_from_api() {
-    require_python3
-    curl -fsSL --retry 3 --connect-timeout 15 \
+    _json="$(curl -fsSL --retry 3 --connect-timeout 15 \
         "https://api.github.com/repos/${EXAKIT_EXAPUMP_REPO}/releases/tags/v${EXAKIT_EXAPUMP_VERSION}" \
-        2>/dev/null | run_python -c '
+        2>/dev/null || true)"
+    [ -n "$_json" ] || return 1
+    if exakit_can_run_python; then
+        printf '%s' "$_json" | run_python -c '
 import json, sys
 name = sys.argv[1]
 doc = json.load(sys.stdin)
@@ -54,10 +56,26 @@ for asset in doc.get("assets", []):
         print(asset["digest"].split(":", 1)[1])
         break
 ' "$1"
+        return $?
+    fi
+    # Best-effort shell fallback for GitHub's asset object. If this misses, the
+    # caller already warns and continues rather than pretending verification ran.
+    printf '%s' "$_json" | tr '{' '\n' | awk -v name="$1" '
+        index($0, "\"name\":\"" name "\"") || index($0, "\"name\": \"" name "\"") {
+            if (match($0, /"digest"[[:space:]]*:[[:space:]]*"sha256:[^"]+"/)) {
+                digest = substr($0, RSTART, RLENGTH)
+                sub(/^.*sha256:/, "", digest)
+                sub(/"$/, "", digest)
+                print digest
+                exit
+            }
+        }'
 }
 
 exapump_cli() {
-    if command -v exapump >/dev/null 2>&1; then
+    if [ -x "$EXAKIT_EXAPUMP_BIN" ]; then
+        echo "$EXAKIT_EXAPUMP_BIN"
+    elif command -v exapump >/dev/null 2>&1; then
         command -v exapump
     else
         echo "$EXAKIT_EXAPUMP_BIN"
@@ -68,7 +86,7 @@ exapump_install() {
     [ "$(detect_arch)" != "unsupported" ] || \
         die "Unsupported CPU architecture: $(uname -m). exapump binaries exist for x86_64 and arm64 only."
 
-    if command -v exapump >/dev/null 2>&1 || [ -x "$EXAKIT_EXAPUMP_BIN" ]; then
+    if [ "${EXAKIT_FORCE_COMPONENT_INSTALL:-0}" != "1" ] && { command -v exapump >/dev/null 2>&1 || [ -x "$EXAKIT_EXAPUMP_BIN" ]; }; then
         # Trust the existing binary only if it actually runs — an interrupted
         # earlier download can leave a broken file at the same path.
         if "$(exapump_cli)" --version >/dev/null 2>&1; then
@@ -247,6 +265,24 @@ exapump_record_manifest() {
     manifest_set components.exapump.path "$(exapump_cli)"
 }
 
+exapump_update() {
+    _latest="$(exakit_component_latest exapump)"
+    [ -n "$_latest" ] || die "Could not resolve the latest exapump release."
+    _current="$(manifest_get components.exapump.version 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "exapump is already current ($_current)"
+        return 0
+    fi
+    info "Updating exapump ${_current:-unknown} -> $_latest"
+    EXAKIT_EXAPUMP_VERSION="$_latest"
+    EXAKIT_FORCE_COMPONENT_INSTALL=1
+    export EXAKIT_EXAPUMP_VERSION EXAKIT_FORCE_COMPONENT_INSTALL
+    exapump_install
+    exapump_create_profile
+    manifest_set desired.exapump "$EXAKIT_EXAPUMP_VERSION"
+    ok "exapump updated without changing database data"
+}
+
 exakit_table_name_from_path() {
     _base="$(basename "$1")"
     _base="${_base%%\?*}"
@@ -326,12 +362,34 @@ exakit_prompt_optional_verification() {
 }
 
 exakit_load_local_file() {
-    _raw_path="$(prompt_text "Local CSV/text file path")"
-    _path="$(exakit_normalize_path "$_raw_path")"
-    [ -s "$_path" ] || die "File not found or empty: $_path"
+    while :; do
+        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (type back to return)")"
+        case "$_raw_path" in
+            b|B|back|Back|BACK)
+                info "Returning to data loading options."
+                return 2
+                ;;
+        esac
+        if [ -z "$_raw_path" ]; then
+            warn "Please enter a local CSV/text/Parquet file path, or type back to return."
+            continue
+        fi
+        _path="$(exakit_normalize_path "$_raw_path")"
+        [ -s "$_path" ] && break
+        warn "File not found or empty: $_path"
+    done
     _default_table="${EXAKIT_SCHEMA:-STARTER_KIT}.$(exakit_table_name_from_path "$_path")"
-    _target="$(prompt_text "Target table (SCHEMA.TABLE)" "$_default_table")"
-    exakit_validate_table_target "$_target" || die "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    while :; do
+        _target="$(prompt_text "Target table (SCHEMA.TABLE, back to return)" "$_default_table")"
+        case "$_target" in
+            b|B|back|Back|BACK)
+                info "Returning to data loading options."
+                return 2
+                ;;
+        esac
+        exakit_validate_table_target "$_target" && break
+        warn "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    done
     _target="$(exakit_upper_table_target "$_target")"
     exakit_ensure_schema "$(exakit_target_schema "$_target")"
     exapump_upload "$_path" "$_target"
@@ -423,40 +481,67 @@ exakit_show_exapump_guidance() {
 }
 
 exakit_data_load_menu() {
+    _mode="${1:-manual}"
     [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
         die "No exapump connection profile is recorded — re-run the installer, then retry."
 
-    info "Choose a data loading option"
-    printf '    1. Default: load bundled data/ folder (TPC-H sample)\n'
-    printf '    2. Local CSV/Text File\n'
-    printf '    3. Remote CSV/Text File\n'
-    printf '    4. Import from Another Database\n'
-    printf '    5. Import from Another Exasol\n'
-    printf '    6. Exapump\n'
-    printf '    7. SQL Script\n'
-    printf '    8. Skip for now\n'
-    _default_choice="1"
-    _choice="$(prompt_text "Choose data option" "$_default_choice")"
-    case "$_choice" in
-        1)
-            _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
-            exakit_load_sample_data "$_kit_root"
-            ;;
-        2) exakit_load_local_file ;;
-        3) exakit_load_remote_file ;;
-        4) exakit_show_database_import_guidance "Import from Another Database" ;;
-        5) exakit_show_database_import_guidance "Import from Another Exasol" ;;
-        6) exakit_show_exapump_guidance ;;
-        7) exakit_run_sql_script ;;
-        8|"") info "Skipping data load. Run it any time with: exakit data-load" ;;
-        *) die "Unknown data loading option: $_choice" ;;
-    esac
+    while :; do
+        info "Choose a data loading option"
+        printf '    1. Bundled sample dataset (TPC-H)\n'
+        printf '    2. Local CSV/text/Parquet file\n'
+        if [ "$_mode" = "install" ]; then
+            printf '    3. Skip for now\n'
+        else
+            printf '    3. Back\n'
+            printf '    4. Terminate\n'
+        fi
+        _default_choice="1"
+        _choice="$(prompt_text "Choose data option" "$_default_choice")"
+        case "$_choice" in
+            1)
+                _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
+                exakit_load_sample_data "$_kit_root"
+                return 0
+                ;;
+            2)
+                exakit_load_local_file
+                _local_status=$?
+                [ "$_local_status" -eq 2 ] && continue
+                return "$_local_status"
+                ;;
+            3|b|B|back|Back|BACK)
+                if [ "$_mode" = "install" ]; then
+                    info "Skipping data load. Run it any time with: exakit data-load"
+                else
+                    info "Data loading terminated."
+                fi
+                return 0
+                ;;
+            4)
+                if [ "$_mode" = "install" ]; then
+                    warn "Unknown data loading option: $_choice"
+                    continue
+                fi
+                info "Data loading terminated."
+                return 0
+                ;;
+            "")
+                if [ "$_mode" = "install" ]; then
+                    info "Skipping data load. Run it any time with: exakit data-load"
+                else
+                    info "Data loading terminated."
+                fi
+                return 0
+                ;;
+            *) warn "Unknown data loading option: $_choice" ;;
+        esac
+    done
 }
 
 # exakit_load_sample_data <kit_root> [--force] — the full sample-data pipeline:
 # create the schema, bulk-load every data/*.csv, run any transform, verify,
 # then record the result in the manifest. One implementation, shared by
-# setup/load-data.sh, the interactive installer offer, and `exakit load-data`,
+# setup/load-data.sh, the interactive installer offer, and `exakit data-load --force`,
 # so the three entry points cannot drift apart.
 #
 # Uses die() for hard failures (missing profile, failed load/verify). Callers

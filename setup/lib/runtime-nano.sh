@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # runtime-nano.sh — Exasol Nano container runtime module (Linux, WSL, Windows).
 #
-# Sourced by setup scripts after common.sh and detect.sh. Runs the pinned
-# exasol/nano image under Docker (preferred) or Podman (fallback), with:
+# Sourced by setup scripts after common.sh and detect.sh. Runs the resolved
+# exasol/nano image tag under Docker (preferred) or Podman (fallback), with:
 #   - a persistent named volume for /exa (database state survives restarts)
 #   - the SQL port bound to localhost only
 #   - a generated SYS password injected on first deployment via secret mount
@@ -159,7 +159,7 @@ nano_start_existing() {
     nano_wait_ready
 }
 
-# nano_install — pull the pinned image and start the container (first run
+# nano_install — pull the resolved image and start the container (first run
 # deploys the database with a generated SYS password). Idempotent.
 nano_install() {
     _engine="$(nano_engine)"
@@ -231,12 +231,17 @@ nano_install() {
 
 # nano_wait_ready — poll container logs until the database reports ready.
 nano_wait_ready() {
+    nano_wait_ready_soft || die "Nano startup timed out"
+}
+
+nano_wait_ready_soft() {
     info "Waiting for the database to come up (timeout: ${EXAKIT_NANO_READY_TIMEOUT}s)"
     _waited=0
     while [ "$_waited" -lt "$EXAKIT_NANO_READY_TIMEOUT" ]; do
         if ! nano_container_running; then
             "$(nano_engine)" logs --tail 30 "$EXAKIT_NANO_CONTAINER" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
-            die "Nano container stopped unexpectedly (see log)"
+            warn "Nano container stopped unexpectedly (see log)"
+            return 1
         fi
         if nano_ready_in_logs; then
             ok "Database is up (took ~${_waited}s)"
@@ -253,7 +258,7 @@ nano_wait_ready() {
     printf '    If a first install was interrupted, the data volume may be half-initialized.\n' >&2
     printf '    Reset and retry:    %s rm -f %s && %s volume rm %s\n' \
         "$(nano_engine)" "$EXAKIT_NANO_CONTAINER" "$(nano_engine)" "$EXAKIT_NANO_VOLUME" >&2
-    die "Nano startup timed out"
+    return 1
 }
 
 nano_record_manifest() {
@@ -323,4 +328,91 @@ nano_teardown() {
         info "Data volume $EXAKIT_NANO_VOLUME kept (pass --data to remove it)"
     fi
     manifest_set runtime.status "removed"
+}
+
+nano_update() {
+    nano_resolve_names
+    _latest="$(exakit_component_latest nano)"
+    [ -n "$_latest" ] || die "Could not resolve the latest Exasol Nano image tag."
+    _current="$(exakit_component_current nano 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "Exasol Nano is already current ($_current)"
+        return 0
+    fi
+
+    _engine="$(nano_engine)"
+    _image="docker.io/${EXAKIT_NANO_IMAGE}:${_latest}"
+    _old_image="docker.io/${EXAKIT_NANO_IMAGE}:${_current}"
+    _snapshot="$(nano_update_snapshot "$_current" "$_latest")"
+    info "Updating Exasol Nano ${_current:-unknown} -> $_latest"
+    info "The container will be recreated; the data volume '$EXAKIT_NANO_VOLUME' is kept."
+    info "Pre-update runtime snapshot: $_snapshot"
+    run_logged "$_engine" pull "$_image" || die "Could not pull $_image"
+
+    if nano_container_exists; then
+        if nano_container_running; then
+            info "Stopping Nano before recreating the container"
+            run_logged "$_engine" stop -t 60 "$EXAKIT_NANO_CONTAINER" || die "Could not stop $EXAKIT_NANO_CONTAINER"
+        fi
+        run_logged "$_engine" rm -f "$EXAKIT_NANO_CONTAINER" || die "Could not remove old Nano container"
+    fi
+
+    info "Starting Nano with the existing data volume"
+    run_logged "$_engine" run -d \
+        --name "$EXAKIT_NANO_CONTAINER" \
+        --shm-size=512mb \
+        --pids-limit=-1 \
+        -p "127.0.0.1:${EXAKIT_DB_PORT}:8563" \
+        -v "${EXAKIT_NANO_VOLUME}:/exa" \
+        "$_image" || {
+            nano_restore_previous_container "$_old_image"
+            die "Could not start updated Nano container; attempted to restore the previous image."
+        }
+    EXAKIT_NANO_TAG="$_latest"
+    export EXAKIT_NANO_TAG
+    if ! nano_wait_ready_soft; then
+        nano_restore_previous_container "$_old_image"
+        die "Updated Nano container did not become ready; attempted to restore the previous image."
+    fi
+    nano_record_manifest
+    manifest_set desired.runtime.nano "$EXAKIT_NANO_TAG"
+    manifest_set backups.nano_update.latest "$_snapshot"
+    ok "Nano updated; data volume kept: $EXAKIT_NANO_VOLUME"
+}
+
+nano_update_snapshot() {
+    _current="$1"
+    _latest="$2"
+    _backup_dir="$EXAKIT_HOME/backups/nano-update"
+    _stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    _snapshot="$_backup_dir/${_stamp}-${_current:-unknown}-to-${_latest}.json"
+    mkdir -p "$_backup_dir"
+    chmod 700 "$EXAKIT_HOME/backups" "$_backup_dir" 2>/dev/null || true
+    {
+        printf '{\n'
+        printf '  "created_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '  "operation": "nano_update",\n'
+        printf '  "from": "%s",\n' "${_current:-unknown}"
+        printf '  "to": "%s",\n' "$_latest"
+        printf '  "container": "%s",\n' "$EXAKIT_NANO_CONTAINER"
+        printf '  "volume": "%s",\n' "$EXAKIT_NANO_VOLUME"
+        printf '  "image": "%s"\n' "$(manifest_get runtime.image 2>/dev/null || true)"
+        printf '}\n'
+    } > "$_snapshot"
+    chmod 600 "$_snapshot" 2>/dev/null || true
+    printf '%s\n' "$_snapshot"
+}
+
+nano_restore_previous_container() {
+    _old_image="$1"
+    [ -n "$_old_image" ] && [ "$_old_image" != "docker.io/${EXAKIT_NANO_IMAGE}:" ] || return 0
+    warn "Restoring the previous Nano container image ($_old_image)"
+    run_logged "$(nano_engine)" rm -f "$EXAKIT_NANO_CONTAINER" || true
+    run_logged "$(nano_engine)" run -d \
+        --name "$EXAKIT_NANO_CONTAINER" \
+        --shm-size=512mb \
+        --pids-limit=-1 \
+        -p "127.0.0.1:${EXAKIT_DB_PORT}:8563" \
+        -v "${EXAKIT_NANO_VOLUME}:/exa" \
+        "$_old_image" || warn "Could not restore the previous Nano container automatically."
 }

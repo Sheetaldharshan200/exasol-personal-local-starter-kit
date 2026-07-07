@@ -7,7 +7,7 @@
 # Separate from the installer on purpose: the one-command install brings up
 # the components; this script fills the database, and can be re-run any time
 # (every run is fully logged — that is the repeatability story). The installer
-# also offers a guided import menu, while `exakit load-data` invokes this same
+# also offers a guided import menu, while `exakit data-load --force` invokes this same
 # sample pipeline (exakit_load_sample_data in setup/lib/exapump.sh).
 #
 # Consumes files delivered with the kit, referenced by path:

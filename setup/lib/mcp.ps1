@@ -544,43 +544,12 @@ function Invoke-McpModule {
     }
 }
 
-function Update-ExakitMcpConfigs {
-    $repoRoot = Get-ExakitRepoRoot
-    if (-not $repoRoot) { Warn2 "Could not find the MCP package source to generate client configs."; return $false }
-    # Set-McpReadonlyAccess Fails (throws) with its own "x ..." message on a
-    # real problem; don't swallow it silently - re-surface it so the reason
-    # is visible, not just a generic "generation failed" downstream.
-    try {
-        Set-McpReadonlyAccess
-    } catch [ExakitFailException] {
-        Warn2 "Could not provision the read-only MCP database user: $($_.Exception.Message)"
-        return $false
-    }
-    Info "Generating ready-made MCP client configs"
-    $result = Invoke-McpModule @("export-runtime-configs", "--runtime-root", $script:ExakitHome)
-    if ($script:LogFile) { $result.Output | Add-Content -Path $script:LogFile }
-    if ($result.ExitCode -ne 0) {
-        Warn2 "MCP config generation failed."
-        # Surface the actual Python/module error inline instead of hiding it
-        # in the log - that text (missing module, import error, bad runtime
-        # root) is what's needed to fix it.
-        if ("$($result.Output)".Trim()) {
-            Write-Host "  Details:" -ForegroundColor Yellow
-            "$($result.Output)".Trim() -split "`n" | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
-        }
-        return $false
-    }
-    Set-ExakitStepDone "mcp_configs"
-    Ok "MCP client configs are ready in $script:McpDir"
-    return $true
-}
-
 function Invoke-McpSetupCli {
-    param([Parameter(Mandatory)][string]$Mode, [Parameter(Mandatory)][string[]]$Clients)
+    param([Parameter(Mandatory)][string[]]$Clients)
     $repoRoot = Get-ExakitRepoRoot
     if (-not $repoRoot) { Warn2 "Could not find the MCP package source to configure MCP clients."; return $null }
     try { Set-McpReadonlyAccess } catch { return $null }
-    $result = Invoke-McpModule (@("setup-runtime-clients", "--runtime-root", $script:ExakitHome, "--mode", $Mode, "--clients") + $Clients)
+    $result = Invoke-McpModule (@("setup-runtime-clients", "--runtime-root", $script:ExakitHome, "--clients") + $Clients)
     if ($result.ExitCode -ne 0) {
         if ($script:LogFile) { $result.Output | Add-Content -Path $script:LogFile }
         Warn2 "MCP client setup failed (see log)."
@@ -617,12 +586,10 @@ function Show-McpSetupSummary {
     $clients = @($doc.selected_clients) | ForEach-Object { if ($script:McpClientLabels.ContainsKey($_)) { $script:McpClientLabels[$_] } else { $_ } }
     Write-Host ""
     Write-Host "  MCP setup summary"
-    Write-Host "  Mode:     $($doc.mode)"
-    if ($doc.mode -eq "temporary") { Write-Host "  Meaning:  Generated config files only; no AI client config was changed." }
-    elseif ($doc.mode -eq "permanent") { Write-Host "  Meaning:  Wrote managed MCP entries into the selected client config files." }
+    Write-Host "  Mode:     permanent"
+    Write-Host "  Meaning:  Wrote managed MCP entries into the selected client config files."
     Write-Host "  Clients:  $(if ($clients) { $clients -join ', ' } else { 'none' })"
     Write-Host "  Status:   $($doc.status)"
-    if ($doc.mode -eq "temporary") { Write-Host "  Bundle:   $($doc.bundle_dir)" }
     foreach ($artifact in @($doc.artifacts)) {
         $label = if ($script:McpClientLabels.ContainsKey($artifact.client)) { $script:McpClientLabels[$artifact.client] } else { $artifact.client }
         Write-Host "  File:     $label -> $($artifact.path)"
@@ -657,18 +624,10 @@ function Show-McpReadyPanel {
     Write-Host "  Database:      $(if ($dsn) { $dsn } else { 'unknown' })"
     Write-Host "  DB user:       $(if ($mcpUser) { $mcpUser } else { 'mcp_readonly' }) (read-only)"
     if ($tls -eq "self-signed") { Write-Host "  TLS:           local self-signed certificate accepted for 127.0.0.1" }
-    Write-Host "  Config bundle: $script:McpDir"
+    Write-Host "  Managed state: $script:McpDir"
     Write-Host ""
-    if ($Mode -eq "temporary") {
-        Write-Host "  Temporary mode did not change your AI client config."
-        Write-Host "  Next steps:"
-        Write-Host "  1. Open the generated config file for your client from the bundle above."
-        Write-Host "  2. Copy or merge it into that AI client MCP config."
-        Write-Host "  3. Restart the client."
-    } else {
-        Write-Host "  Permanent mode updated the selected client config files."
-        Write-Host "  Next step: restart the selected client now."
-    }
+    Write-Host "  Permanent setup updated the selected client config files."
+    Write-Host "  Next step: restart the selected client now."
     Write-Host "  After setup/restart, look for an MCP server named: exasol"
     Write-Host ""
     Write-Host "  First prompt to try in your AI client:"
@@ -730,22 +689,7 @@ function Get-McpClientsFromArgs {
 }
 
 function Invoke-McpSetup {
-    Info "Choose how you want MCP set up in your AI clients"
-    Write-Host "    1. Default: Permanent setup (edit selected clients now)"
-    Write-Host "    2. Temporary setup (copy/paste instructions only)"
-    Write-Host ""
-    Write-Host "    Quick guide:"
-    Write-Host "       Choose 1 if you want the kit to configure the apps for you."
-    Write-Host "       Choose 2 if you only want files and copy/paste steps."
-    $mode = $null
-    while (-not $mode) {
-        $choice = Read-ExakitPrompt "Choose setup mode (1 permanent, 2 temporary)" "1"
-        switch ($choice) {
-            { $_ -in @("1", "permanent", "Permanent", "default", "Default") } { $mode = "permanent" }
-            { $_ -in @("2", "temporary", "Temporary") } { $mode = "temporary" }
-            default { Warn2 "Please enter 1 for permanent or 2 for temporary." }
-        }
-    }
+    Info "MCP setup will permanently edit the selected AI client config files."
 
     Write-Host ""
     Info "Choose one or more clients"
@@ -760,11 +704,11 @@ function Invoke-McpSetup {
         if (-not $clients) { Warn2 "Please choose valid client numbers, for example 1,2,3 or all." }
     }
 
-    Info "Applying MCP setup ($mode mode)"
-    $resultJson = Invoke-McpSetupCli -Mode $mode -Clients $clients
+    Info "Applying permanent MCP setup"
+    $resultJson = Invoke-McpSetupCli -Clients $clients
     if ($resultJson) { Show-McpSetupSummary $resultJson }
     if (-not $resultJson) { return $false }
-    Show-McpReadyPanel $mode
+    Show-McpReadyPanel "permanent"
     Ok "MCP setup guidance is ready."
     return $true
 }
@@ -789,6 +733,20 @@ function Invoke-McpRestore {
     $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "cursor", "codex") -SnapshotId $SnapshotId
     if ($resultJson) { Show-McpOperationSummary $resultJson }
     return [bool]$resultJson
+}
+
+function New-McpUpdateSnapshot {
+    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "cursor", "codex")
+    if (-not $resultJson) { Warn2 "MCP pre-update snapshot was not created; generated configs will still be refreshed."; return "" }
+    Show-McpOperationSummary $resultJson
+    try {
+        $doc = $resultJson | ConvertFrom-Json
+        if ($doc.backup_reference) {
+            Set-ExakitManifestValue "backups.mcp_update.latest" $doc.backup_reference
+            return $doc.backup_reference
+        }
+    } catch { }
+    return ""
 }
 
 # Request-ExakitMcpSetupOffer - interactively offer to set up MCP in the

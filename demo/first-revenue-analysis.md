@@ -8,7 +8,7 @@ This is the kit's core loop, done once, end to end: **ask â†’ inspect the SQL â†
 2. AI assistant connected (see your OS quickstart or [QUICKSTART.md](../QUICKSTART.md) step 4)
 3. Sample data loaded (the installer offers this; run it yourself any time with):
    ```bash
-   exakit load-data
+   exakit data-load
    ```
    You can also point the workflow at any data you upload yourself (`exapump upload yourfile.csv --table STARTER_KIT.MYDATA -p starter-kit`).
 

@@ -83,9 +83,9 @@ Run:
 exakit mcp-setup
 ```
 
-Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
+The setup backs up and edits the selected supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
 
-When the kit can detect the local MCP launcher path, it writes that exact path into the generated client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
+When the kit can detect the local MCP launcher path, it writes that exact path into the client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
 
 ### Let an AI assistant drive the kit (the skill)
 
@@ -112,7 +112,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 
-Prefer your own data? Run `exakit data-load` — a guided menu that loads the bundled sample, a **local or remote CSV**, a **SQL script**, or imports **from another database (or another Exasol)**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
+Prefer your own data? Run `exakit data-load` — a focused guided menu that loads the bundled sample or a **local CSV, text, or Parquet file**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 ### Day-to-day
 
@@ -122,7 +122,6 @@ exakit info
 exakit stop
 exakit start
 exakit data-load
-exakit load-data
 exakit skills-install
 exakit mcp-status
 exakit mcp-validate
@@ -156,7 +155,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 - **No preinstalled Python required** — the setup uses `python3` when present, otherwise it bootstraps a managed runtime through `uv`.
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.
-- **Pinned versions** — component versions are pinned and can be overridden with environment variables when needed.
+- **Version-aware updates** — installs resolve the latest component versions by default on Unix and Windows, record what was installed, and expose `exakit update-check` plus targeted updates such as `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, and `exakit update all`. Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan`, `exakit update personal --backup`, then `exakit update personal --apply`. Nano runtime updates keep the data volume, create pre-update runtime snapshot metadata, and try to restore the previous container image if the new one fails to start.
 - **Reversible lifecycle** — `exakit` supports status, configure, validate, repair, backup/restore, remove, doctor, and teardown flows.
 
 ## Repository layout

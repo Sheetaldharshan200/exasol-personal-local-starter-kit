@@ -51,13 +51,13 @@ Run the guided MCP setup:
 exakit mcp-setup
 ```
 
-Choose `temporary` for copy/paste instructions only: files are generated in `~/.exasol-starter-kit/mcp/`, and no AI client config is changed until you copy or merge them yourself. Choose `permanent` when you want the kit to back up and edit the supported client config files for Claude Desktop, Cursor, or Codex.
+The setup backs up and edits the selected supported client config files for Claude Desktop, Cursor, or Codex.
 
-When the kit can resolve the local MCP launcher path, it writes that exact path into the generated config instead of assuming `uvx` is available on every desktop app's PATH. That makes the same bundle more portable across macOS, Linux, and Windows clients.
+When the kit can resolve the local MCP launcher path, it writes that exact path into the client config instead of assuming `uvx` is available on every desktop app's PATH. That keeps setup portable across macOS, Linux, and Windows clients.
 
-For the local Exasol Personal runtime, the generated MCP config also sets `EXA_SSL_CERT_VALIDATION=no`. This matches the local `127.0.0.1` self-signed certificate setup; use a trusted CA instead for a real remote or shared production database.
+For the local Exasol Personal runtime, the managed MCP config also sets `EXA_SSL_CERT_VALIDATION=no`. This matches the local `127.0.0.1` self-signed certificate setup; use a trusted CA instead for a real remote or shared production database.
 
-After temporary setup, copy or merge the generated config, then restart the client. After permanent setup, just restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
+After setup, restart the selected client and look for an MCP server named `exasol`. The server is started by the AI client on demand over stdio; it is not a separate background service.
 
 ### Optional — let your AI agent run the kit for you
 
@@ -71,16 +71,16 @@ Then, in a **fresh** agent session, say **"setup starter kit"** — it checks st
 
 ## 5. Ask your first question
 
-The installer offers a guided data loading menu after exapump is ready and before MCP setup. Open it any time for local files, remote files, database imports, Exapump help, or SQL scripts; the default option loads and verifies the bundled `data/` folder:
+The installer offers a focused data loading menu after exapump is ready and before MCP setup. Open it any time for the bundled sample or a local CSV, text, or Parquet file; the default option loads and verifies the bundled `data/` folder:
 
 ```bash
 exakit data-load
 ```
 
-If you only want the bundled sample dataset, this command is safe to run any time and idempotent:
+If you only want to reload the bundled sample dataset without opening the menu, use `--force`:
 
 ```bash
-exakit load-data           # or: exakit load-data --force to reload
+exakit data-load --force
 ```
 
 Then ask your assistant something like:

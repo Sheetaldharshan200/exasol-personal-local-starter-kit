@@ -26,7 +26,7 @@ class RuntimeCLIErrorCaseTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self._temp_dir, ignore_errors=True)
 
-    def test_export_runtime_configs_fails_when_mcp_connection_missing(self) -> None:
+    def test_export_runtime_configs_command_is_not_available(self) -> None:
         self._write_manifest(components={})
         result = subprocess.run(
             [
@@ -43,7 +43,7 @@ class RuntimeCLIErrorCaseTests(unittest.TestCase):
             text=True,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("runtime_mcp_connection_missing", result.stderr)
+        self.assertIn("invalid choice: 'export-runtime-configs'", result.stderr)
 
     def test_validate_runtime_operation_fails_when_mcp_connection_unvalidated(self) -> None:
         self._write_manifest(

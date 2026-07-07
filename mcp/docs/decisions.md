@@ -149,3 +149,19 @@ Use structured operation results with status, findings, changes, artifacts, veri
 - Better operator and installer visibility
 - Clearer recoverable-versus-terminal failure semantics
 - Slightly more verbose result handling for callers
+
+## ADR-0010 Latest-by-default with explicit recovery signals
+
+### Context
+
+The README promises latest-version installs and version-aware updates, but the Windows setup path previously initialized shared component versions from pinned defaults while Unix resolved latest versions first.
+
+### Decision
+
+All first-install paths use latest-by-default component resolution with explicit fallback versions, and update paths must surface their recovery behavior before mutation.
+
+### Consequences
+
+- Windows and Unix installs follow the same version policy.
+- Offline installs remain deterministic through fallback versions.
+- Update wrappers must keep manifest records and snapshot/restore messages honest, even when a snapshot is best-effort rather than a full data backup.

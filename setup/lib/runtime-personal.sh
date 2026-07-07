@@ -2,7 +2,7 @@
 # runtime-personal.sh — Exasol Personal local runtime module (macOS).
 #
 # Sourced by setup scripts after common.sh and detect.sh. Installs the Exasol
-# launcher from the pinned GitHub release (checksum-verified) and deploys a
+# launcher from the resolved GitHub release (checksum-verified) and deploys a
 # local database with `exasol install local`.
 #
 # Launcher facts:
@@ -51,10 +51,10 @@ personal_release_url() {
 
 # personal_install_launcher — download, verify, and install the `exasol` CLI.
 # An already-installed launcher is only accepted if it supports the 'local'
-# preset (older releases do not); otherwise the pinned version is installed
+# preset (older releases do not); otherwise the resolved version is installed
 # alongside it and preferred.
 personal_install_launcher() {
-    if command -v exasol >/dev/null 2>&1; then
+    if [ "${EXAKIT_FORCE_COMPONENT_INSTALL:-0}" != "1" ] && command -v exasol >/dev/null 2>&1; then
         _existing="$(command -v exasol)"
         if "$_existing" install --help 2>/dev/null | grep -qw "local"; then
             ok "Exasol launcher already installed: $_existing"
@@ -87,7 +87,7 @@ personal_install_launcher() {
 }
 
 personal_cli() {
-    # Prefer the kit-installed pinned launcher; fall back to one on PATH.
+    # Prefer the kit-installed managed launcher; fall back to one on PATH.
     if [ -x "$EXAKIT_PERSONAL_BIN" ]; then
         echo "$EXAKIT_PERSONAL_BIN"
     elif command -v exasol >/dev/null 2>&1; then
@@ -102,11 +102,11 @@ personal_deployment_exists() {
 }
 
 # personal_deployment_running — is a local Exasol deployment actually up and
-# reachable right now? `exasol info` is the launcher's own source of truth, so
-# this trusts it directly (no deploy-dir guard). Used to adopt an
-# already-running database instead of failing on a busy port.
+# reachable right now? Some launcher versions can answer `exasol info` even
+# before the SQL listener exists, so require both signals before reusing an
+# existing database.
 personal_deployment_running() {
-    "$(personal_cli)" info >/dev/null 2>&1
+    port_in_use "$EXAKIT_PERSONAL_PORT" && "$(personal_cli)" info >/dev/null 2>&1
 }
 
 # personal_deploy_local — run the local deployment. This is the long step
@@ -154,7 +154,7 @@ personal_wait_ready() {
     info "Checking deployment health"
     _tries=0
     while [ "$_tries" -lt 30 ]; do
-        if "$(personal_cli)" info >/dev/null 2>&1; then
+        if port_in_use "$EXAKIT_PERSONAL_PORT" && "$(personal_cli)" info >/dev/null 2>&1; then
             ok "Deployment is reachable"
             return 0
         fi
@@ -265,4 +265,125 @@ personal_teardown() {
         info "No active deployment found"
     fi
     manifest_set runtime.status "removed"
+}
+
+personal_upgrade_plan() {
+    _current="$1"
+    _latest="$2"
+    warn "Exasol Personal major upgrade detected: ${_current:-unknown} -> $_latest."
+    warn "Personal keeps runtime and database content together in the local deployment."
+    info "No destructive action was taken."
+    info "Deployment: $EXAKIT_PERSONAL_DEPLOY_DIR"
+    info "Step 1: exakit update personal --backup"
+    info "Step 2: follow the Exasol Personal $_latest migration/redeployment guidance for your data."
+    info "Step 3: exakit update personal --apply"
+}
+
+personal_upgrade_backup() {
+    _current="$1"
+    _latest="$2"
+    require_cmd tar "tar"
+    [ -d "$EXAKIT_PERSONAL_DEPLOY_DIR" ] || \
+        die "No Exasol Personal deployment directory found at $EXAKIT_PERSONAL_DEPLOY_DIR; nothing was backed up."
+    if [ "$(personal_status 2>/dev/null || true)" = "running" ] && [ "${EXAKIT_FORCE:-0}" != "1" ]; then
+        die "Stop Exasol Personal before backing up for a major upgrade: exakit stop"
+    fi
+
+    _backup_dir="$EXAKIT_HOME/backups"
+    mkdir -p "$_backup_dir"
+    chmod 700 "$_backup_dir" 2>/dev/null || true
+    _stamp="$(date +%Y%m%d-%H%M%S)"
+    _safe_current="$(printf '%s' "${_current:-unknown}" | tr '/ :' '---')"
+    _safe_latest="$(printf '%s' "${_latest:-unknown}" | tr '/ :' '---')"
+    _backup="$_backup_dir/personal-upgrade-${_safe_current}-to-${_safe_latest}-${_stamp}.tar.gz"
+    _parent="$(dirname "$EXAKIT_PERSONAL_DEPLOY_DIR")"
+    _base="$(basename "$EXAKIT_PERSONAL_DEPLOY_DIR")"
+
+    info "Creating Exasol Personal deployment backup"
+    if ! tar -czf "$_backup" -C "$_parent" "$_base" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        rm -f "$_backup"
+        die "Could not create the Personal backup; no update was applied."
+    fi
+    chmod 600 "$_backup" 2>/dev/null || true
+    if exakit_can_run_python; then
+        manifest_set backups.personal_upgrade.latest "$_backup"
+        manifest_set backups.personal_upgrade.created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        manifest_set backups.personal_upgrade.from "${_current:-unknown}"
+        manifest_set backups.personal_upgrade.to "$_latest"
+    else
+        warn "Backup was created, but the manifest could not be updated because no Python runtime is available."
+    fi
+    ok "Personal deployment backup created: $_backup"
+}
+
+personal_update() {
+    _mode="default"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --plan) _mode="plan" ;;
+            --backup) _mode="backup" ;;
+            --apply) _mode="apply" ;;
+            *) die "Unknown option '$1' for 'exakit update personal'." ;;
+        esac
+        shift
+    done
+
+    _latest="$(exakit_component_latest personal)"
+    [ -n "$_latest" ] || die "Could not resolve the latest Exasol Personal release."
+    _current="$(manifest_get runtime.version 2>/dev/null || true)"
+    if [ "$_latest" = "$_current" ]; then
+        ok "Exasol Personal launcher is already current ($_current)"
+        return 0
+    fi
+
+    _current_major="$(exakit_major_version "$_current")"
+    _latest_major="$(exakit_major_version "$_latest")"
+    if [ -n "$_current_major" ] && [ -n "$_latest_major" ] && [ "$_current_major" != "$_latest_major" ]; then
+        case "$_mode" in
+            plan|default)
+                personal_upgrade_plan "$_current" "$_latest"
+                [ "$_mode" = "plan" ] && return 0
+                return 1
+                ;;
+            backup)
+                personal_upgrade_plan "$_current" "$_latest"
+                personal_upgrade_backup "$_current" "$_latest"
+                return 0
+                ;;
+            apply)
+                _last_backup="$(manifest_get backups.personal_upgrade.latest 2>/dev/null || true)"
+                _backup_from="$(manifest_get backups.personal_upgrade.from 2>/dev/null || true)"
+                _backup_to="$(manifest_get backups.personal_upgrade.to 2>/dev/null || true)"
+                if [ -z "$_last_backup" ] || [ ! -f "$_last_backup" ]; then
+                    die "Create a backup first: exakit update personal --backup"
+                fi
+                if [ "$_backup_from" != "${_current:-unknown}" ] || [ "$_backup_to" != "$_latest" ]; then
+                    die "The latest recorded Personal backup does not match this upgrade (${_current:-unknown} -> $_latest). Run: exakit update personal --backup"
+                fi
+                info "Updating Exasol Personal launcher ${_current:-unknown} -> $_latest"
+                EXAKIT_PERSONAL_VERSION="$_latest"
+                EXAKIT_FORCE_COMPONENT_INSTALL=1
+                export EXAKIT_PERSONAL_VERSION EXAKIT_FORCE_COMPONENT_INSTALL
+                rm -f "$EXAKIT_PERSONAL_BIN"
+                personal_install_launcher
+                manifest_set runtime.launcher "$(personal_cli)"
+                manifest_set runtime.launcher_version "$EXAKIT_PERSONAL_VERSION"
+                manifest_set desired.runtime.personal "$EXAKIT_PERSONAL_VERSION"
+                warn "Launcher updated. Existing database content was not deleted or migrated."
+                info "Complete the Exasol Personal $_latest data migration before recording runtime.version as $_latest."
+                ok "Exasol Personal launcher update applied with backup available at $_last_backup"
+                return 0
+                ;;
+        esac
+    fi
+
+    info "Updating Exasol Personal launcher ${_current:-unknown} -> $_latest"
+    EXAKIT_PERSONAL_VERSION="$_latest"
+    EXAKIT_FORCE_COMPONENT_INSTALL=1
+    export EXAKIT_PERSONAL_VERSION EXAKIT_FORCE_COMPONENT_INSTALL
+    rm -f "$EXAKIT_PERSONAL_BIN"
+    personal_install_launcher
+    personal_record_manifest
+    manifest_set desired.runtime.personal "$EXAKIT_PERSONAL_VERSION"
+    ok "Exasol Personal launcher updated; deployment data was not changed"
 }

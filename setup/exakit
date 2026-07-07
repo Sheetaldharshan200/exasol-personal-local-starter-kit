@@ -6,13 +6,14 @@
 #   preflight           check this machine's requirements, install nothing
 #   status              show what is installed and whether it is healthy
 #   version             kit source, install date, component versions
+#   update-check [what] check latest versions (all, runtime, exakit, exapump, mcp)
+#   update [what]       update all or one component without deleting database data
+#                       Personal major upgrades support --plan, --backup, --apply
 #   info                print the connection details panel
 #   start               start the local database
 #   stop                stop the local database
-#   load-data [--force] load the sample dataset (schema + CSVs + verify)
-#   data-load           open guided data loading options
-#   mcp-configs         regenerate the ready-made temporary MCP config bundle
-#   mcp-setup           choose temporary or permanent MCP client setup
+#   data-load [--force] open focused data loading options; --force reloads bundled sample data
+#   mcp-setup           permanently configure MCP in supported AI clients
 #   mcp-status          show managed MCP state
 #   mcp-validate        validate managed MCP configs and connectivity
 #   mcp-repair          repair managed MCP config drift
@@ -49,6 +50,7 @@ fi
 . "$_lib_dir/runtime-nano.sh"
 . "$_lib_dir/runtime-personal.sh"
 [ -f "$_lib_dir/exapump.sh" ] && . "$_lib_dir/exapump.sh"
+[ -f "$_lib_dir/mcp.sh" ] && . "$_lib_dir/mcp.sh"
 
 _runtime_type() {
     manifest_get runtime.type 2>/dev/null
@@ -118,6 +120,18 @@ cmd_version() {
     printf 'exapump:        %s\n' "$(manifest_get components.exapump.version 2>/dev/null)"
     printf 'MCP server:     %s %s\n' "$(manifest_get components.mcp_server.package 2>/dev/null)" \
         "$(manifest_get components.mcp_server.version 2>/dev/null)"
+    printf '\n'
+    exakit_print_update_check all || true
+}
+
+cmd_update_check() {
+    [ -f "$EXAKIT_MANIFEST" ] || { echo "Not installed (no manifest at $EXAKIT_MANIFEST)"; exit 0; }
+    exakit_print_update_check "${1:-all}"
+}
+
+cmd_update() {
+    _require_install
+    exakit_update "$@"
 }
 
 cmd_logs() {
@@ -130,33 +144,25 @@ cmd_logs() {
     fi
 }
 
-cmd_load_data() {
+cmd_data_load() {
     _require_install
     case "${1:-}" in
         ""|--force) ;;
-        *) die "Unknown option '$1' for load-data (only --force is supported)." ;;
+        *) die "Unknown option '$1' for data-load (only --force is supported)." ;;
     esac
     command -v exakit_load_sample_data >/dev/null 2>&1 || \
         die "The exapump data-loading module is not available in this kit build."
     exakit_init_logging
-    _kit_root="$(exakit_repo_root)" || \
-        die "Could not find the kit's sql/ and data/ files to load."
-    info "Loading the sample dataset (log: ${EXAKIT_LOG_FILE:-none})"
-    exakit_load_sample_data "$_kit_root" "${1:-}"
-}
-
-cmd_data_load_menu() {
-    _require_install
-    command -v exakit_data_load_menu >/dev/null 2>&1 || \
-        die "The exapump data-loading module is not available in this kit build."
-    exakit_init_logging
-    exakit_data_load_menu
-}
-
-cmd_mcp_configs() {
-    _require_install
-    exakit_init_logging
-    exakit_generate_mcp_configs || die "Could not generate MCP client configs"
+    if [ "${1:-}" = "--force" ]; then
+        _kit_root="$(exakit_repo_root)" || \
+            die "Could not find the kit's sql/ and data/ files to load."
+        info "Reloading the bundled sample dataset (log: ${EXAKIT_LOG_FILE:-none})"
+        exakit_load_sample_data "$_kit_root" "--force"
+    else
+        command -v exakit_data_load_menu >/dev/null 2>&1 || \
+            die "The exapump data-loading module is not available in this kit build."
+        exakit_data_load_menu
+    fi
 }
 
 cmd_mcp_setup() {
@@ -279,12 +285,12 @@ case "${1:-help}" in
     preflight) preflight_report ;;
     status)   cmd_status ;;
     version)  cmd_version ;;
+    update-check|updates|outdated) shift; cmd_update_check "${1:-all}" ;;
+    update|upgrade) shift; cmd_update "$@" ;;
     info)     connection_panel ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;
-    load-data) shift; cmd_load_data "${1:-}" ;;
-    data-load) cmd_data_load_menu ;;
-    mcp-configs) cmd_mcp_configs ;;
+    data-load) shift; cmd_data_load "${1:-}" ;;
     mcp-setup) cmd_mcp_setup ;;
     mcp-status) shift; cmd_mcp_status "$@" ;;
     mcp-validate) shift; cmd_mcp_validate "$@" ;;
