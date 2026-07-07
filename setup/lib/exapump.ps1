@@ -461,14 +461,26 @@ function Request-ExakitOptionalVerification {
 }
 
 function Import-ExakitLocalFile {
-    $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path" ""
-    $path = Get-ExakitNormalizedPath $rawPath
-    if (-not (Test-Path $path) -or (Get-Item $path).Length -eq 0) { Fail "File not found or empty: $path" }
+    while ($true) {
+        $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path (blank/back to return)" ""
+        if (-not $rawPath -or $rawPath -match '^(b|back)$') {
+            Info "Returning to data loading options."
+            return "back"
+        }
+        $path = Get-ExakitNormalizedPath $rawPath
+        if ((Test-Path $path) -and (Get-Item $path).Length -gt 0) { break }
+        Warn2 "File not found or empty: $path"
+    }
     $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA } else { "STARTER_KIT" }
     $defaultTable = "$schema.$(Get-ExakitTableName $path)"
-    $target = Read-ExakitPrompt "Target table (SCHEMA.TABLE)" $defaultTable
-    if (-not (Test-ExakitTableTarget $target)) {
-        Fail "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    while ($true) {
+        $target = Read-ExakitPrompt "Target table (SCHEMA.TABLE, back to return)" $defaultTable
+        if ($target -match '^(b|back)$') {
+            Info "Returning to data loading options."
+            return "back"
+        }
+        if (Test-ExakitTableTarget $target) { break }
+        Warn2 "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
     }
     $target = Get-ExakitUpperTableTarget $target
     Confirm-ExakitSchemaExists (Get-ExakitTargetSchema $target) | Out-Null
@@ -571,31 +583,48 @@ function Show-ExakitDataLoadMenu {
         Fail "No exapump connection profile is recorded - re-run the installer, then retry."
     }
 
-    Info "Choose a data loading option"
-    Write-Host "    1. Bundled sample dataset (TPC-H)"
-    Write-Host "    2. Local CSV/text/Parquet file"
-    if ($InstallMode) {
-        Write-Host "    3. Skip for now"
-    } else {
-        Write-Host "    3. Terminate"
-    }
-    $defaultChoice = "1"
-    $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
-    switch ($choice) {
-        "1" {
-            $kitRoot = Get-ExakitRepoRoot
-            if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
-            Invoke-ExakitSampleDataLoad -KitRoot $kitRoot
+    while ($true) {
+        Info "Choose a data loading option"
+        Write-Host "    1. Bundled sample dataset (TPC-H)"
+        Write-Host "    2. Local CSV/text/Parquet file"
+        Write-Host "    3. Back"
+        if ($InstallMode) {
+            Write-Host "    4. Skip for now"
+        } else {
+            Write-Host "    4. Terminate"
         }
-        "2" { Import-ExakitLocalFile }
-        { $_ -eq "3" -or $_ -eq "" } {
-            if ($InstallMode) {
-                Info "Skipping data load. Run it any time with: exakit data-load"
-            } else {
-                Info "Data loading terminated."
+        $defaultChoice = "1"
+        $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
+        switch ($choice) {
+            "1" {
+                $kitRoot = Get-ExakitRepoRoot
+                if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
+                Invoke-ExakitSampleDataLoad -KitRoot $kitRoot
+                return
             }
+            "2" {
+                $result = Import-ExakitLocalFile
+                if ($result -eq "back") { continue }
+                return
+            }
+            { $_ -match '^(3|b|back)$' } {
+                if ($InstallMode) {
+                    Info "Returning to setup without loading data. Run it any time with: exakit data-load"
+                } else {
+                    Info "Data loading terminated."
+                }
+                return
+            }
+            { $_ -eq "4" -or $_ -eq "" } {
+                if ($InstallMode) {
+                    Info "Skipping data load. Run it any time with: exakit data-load"
+                } else {
+                    Info "Data loading terminated."
+                }
+                return
+            }
+            default { Warn2 "Unknown data loading option: $choice" }
         }
-        default { Fail "Unknown data loading option: $choice" }
     }
 }
 

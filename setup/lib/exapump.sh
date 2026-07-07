@@ -362,12 +362,30 @@ exakit_prompt_optional_verification() {
 }
 
 exakit_load_local_file() {
-    _raw_path="$(prompt_text "Local CSV/text/Parquet file path")"
-    _path="$(exakit_normalize_path "$_raw_path")"
-    [ -s "$_path" ] || die "File not found or empty: $_path"
+    while :; do
+        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (blank/back to return)")"
+        case "$_raw_path" in
+            ""|b|B|back|Back|BACK)
+                info "Returning to data loading options."
+                return 2
+                ;;
+        esac
+        _path="$(exakit_normalize_path "$_raw_path")"
+        [ -s "$_path" ] && break
+        warn "File not found or empty: $_path"
+    done
     _default_table="${EXAKIT_SCHEMA:-STARTER_KIT}.$(exakit_table_name_from_path "$_path")"
-    _target="$(prompt_text "Target table (SCHEMA.TABLE)" "$_default_table")"
-    exakit_validate_table_target "$_target" || die "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    while :; do
+        _target="$(prompt_text "Target table (SCHEMA.TABLE, back to return)" "$_default_table")"
+        case "$_target" in
+            b|B|back|Back|BACK)
+                info "Returning to data loading options."
+                return 2
+                ;;
+        esac
+        exakit_validate_table_target "$_target" && break
+        warn "Target table must look like SCHEMA.TABLE and use letters, numbers, or underscores."
+    done
     _target="$(exakit_upper_table_target "$_target")"
     exakit_ensure_schema "$(exakit_target_schema "$_target")"
     exapump_upload "$_path" "$_target"
@@ -463,31 +481,49 @@ exakit_data_load_menu() {
     [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
         die "No exapump connection profile is recorded — re-run the installer, then retry."
 
-    info "Choose a data loading option"
-    printf '    1. Bundled sample dataset (TPC-H)\n'
-    printf '    2. Local CSV/text/Parquet file\n'
-    if [ "$_mode" = "install" ]; then
-        printf '    3. Skip for now\n'
-    else
-        printf '    3. Terminate\n'
-    fi
-    _default_choice="1"
-    _choice="$(prompt_text "Choose data option" "$_default_choice")"
-    case "$_choice" in
-        1)
-            _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
-            exakit_load_sample_data "$_kit_root"
-            ;;
-        2) exakit_load_local_file ;;
-        3|"")
-            if [ "$_mode" = "install" ]; then
-                info "Skipping data load. Run it any time with: exakit data-load"
-            else
-                info "Data loading terminated."
-            fi
-            ;;
-        *) die "Unknown data loading option: $_choice" ;;
-    esac
+    while :; do
+        info "Choose a data loading option"
+        printf '    1. Bundled sample dataset (TPC-H)\n'
+        printf '    2. Local CSV/text/Parquet file\n'
+        printf '    3. Back\n'
+        if [ "$_mode" = "install" ]; then
+            printf '    4. Skip for now\n'
+        else
+            printf '    4. Terminate\n'
+        fi
+        _default_choice="1"
+        _choice="$(prompt_text "Choose data option" "$_default_choice")"
+        case "$_choice" in
+            1)
+                _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
+                exakit_load_sample_data "$_kit_root"
+                return 0
+                ;;
+            2)
+                exakit_load_local_file
+                _local_status=$?
+                [ "$_local_status" -eq 2 ] && continue
+                return "$_local_status"
+                ;;
+            3|b|B|back|Back|BACK)
+                if [ "$_mode" = "install" ]; then
+                    info "Returning to setup without loading data. Run it any time with: exakit data-load"
+                else
+                    info "Data loading terminated."
+                fi
+                return 0
+                ;;
+            4|"")
+                if [ "$_mode" = "install" ]; then
+                    info "Skipping data load. Run it any time with: exakit data-load"
+                else
+                    info "Data loading terminated."
+                fi
+                return 0
+                ;;
+            *) warn "Unknown data loading option: $_choice" ;;
+        esac
+    done
 }
 
 # exakit_load_sample_data <kit_root> [--force] — the full sample-data pipeline:
