@@ -59,7 +59,13 @@ function Test-PyexasolConnection {
     $python = Get-PyexasolVenvPython
     $code = Invoke-ExakitLogged $python "-c" "import pyexasol"
     if ($code -ne 0) {
-        Fail "pyexasol is installed but cannot be imported from $script:PyexasolVenv (see log). Remove the venv and re-run."
+        # Non-fatal, matching this step's contract and the bash path: pyexasol
+        # is the last, optional component, so a broken import records
+        # validated=false and warns rather than failing an otherwise complete
+        # install (database, exapump, MCP all working).
+        Warn2 "pyexasol is installed but cannot be imported from $script:PyexasolVenv (see log). Recorded validated=false; remove the venv and re-run setup to retry."
+        Set-ExakitManifestValue "components.pyexasol.validated" $false
+        return
     }
 
     $dsn = Get-ExakitManifestValue "runtime.dsn"

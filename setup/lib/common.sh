@@ -107,7 +107,20 @@ ok()   { printf '  %s%s%s %s\n'  "${UI_OK:-}"   "${UI_TICK:-[ok]}"  "${UI_RESET:
 warn() { printf '  %s!%s %s\n'   "${UI_WARN:-}" "${UI_RESET:-}" "$*" >&2;        _exakit_log_file "WARN  $*"; }
 error(){ printf '  %s%s%s %s\n'  "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:-}" "$*" >&2; _exakit_log_file "ERROR $*"; }
 
+# Sensitive temp files (they hold plaintext credentials) are tracked here so
+# they are ALWAYS removed — including on die/exit/interrupt, not only on the
+# happy path. Callers register the file right after creating it; die() and the
+# EXIT handler both sweep, so no failure path can leave credentials on disk.
+EXAKIT_SENSITIVE_TMP=""
+exakit_track_sensitive_tmp() { EXAKIT_SENSITIVE_TMP="$EXAKIT_SENSITIVE_TMP $1"; }
+exakit_sweep_sensitive_tmp() {
+    [ -n "${EXAKIT_SENSITIVE_TMP:-}" ] || return 0
+    rm -f $EXAKIT_SENSITIVE_TMP 2>/dev/null
+    EXAKIT_SENSITIVE_TMP=""
+}
+
 die() {
+    exakit_sweep_sensitive_tmp
     error "$*"
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
         printf 'Full log: %s\n' "$EXAKIT_LOG_FILE" >&2
@@ -792,6 +805,7 @@ exakit_on_failure() {
     # first, so a failure mid-animation never leaves a stuck/invisible cursor.
     ui_spin_end 2>/dev/null || true
     ui_restore_cursor
+    exakit_sweep_sensitive_tmp     # never leave credential temp files behind
     [ $_status -eq 0 ] && return 0
     error "Setup failed${EXAKIT_CURRENT_STEP:+ during step: $EXAKIT_CURRENT_STEP}"
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
@@ -1202,6 +1216,7 @@ PY
     _default_schema="$(_exakit_first_schema "$_schemas_csv")"
 
     _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX")"
+    exakit_track_sensitive_tmp "$_temp_config"   # holds plaintext DB passwords; swept on any exit
     _exakit_write_exapump_config \
         "$_temp_config" "$_host" "$_port" "$_runtime_user" "$_admin_password" \
         "$_readonly_user" "$_readonly_password" "$_default_schema"
@@ -1369,6 +1384,7 @@ exakit_configure_mcp_readonly_access() {
     _default_schema_uc="$(printf '%s' "$_default_schema" | tr '[:lower:]' '[:upper:]')"
     _exakit_validate_identifier "$_identifier_user" || die "Invalid EXAKIT_MCP_READONLY_USER: $_readonly_user"
     _temp_config="$(mktemp "${TMPDIR:-/tmp}/exakit-exapump.XXXXXX")"
+    exakit_track_sensitive_tmp "$_temp_config"   # holds plaintext DB passwords; swept on any exit
     _exakit_write_exapump_config \
         "$_temp_config" "$_host" "$_port" "$_runtime_user" "$_admin_password" \
         "$_readonly_user" "$_readonly_password" "$_default_schema_uc"
@@ -1878,13 +1894,18 @@ kit_shared_steps() {
         ensure_path_hint "$EXAKIT_BIN_DIR"
     fi
     if [ "$_helper_needed" -eq 1 ]; then
-        mkdir -p "$EXAKIT_BIN_DIR"
-        install -m 755 "$_script_dir/exakit" "$EXAKIT_BIN_DIR/exakit"
+        mkdir -p "$EXAKIT_BIN_DIR" || die "Could not create $EXAKIT_BIN_DIR for the exakit command."
+        # Fail loudly here: without a check, a failed install (e.g. non-writable
+        # ~/.local/bin, full disk) would fall through to mark_step + "exakit
+        # installed", reporting success while no binary exists.
+        install -m 755 "$_script_dir/exakit" "$EXAKIT_BIN_DIR/exakit" \
+            || die "Could not install the exakit command to $EXAKIT_BIN_DIR (is it writable? is the disk full?)."
         # Keep a copy of the kit library (and the mcp/ and sql/ packages
         # exakit_repo_root() depends on) next to the state so exakit finds
         # them even when this checkout moves or disappears.
-        mkdir -p "$EXAKIT_HOME/kit/setup"
-        cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/"
+        mkdir -p "$EXAKIT_HOME/kit/setup" || die "Could not create $EXAKIT_HOME/kit/setup."
+        cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/" \
+            || die "Could not copy the kit library to $EXAKIT_HOME/kit/setup."
         # Copy the assets exakit needs after the checkout is gone: the mcp/
         # and sql/ packages, the data/ CSVs, and load-data.sh (so both
         # `exakit data-load --force` and the documented raw setup script keep working).
@@ -1946,15 +1967,28 @@ generate_password() {
 # store_credential <name> <value> — 0600 file under credentials dir.
 # Written atomically so an interrupted run can never leave a truncated secret.
 store_credential() {
-    mkdir -p "$EXAKIT_CREDS_DIR"
+    mkdir -p "$EXAKIT_CREDS_DIR" || die "Could not create the credentials directory $EXAKIT_CREDS_DIR."
     chmod 700 "$EXAKIT_CREDS_DIR"
-    printf '%s' "$2" > "$EXAKIT_CREDS_DIR/$1.tmp"
+    # Fail loudly on a write error (full disk / read-only home): a silently
+    # dropped secret makes a later step read an empty credential and either
+    # regenerate a mismatching password or die with a confusing message far
+    # from the real cause.
+    if ! printf '%s' "$2" > "$EXAKIT_CREDS_DIR/$1.tmp"; then
+        rm -f "$EXAKIT_CREDS_DIR/$1.tmp" 2>/dev/null
+        die "Could not save credential '$1' to $EXAKIT_CREDS_DIR (disk full or not writable?)."
+    fi
     chmod 600 "$EXAKIT_CREDS_DIR/$1.tmp"
-    mv "$EXAKIT_CREDS_DIR/$1.tmp" "$EXAKIT_CREDS_DIR/$1"
+    mv "$EXAKIT_CREDS_DIR/$1.tmp" "$EXAKIT_CREDS_DIR/$1" || die "Could not save credential '$1'."
 }
 
 read_credential() {
-    cat "$EXAKIT_CREDS_DIR/$1" 2>/dev/null
+    _rc_file="$EXAKIT_CREDS_DIR/$1"
+    # A file that exists but can't be read would otherwise look "missing" and
+    # trigger a regenerated, diverging password — surface it instead.
+    if [ -f "$_rc_file" ] && [ ! -r "$_rc_file" ]; then
+        warn "Credential file exists but is not readable: $_rc_file (check permissions)."
+    fi
+    cat "$_rc_file" 2>/dev/null
 }
 
 # --- full uninstall --------------------------------------------------------

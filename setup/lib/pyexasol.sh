@@ -65,8 +65,15 @@ pyexasol_install() {
 # and every other component are unaffected, and a re-run retries this step.
 pyexasol_validate() {
     _pyx_python="$(pyexasol_venv_python)"
-    "$_pyx_python" -c 'import pyexasol' >/dev/null 2>&1 || \
-        die "pyexasol is installed but cannot be imported from $EXAKIT_PYEXASOL_VENV (see log). Remove the venv and re-run."
+    # Non-fatal, matching this step's stated contract (and the live-check path
+    # below): pyexasol is the last, optional component, so a broken import
+    # records validated=false and warns rather than turning an otherwise
+    # complete install — database, exapump, MCP all working — into a hard fail.
+    if ! "$_pyx_python" -c 'import pyexasol' >/dev/null 2>&1; then
+        warn "pyexasol is installed but cannot be imported from $EXAKIT_PYEXASOL_VENV (see log). Recorded validated=false; remove the venv and re-run setup to retry."
+        manifest_set components.pyexasol.validated false
+        return 0
+    fi
 
     _pyx_host="$(_exakit_parse_runtime_host)"
     _pyx_port="$(_exakit_parse_runtime_port)"
