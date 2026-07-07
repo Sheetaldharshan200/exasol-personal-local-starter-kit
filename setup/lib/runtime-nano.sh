@@ -70,13 +70,21 @@ nano_check_requirements() {
     esac
 
     _ram="$(detect_ram_gb)"
-    if [ "$_ram" -lt "$EXAKIT_NANO_MIN_RAM_GB" ] && [ "${EXAKIT_FORCE:-0}" != "1" ]; then
-        die "Exasol Nano needs at least ${EXAKIT_NANO_MIN_RAM_GB} GB RAM (detected: ${_ram} GB). Set EXAKIT_FORCE=1 to try anyway."
+    if [ "${EXAKIT_FORCE:-0}" != "1" ]; then
+        if [ "$_ram" -eq 0 ]; then
+            die "Could not determine this machine's memory. Fix the environment or set EXAKIT_FORCE=1 to install anyway."
+        elif [ "$_ram" -lt "$EXAKIT_NANO_MIN_RAM_GB" ]; then
+            die "Exasol Nano needs at least ${EXAKIT_NANO_MIN_RAM_GB} GB RAM (detected: ${_ram} GB). Set EXAKIT_FORCE=1 to try anyway."
+        fi
     fi
 
     _disk="$(detect_free_disk_gb "$HOME")"
-    if [ "$_disk" -lt 10 ] && [ "${EXAKIT_FORCE:-0}" != "1" ]; then
-        die "Less than 10 GB free disk space (detected: ${_disk} GB) — the database image and data need room. Free up space or set EXAKIT_FORCE=1."
+    if [ "${EXAKIT_FORCE:-0}" != "1" ]; then
+        if [ "$_disk" -eq 0 ]; then
+            die "Could not determine free disk space at $HOME. Free up space or set EXAKIT_FORCE=1 to install anyway."
+        elif [ "$_disk" -lt 10 ]; then
+            die "Less than 10 GB free disk space (detected: ${_disk} GB) — the database image and data need room. Free up space or set EXAKIT_FORCE=1."
+        fi
     fi
 }
 

@@ -61,9 +61,29 @@ function Test-NanoRequirements {
     }
     Ok "Container runtime: $engine"
 
-    $ramGb = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-    if ($ramGb -lt $script:NanoMinRamGb -and $env:EXAKIT_FORCE -ne "1") {
-        Fail "Exasol Nano needs at least $($script:NanoMinRamGb) GB RAM (detected: $ramGb GB). Set EXAKIT_FORCE=1 to try anyway."
+    # Memory - fail closed if it cannot be read (mirrors the bash detect_ram_gb
+    # contract: never let an unreadable value silently skip the guard).
+    $ramGb = -1
+    try { $ramGb = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB) } catch { $ramGb = -1 }
+    if ($env:EXAKIT_FORCE -ne "1") {
+        if ($ramGb -lt 0) {
+            Fail "Could not determine this machine's memory. Set EXAKIT_FORCE=1 to install anyway."
+        } elseif ($ramGb -lt $script:NanoMinRamGb) {
+            Fail "Exasol Nano needs at least $($script:NanoMinRamGb) GB RAM (detected: $ramGb GB). Set EXAKIT_FORCE=1 to try anyway."
+        }
+    }
+
+    # Free disk on the system drive (mirrors the bash 10 GB check, which the
+    # Windows path was missing).
+    $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "C:" }
+    $freeGb = -1
+    try { $freeGb = [math]::Floor((Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sysDrive'").FreeSpace / 1GB) } catch { $freeGb = -1 }
+    if ($env:EXAKIT_FORCE -ne "1") {
+        if ($freeGb -lt 0) {
+            Fail "Could not determine free disk space on $sysDrive. Free up space or set EXAKIT_FORCE=1 to install anyway."
+        } elseif ($freeGb -lt 10) {
+            Fail "Less than 10 GB free on $sysDrive (detected: $freeGb GB) - the database image and data need room. Free up space or set EXAKIT_FORCE=1."
+        }
     }
 }
 
