@@ -146,6 +146,10 @@ main() {
     # first-run license confirmation) can still read the keyboard.
     say "Starting setup: $setup_script"
     printf '\n'
+    # We already showed the banner above; tell the setup script to skip its
+    # own so the wordmark appears exactly once through the installer. A direct
+    # `bash setup/setup-*.sh` run (no installer) still shows it.
+    export EXAKIT_BANNER_SHOWN=1
     if [ ! -t 0 ] && (: < /dev/tty) 2>/dev/null; then
         exec bash "$kit_dir/$setup_script" < /dev/tty
     else

@@ -25,7 +25,7 @@ Initialize-ExakitLogging
 Initialize-ExakitManifest
 Resolve-ExakitInstallVersions
 
-Write-ExakitBanner "Personal Local Starter Kit" "Local database + exapump + MCP server + pyexasol"
+if ($env:EXAKIT_BANNER_SHOWN -ne "1") { Write-ExakitBanner "Personal Local Starter Kit" "Local database + exapump + MCP server + pyexasol" }
 
 Set-ExakitManifestValue "os" "windows"
 Set-ExakitManifestValue "arch" $env:PROCESSOR_ARCHITECTURE
