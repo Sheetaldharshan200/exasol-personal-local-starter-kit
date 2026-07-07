@@ -21,6 +21,8 @@
 #   mcp-doctor [clients]  run MCP diagnostics
 #   mcp-remove [clients]  remove managed MCP config from the supported clients
 #   mcp-restore [snapshot] restore the latest (or a chosen) MCP snapshot
+#   skills-install        install the kit's AI skills for CLI agents
+#                         (~\.claude\skills, ~\.agents\skills)
 #   teardown [-Data]      remove the runtime; -Data also deletes database
 #                         content (Nano volume)
 #   logs                  print the path of the latest setup log
@@ -395,6 +397,11 @@ function Invoke-CmdCatalog {
     }
 }
 
+function Invoke-CmdSkillsInstall {
+    Initialize-ExakitLogging
+    if (-not (Install-ExakitSkills)) { Fail "Could not install the kit's AI skills" }
+}
+
 function Show-ExakitUsage {
     # Print every leading comment line (from line 2 on) up to the first
     # non-comment line - avoids a hard-coded line count going stale whenever
@@ -427,6 +434,7 @@ try {
         "mcp-doctor"   { Invoke-CmdMcpOperation -Operation "doctor" -OpArgs $RestArgs }
         "mcp-remove"   { Invoke-CmdMcpOperation -Operation "uninstall" -OpArgs $RestArgs }
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
+        "skills-install" { Invoke-CmdSkillsInstall }
         "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
         "logs"         { Invoke-CmdLogs }
         { $_ -in @("catalog", "catlog") } { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }

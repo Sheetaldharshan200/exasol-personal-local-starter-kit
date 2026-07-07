@@ -604,6 +604,62 @@ function Get-ExakitRepoRoot {
     return $null
 }
 
+# Install-ExakitSkills - copy the kit's AI skills into the per-user discovery
+# folders so CLI agents auto-load them. Idempotent: each run replaces the
+# managed copy of every skill, so edits and deletions propagate cleanly.
+# Mirrors exakit_install_skills in setup/lib/common.sh.
+#   $HOME\.claude\skills\<name>\   - Claude Code
+#   $HOME\.agents\skills\<name>\   - Codex, Cursor, other open-standard agents
+function Install-ExakitSkills {
+    $repoRoot = Get-ExakitRepoRoot
+    if (-not $repoRoot) { Warn2 "Could not locate the kit to find its skills\ directory."; return $false }
+    $skillsSrc = Join-Path $repoRoot "skills"
+    if (-not (Test-Path $skillsSrc)) { Warn2 "No skills\ directory in this kit build yet - nothing to install."; return $false }
+
+    $installed = 0
+    foreach ($skillDir in (Get-ChildItem -Path $skillsSrc -Directory -ErrorAction SilentlyContinue)) {
+        if (-not (Test-Path (Join-Path $skillDir.FullName "SKILL.md"))) { continue }
+        $name = $skillDir.Name
+        foreach ($destRoot in @((Join-Path $HOME ".claude\skills"), (Join-Path $HOME ".agents\skills"))) {
+            $dest = Join-Path $destRoot $name
+            if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Copy-Item -Recurse -Force -Path (Join-Path $skillDir.FullName "*") -Destination $dest
+        }
+        Ok "Installed skill: $name"
+        $installed++
+    }
+    if ($installed -eq 0) { Warn2 "No SKILL.md files found under $skillsSrc - nothing to install."; return $false }
+    Info "Skills installed for Claude Code (~\.claude\skills) and open-standard agents (~\.agents\skills)."
+    Info "Restart or reload your AI client to pick them up."
+    return $true
+}
+
+# Request-ExakitSkillsInstallOffer - after setup, place the skills where CLI
+# agents can find them. Mirrors exakit_maybe_offer_skills_install; matches the
+# MCP-offer behaviour on this path (installs by default when non-interactive).
+function Request-ExakitSkillsInstallOffer {
+    $repoRoot = Get-ExakitRepoRoot
+    if (-not $repoRoot) { return }
+    $skillsSrc = Join-Path $repoRoot "skills"
+    if (-not (Test-Path $skillsSrc)) { return }
+    $hasSkill = Get-ChildItem -Path $skillsSrc -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName "SKILL.md") }
+    if (-not $hasSkill) { return }
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+        Info "Non-interactive install - installing the kit's AI skills by default."
+        [void](Install-ExakitSkills)
+        return
+    }
+    if (-not (Confirm-ExakitPrompt "Install the kit's AI skills for your CLI agent (Claude Code / Codex)?" $true)) {
+        Info "Skipping skills install for now. You can run: exakit skills-install"
+        return
+    }
+    if (-not (Install-ExakitSkills)) {
+        Warn2 "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
+    }
+}
+
 # connection_panel equivalent - printed at the end of setup and via `exakit info`.
 function Show-ExakitConnectionPanel {
     if (-not (Test-Path $script:ManifestPath)) { Warn2 "No installation found ($script:ManifestPath missing)"; return }
