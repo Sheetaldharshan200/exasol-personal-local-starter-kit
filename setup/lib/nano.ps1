@@ -1,5 +1,5 @@
 # nano.ps1 - Exasol Nano container runtime module (Windows / PowerShell path,
-# Docker Desktop preferred, Podman fallback).
+# Docker Desktop only).
 #
 # Dot-sourced by setup-windows-docker.ps1 and setup/exakit.ps1 after
 # exakit-common.ps1. Mirrors setup/lib/runtime-nano.sh function-for-function.
@@ -14,25 +14,24 @@ $script:NanoVolume    = if ($env:EXAKIT_NANO_VOLUME) { $env:EXAKIT_NANO_VOLUME }
 $script:NanoMinRamGb  = if ($env:EXAKIT_NANO_MIN_RAM_GB) { [int]$env:EXAKIT_NANO_MIN_RAM_GB } else { 4 }
 $script:NanoReadyTimeout = if ($env:EXAKIT_NANO_READY_TIMEOUT) { [int]$env:EXAKIT_NANO_READY_TIMEOUT } else { 600 }
 
-# Get-NanoEngine - the usable container engine, cached after first call.
+# Get-NanoEngine - the usable container engine (Docker only on Windows),
+# cached after first call.
 #
 # `docker info` fails loudly (writes to stderr) when Docker Desktop is
 # installed but not running - exactly the case Test-NanoRequirements exists
 # to give a friendly message for. Under $ErrorActionPreference = 'Stop'
 # (set globally by every entry point) a native command's stderr write can
 # surface as an uncaught exception instead of a plain non-zero exit code, so
-# this is wrapped: a thrown error here means "this candidate isn't usable",
-# not "the whole script should die with a raw stack trace".
+# this is wrapped: a thrown error here means "docker isn't usable", not "the
+# whole script should die with a raw stack trace".
 function Get-NanoEngine {
     if ($script:NanoEngineCache) { return $script:NanoEngineCache }
-    foreach ($candidate in @("docker", "podman")) {
-        if (Get-Command $candidate -ErrorAction SilentlyContinue) {
-            try {
-                & $candidate info *> $null
-                if ($LASTEXITCODE -eq 0) { $script:NanoEngineCache = $candidate; return $candidate }
-            } catch {
-                Write-ExakitLog "WARN" "$candidate info failed: $_"
-            }
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        try {
+            & docker info *> $null
+            if ($LASTEXITCODE -eq 0) { $script:NanoEngineCache = "docker"; return "docker" }
+        } catch {
+            Write-ExakitLog "WARN" "docker info failed: $_"
         }
     }
     return $null
@@ -58,7 +57,7 @@ function Test-NanoRequirements {
         if (Get-Command docker -ErrorAction SilentlyContinue) {
             Fail "Docker is installed but not running. Start Docker Desktop and re-run."
         }
-        Fail "No container runtime found. Install Docker Desktop (https://docs.docker.com/desktop/) or Podman, then re-run."
+        Fail "No container runtime found. Install Docker Desktop (https://docs.docker.com/desktop/), then re-run."
     }
     Ok "Container runtime: $engine"
 
