@@ -363,13 +363,17 @@ exakit_prompt_optional_verification() {
 
 exakit_load_local_file() {
     while :; do
-        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (blank/back to return)")"
+        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (type back to return)")"
         case "$_raw_path" in
-            ""|b|B|back|Back|BACK)
+            b|B|back|Back|BACK)
                 info "Returning to data loading options."
                 return 2
                 ;;
         esac
+        if [ -z "$_raw_path" ]; then
+            warn "Please enter a local CSV/text/Parquet file path, or type back to return."
+            continue
+        fi
         _path="$(exakit_normalize_path "$_raw_path")"
         [ -s "$_path" ] && break
         warn "File not found or empty: $_path"

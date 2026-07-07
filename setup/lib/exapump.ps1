@@ -462,10 +462,14 @@ function Request-ExakitOptionalVerification {
 
 function Import-ExakitLocalFile {
     while ($true) {
-        $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path (blank/back to return)" ""
-        if (-not $rawPath -or $rawPath -match '^(b|back)$') {
+        $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path (type back to return)" ""
+        if ($rawPath -match '^(b|back)$') {
             Info "Returning to data loading options."
             return "back"
+        }
+        if (-not $rawPath) {
+            Warn2 "Please enter a local CSV/text/Parquet file path, or type back to return."
+            continue
         }
         $path = Get-ExakitNormalizedPath $rawPath
         if ((Test-Path $path) -and (Get-Item $path).Length -gt 0) { break }

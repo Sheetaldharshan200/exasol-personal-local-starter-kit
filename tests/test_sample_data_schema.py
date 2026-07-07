@@ -266,7 +266,8 @@ class LoadWiringTests(unittest.TestCase):
         )
         for menu_name, local_file_flow in local_file_blocks:
             with self.subTest(menu=menu_name):
-                self.assertIn("blank/back to return", local_file_flow)
+                self.assertIn("type back to return", local_file_flow)
+                self.assertIn("Please enter a local CSV/text/Parquet file path", local_file_flow)
                 self.assertIn("back to return", local_file_flow)
                 self.assertIn("Returning to data loading options.", local_file_flow)
 
