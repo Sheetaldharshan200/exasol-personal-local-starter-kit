@@ -95,7 +95,7 @@ main() {
     esac
 
     # --- 3. fetch the kit ----------------------------------------------------
-    mkdir -p "$kit_dir"
+    mkdir -p "$kit_dir" || fail "Could not create $kit_dir. Check that $EXAKIT_HOME is writable and the disk is not full."
     if [ -n "${EXAKIT_LOCAL_KIT:-}" ]; then
         [ -f "$EXAKIT_LOCAL_KIT/install.sh" ] || fail "EXAKIT_LOCAL_KIT does not look like a kit checkout: $EXAKIT_LOCAL_KIT"
         EXAKIT_KIT_SOURCE="local:$EXAKIT_LOCAL_KIT"
@@ -108,16 +108,24 @@ main() {
         EXAKIT_KIT_SOURCE="$EXAKIT_REPO@$EXAKIT_REF"
         export EXAKIT_KIT_SOURCE
         say "Downloading the starter kit ($EXAKIT_REPO@$EXAKIT_REF)"
-        tmp_tar="$(mktemp "${TMPDIR:-/tmp}/exakit-src.XXXXXX")"
-        auth_header=""
-        [ -n "${GITHUB_TOKEN:-}" ] && auth_header="Authorization: Bearer $GITHUB_TOKEN"
-        curl -fL --proto '=https' --retry 3 --connect-timeout 15 -sS \
-            ${auth_header:+-H "$auth_header"} -o "$tmp_tar" \
-            "https://github.com/$EXAKIT_REPO/archive/refs/heads/$EXAKIT_REF.tar.gz" \
-            || curl -fL --proto '=https' --retry 3 --connect-timeout 15 -sS \
-            ${auth_header:+-H "$auth_header"} -o "$tmp_tar" \
-            "https://github.com/$EXAKIT_REPO/archive/refs/tags/$EXAKIT_REF.tar.gz" \
-            || fail "Could not download the kit from github.com/$EXAKIT_REPO ($EXAKIT_REF). If the repo is private, set GITHUB_TOKEN or use EXAKIT_LOCAL_KIT."
+        tmp_tar="$(mktemp "${TMPDIR:-/tmp}/exakit-src.XXXXXX")" \
+            || fail "Could not create a temporary file. Check that ${TMPDIR:-/tmp} is writable and the disk is not full."
+        # Fetch with the auth header ONLY when a token is set. Passing it via
+        # ${auth_header:+-H "..."} word-splits the header value into separate
+        # argv tokens (a real bug), so branch explicitly instead. --max-time
+        # caps a stalled transfer so a hung connection can't hang forever.
+        _fetch_kit() {
+            if [ -n "${GITHUB_TOKEN:-}" ]; then
+                curl -fL --proto '=https' --retry 3 --connect-timeout 15 --max-time 300 -sS \
+                    -H "Authorization: Bearer $GITHUB_TOKEN" -o "$tmp_tar" "$1"
+            else
+                curl -fL --proto '=https' --retry 3 --connect-timeout 15 --max-time 300 -sS \
+                    -o "$tmp_tar" "$1"
+            fi
+        }
+        _fetch_kit "https://github.com/$EXAKIT_REPO/archive/refs/heads/$EXAKIT_REF.tar.gz" \
+            || _fetch_kit "https://github.com/$EXAKIT_REPO/archive/refs/tags/$EXAKIT_REF.tar.gz" \
+            || fail "Could not download the kit from github.com/$EXAKIT_REPO ($EXAKIT_REF). Check your internet connection or proxy (set HTTPS_PROXY if needed); if the repository is private, set GITHUB_TOKEN or use EXAKIT_LOCAL_KIT."
 
         # Replace previous kit copy so re-runs always use the fetched ref.
         find "$kit_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
