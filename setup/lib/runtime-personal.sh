@@ -109,6 +109,87 @@ personal_deployment_running() {
     port_in_use "$EXAKIT_PERSONAL_PORT" && "$(personal_cli)" info >/dev/null 2>&1
 }
 
+# personal_db_port_pids — PIDs currently LISTENing on the deployment port.
+personal_db_port_pids() {
+    command -v lsof >/dev/null 2>&1 || return 0
+    lsof -nP -iTCP:"$EXAKIT_PERSONAL_PORT" -sTCP:LISTEN -t 2>/dev/null | sort -u
+}
+
+# personal_is_orphan_daemon PID — true only if PID is an Exasol Personal runner
+# daemon (the "mac-runner ... __daemon__" forwarder). Scopes cleanup so we never
+# kill an unrelated application that happens to hold the port.
+personal_is_orphan_daemon() {
+    case "$(ps -p "$1" -o command= 2>/dev/null || true)" in
+        *mac-runner*__daemon__*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# personal_reap_orphan_daemon — the Exasol Personal launcher can leave an
+# orphaned "mac-runner ... __daemon__" process bound to the database port after
+# a failed deploy, or after a destroy that could not find its PID file (it logs
+# "VM is not running (no PID file found)"). The orphan then makes the next
+# deploy fail with "bind: operation not permitted" on vm.sock and makes MCP
+# clients see "Connection reset by peer". Reap only that specific daemon; a
+# genuinely foreign process on the port is reported and left untouched.
+# Returns 0 if the port ends up free (or was never held), 1 otherwise.
+personal_reap_orphan_daemon() {
+    # Judge the port by whether a process is actually LISTENing on it, not by a
+    # bare TCP connect: after a teardown, client sockets linger in
+    # CLOSE_WAIT/TIME_WAIT and would make a connect test wrongly report "in use".
+    if ! command -v lsof >/dev/null 2>&1; then
+        if port_in_use "$EXAKIT_PERSONAL_PORT"; then
+            warn "Port $EXAKIT_PERSONAL_PORT is in use but 'lsof' is unavailable to identify the process; cannot auto-clean a leftover Exasol daemon."
+            return 1
+        fi
+        return 0
+    fi
+
+    _listeners="$(personal_db_port_pids)"
+    [ -n "$_listeners" ] || return 0   # nothing listening → port is free
+
+    _reaped=""
+    for _pid in $_listeners; do
+        if personal_is_orphan_daemon "$_pid"; then
+            info "Reaping orphaned Exasol runner daemon (pid $_pid) still holding port $EXAKIT_PERSONAL_PORT"
+            pkill -P "$_pid" 2>/dev/null || true
+            kill "$_pid" 2>/dev/null || true
+            _reaped="$_reaped $_pid"
+        else
+            warn "Port $EXAKIT_PERSONAL_PORT is held by a non-Exasol process (pid $_pid: $(ps -p "$_pid" -o command= 2>/dev/null | cut -c1-80)); leaving it untouched."
+        fi
+    done
+
+    # Only a foreign listener remains (nothing of ours to reap) → not our port.
+    [ -n "$_reaped" ] || return 1
+
+    # Wait for the listener to release the port (SIGTERM path, up to ~5s), then
+    # force-kill any survivor and its children and give it a moment to settle.
+    _waited=0
+    while [ "$_waited" -lt 5 ] && [ -n "$(personal_db_port_pids)" ]; do
+        sleep 1
+        _waited=$((_waited + 1))
+    done
+    for _pid in $_reaped; do
+        if kill -0 "$_pid" 2>/dev/null; then
+            pkill -9 -P "$_pid" 2>/dev/null || true
+            kill -9 "$_pid" 2>/dev/null || true
+        fi
+    done
+    _waited=0
+    while [ "$_waited" -lt 3 ] && [ -n "$(personal_db_port_pids)" ]; do
+        sleep 1
+        _waited=$((_waited + 1))
+    done
+
+    if [ -n "$(personal_db_port_pids)" ]; then
+        warn "Port $EXAKIT_PERSONAL_PORT still has a listening process after reaping the Exasol daemon."
+        return 1
+    fi
+    ok "Freed port $EXAKIT_PERSONAL_PORT (removed a leftover Exasol runner daemon)"
+    return 0
+}
+
 # personal_deploy_local — run the local deployment. This is the long step
 # (10-20 minutes on first install); output stays visible and is logged.
 personal_deploy_local() {
@@ -128,12 +209,14 @@ personal_deploy_local() {
         die "Declined to reuse the running database. Stop it first ('exakit stop', or 'exasol stop'), then re-run to deploy a fresh one — port $EXAKIT_PERSONAL_PORT stays in use while it is running."
     fi
 
-    # Port busy but the launcher sees no reachable deployment on it: it is a
-    # foreign process (another database, a stale container) that we must not
-    # clobber. EXAKIT_DB_PORT does not apply to the macOS path, so name the
-    # real port and say so honestly.
+    # Port busy but the launcher sees no reachable deployment on it. This is
+    # usually our own orphaned runner daemon from a failed deploy or destroy —
+    # reap it and continue. Only a genuinely foreign process (another database,
+    # a stale container), which the reaper leaves untouched, is a hard stop.
+    # EXAKIT_DB_PORT does not apply to the macOS path, so name the real port.
     if port_in_use "$EXAKIT_PERSONAL_PORT"; then
-        die "Port $EXAKIT_PERSONAL_PORT is in use by a process that is not a reachable Exasol Personal deployment. Stop that application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
+        personal_reap_orphan_daemon || \
+            die "Port $EXAKIT_PERSONAL_PORT is in use by a process that is not a reachable Exasol Personal deployment. Stop that application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
     fi
 
     info "Deploying Exasol Personal locally — this takes 10-20 minutes on first install"
@@ -264,6 +347,12 @@ personal_teardown() {
     else
         info "No active deployment found"
     fi
+    # The launcher's destroy can leave an orphaned runner daemon bound to the
+    # port when it cannot locate the daemon PID. Reap it unconditionally (even
+    # when no deployment was found above, the orphan can outlive the deployment
+    # dir) so a future deploy and MCP clients get a clean port.
+    personal_reap_orphan_daemon || \
+        warn "Could not fully free port $EXAKIT_PERSONAL_PORT; if a later deploy fails to bind it, stop the leftover process holding that port and retry."
     manifest_set runtime.status "removed"
 }
 

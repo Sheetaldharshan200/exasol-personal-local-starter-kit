@@ -72,7 +72,13 @@ _exakit_ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
 _exakit_log_file() {
     [ -n "${EXAKIT_LOG_FILE:-}" ] || return 0
-    printf '%s %s\n' "$(_exakit_ts)" "$*" >> "$EXAKIT_LOG_FILE"
+    # Best-effort: the log directory may already be gone (e.g. during
+    # `uninstall`, which deletes the kit home). A failed redirection-open is
+    # reported to the *group's* stderr before a trailing `2>/dev/null` on the
+    # printf would apply, so redirect at the group level and also skip early if
+    # the directory is missing. Never let logging fail a command.
+    [ -d "$(dirname "$EXAKIT_LOG_FILE")" ] || return 0
+    { printf '%s %s\n' "$(_exakit_ts)" "$*" >> "$EXAKIT_LOG_FILE"; } 2>/dev/null || return 0
 }
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*";      _exakit_log_file "INFO  $*"; }
@@ -1894,4 +1900,91 @@ store_credential() {
 
 read_credential() {
     cat "$EXAKIT_CREDS_DIR/$1" 2>/dev/null
+}
+
+# --- full uninstall --------------------------------------------------------
+#
+# exakit_uninstall_run <dry_run> — remove every artifact this kit installs, in
+# dependency order: the local database and ALL its data, the managed MCP client
+# configs, the installed AI skills, the exapump profile, the kit home, and the
+# CLI binaries. With <dry_run>="1" it prints the plan and changes nothing, so
+# the caller can show exactly what will go before asking for confirmation.
+#
+# Deliberately NOT removed (reported instead): uv/uvx (a shared third-party
+# Python runner the user may rely on elsewhere) and the PATH line added to the
+# shell profile (unmarked and shared with other tools — unsafe to edit blindly).
+exakit_uninstall_run() {
+    _dry="${1:-0}"
+    _step() { # _step <message>  — narrate the action (or the plan line)
+        if [ "$_dry" = "1" ]; then info "  will remove: $1"; else info "$1"; fi
+    }
+    _rm() { # _rm <path> — remove a path unless dry-run
+        [ "$_dry" = "1" ] || rm -rf "$1"
+    }
+
+    # 1) Database + all data. Uses the runtime teardown (always --data), which
+    #    for Personal also reaps any orphaned runner daemon on the DB port.
+    _type="$(manifest_get runtime.type 2>/dev/null || true)"
+    if [ -n "$_type" ]; then
+        _step "local Exasol $_type deployment and ALL its data"
+        if [ "$_dry" != "1" ]; then
+            case "$_type" in
+                nano)     nano_teardown --data     || warn "Database teardown reported errors (continuing uninstall)" ;;
+                personal) personal_teardown --data || warn "Database teardown reported errors (continuing uninstall)" ;;
+                *)        warn "Unknown runtime type '$_type'; skipping database teardown" ;;
+            esac
+        fi
+    fi
+
+    # 2) Managed MCP configuration in the AI clients (Claude Desktop, Cursor,
+    #    Codex). Best-effort: a failure here must not block the rest.
+    if command -v exakit_mcp_operation >/dev/null 2>&1; then
+        _step "managed MCP configuration in Claude Desktop, Cursor, and Codex"
+        if [ "$_dry" != "1" ]; then
+            exakit_mcp_operation uninstall >/dev/null 2>&1 || \
+                warn "Removing the managed MCP client config reported issues (continuing uninstall)"
+        fi
+    fi
+
+    # 3) Installed AI skills. Prefer the live list from the kit's skills/ dir;
+    #    fall back to the known names when the checkout is already gone.
+    _skill_names=""
+    _repo_root="$(exakit_repo_root 2>/dev/null || true)"
+    if [ -n "$_repo_root" ] && [ -d "$_repo_root/skills" ]; then
+        for _sd in "$_repo_root"/skills/*/; do
+            [ -f "$_sd/SKILL.md" ] || continue
+            _skill_names="$_skill_names $(basename "$_sd")"
+        done
+    fi
+    [ -n "$_skill_names" ] || _skill_names="local-agent-ready-starter trusted-ai-workflow"
+    for _root in "$HOME/.claude/skills" "$HOME/.agents/skills"; do
+        for _name in $_skill_names; do
+            if [ -e "$_root/$_name" ]; then
+                _step "AI skill $_root/$_name"
+                _rm "$_root/$_name"
+            fi
+        done
+    done
+
+    # 4) exapump profile store (the kit created it; the binary goes in step 6).
+    if [ -e "$HOME/.exapump" ]; then
+        _step "exapump profiles at $HOME/.exapump"
+        _rm "$HOME/.exapump"
+    fi
+
+    # 5) Kit home: credentials, logs, manifest, cached kit copy, MCP snapshots.
+    if [ -e "$EXAKIT_HOME" ]; then
+        _step "kit home $EXAKIT_HOME (credentials, logs, manifest, snapshots)"
+        _rm "$EXAKIT_HOME"
+    fi
+
+    # 6) CLI binaries. Removed last so earlier steps can still call the launcher.
+    #    Removing the running exakit binary itself is safe (the inode survives
+    #    until the process exits).
+    for _bin in exasol exakit exapump; do
+        if [ -e "$EXAKIT_BIN_DIR/$_bin" ]; then
+            _step "CLI binary $EXAKIT_BIN_DIR/$_bin"
+            _rm "$EXAKIT_BIN_DIR/$_bin"
+        fi
+    done
 }

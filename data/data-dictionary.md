@@ -161,3 +161,6 @@ different size (counts scale linearly with SF).*
   or `TOP n`.
 - **Revenue** (kit convention): `l_extendedprice * (1 - l_discount)` — net of line discount,
   excludes tax, does not subtract returns. Add `WHERE l_returnflag <> 'R'` to exclude returned lines.
+
+See **[example-questions.md](example-questions.md)** for 14 ready-to-ask questions with validated
+reference SQL you can inspect before running.
