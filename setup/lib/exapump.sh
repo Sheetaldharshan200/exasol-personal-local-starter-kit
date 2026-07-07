@@ -362,7 +362,7 @@ exakit_prompt_optional_verification() {
 }
 
 exakit_load_local_file() {
-    _raw_path="$(prompt_text "Local CSV/text file path")"
+    _raw_path="$(prompt_text "Local CSV/text/Parquet file path")"
     _path="$(exakit_normalize_path "$_raw_path")"
     [ -s "$_path" ] || die "File not found or empty: $_path"
     _default_table="${EXAKIT_SCHEMA:-STARTER_KIT}.$(exakit_table_name_from_path "$_path")"
@@ -459,18 +459,18 @@ exakit_show_exapump_guidance() {
 }
 
 exakit_data_load_menu() {
+    _mode="${1:-manual}"
     [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
         die "No exapump connection profile is recorded — re-run the installer, then retry."
 
     info "Choose a data loading option"
-    printf '    1. Default: load bundled data/ folder (TPC-H sample)\n'
-    printf '    2. Local CSV/Text File\n'
-    printf '    3. Remote CSV/Text File\n'
-    printf '    4. Import from Another Database\n'
-    printf '    5. Import from Another Exasol\n'
-    printf '    6. Exapump\n'
-    printf '    7. SQL Script\n'
-    printf '    8. Skip for now\n'
+    printf '    1. Bundled sample dataset (TPC-H)\n'
+    printf '    2. Local CSV/text/Parquet file\n'
+    if [ "$_mode" = "install" ]; then
+        printf '    3. Skip for now\n'
+    else
+        printf '    3. Terminate\n'
+    fi
     _default_choice="1"
     _choice="$(prompt_text "Choose data option" "$_default_choice")"
     case "$_choice" in
@@ -479,12 +479,13 @@ exakit_data_load_menu() {
             exakit_load_sample_data "$_kit_root"
             ;;
         2) exakit_load_local_file ;;
-        3) exakit_load_remote_file ;;
-        4) exakit_show_database_import_guidance "Import from Another Database" ;;
-        5) exakit_show_database_import_guidance "Import from Another Exasol" ;;
-        6) exakit_show_exapump_guidance ;;
-        7) exakit_run_sql_script ;;
-        8|"") info "Skipping data load. Run it any time with: exakit data-load" ;;
+        3|"")
+            if [ "$_mode" = "install" ]; then
+                info "Skipping data load. Run it any time with: exakit data-load"
+            else
+                info "Data loading terminated."
+            fi
+            ;;
         *) die "Unknown data loading option: $_choice" ;;
     esac
 }

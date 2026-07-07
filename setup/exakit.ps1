@@ -12,7 +12,7 @@
 #   start                 start the local database
 #   stop                  stop the local database
 #   load-data [-Force]    load the sample dataset (schema + CSVs + verify)
-#   data-load             open guided data loading options
+#   data-load             open focused data loading options
 #   mcp-configs           regenerate the ready-made temporary MCP config bundle
 #   mcp-setup             choose temporary or permanent MCP client setup
 #   mcp-status [clients]  show managed MCP state

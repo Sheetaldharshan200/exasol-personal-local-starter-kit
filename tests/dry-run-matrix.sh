@@ -192,6 +192,7 @@ EXAKIT_HOME='$_personal_backup_dir/home'
 EXAKIT_PERSONAL_DEPLOY_DIR='$_personal_backup_dir/deploy'
 EXAKIT_LOG_FILE='$_personal_backup_dir/backup.log'
 manifest_set() { :; }
+personal_status() { printf '%s\n' stopped; }
 personal_upgrade_backup 2.0.0 3.0.0 >/dev/null
 find \"\$EXAKIT_HOME/backups\" -name 'personal-upgrade-*.tar.gz' | wc -l | tr -d ' '
 ")"

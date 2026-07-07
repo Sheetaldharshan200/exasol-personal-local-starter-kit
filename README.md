@@ -112,7 +112,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 
-Prefer your own data? Run `exakit data-load` — a guided menu that loads the bundled sample, a **local or remote CSV**, a **SQL script**, or imports **from another database (or another Exasol)**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
+Prefer your own data? Run `exakit data-load` — a focused guided menu that loads the bundled sample or a **local CSV, text, or Parquet file**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 ### Day-to-day
 

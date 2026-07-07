@@ -1773,7 +1773,7 @@ exakit_maybe_offer_data_load() {
         info "Skipping data loading. Run it any time with: exakit data-load"
         return 0
     fi
-    if ( exakit_data_load_menu ); then
+    if ( exakit_data_load_menu install ); then
         :
     else
         warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"

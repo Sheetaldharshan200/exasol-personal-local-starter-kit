@@ -9,7 +9,7 @@ exakit	info		Print the connection details panel (DSN, users, schema).
 exakit	start		Start the local Exasol database container.
 exakit	stop		Stop the local Exasol database container.
 exakit	load-data	[--force | -Force]	Load the bundled sample dataset (schema + CSVs + verify). --force reloads even if already loaded.
-exakit	data-load		Open the guided data-loading menu: sample data, local/remote CSV, DB import, or SQL script.
+exakit	data-load		Open the focused data-loading menu: bundled sample data or a local CSV/text/Parquet file.
 exakit	mcp-configs		Regenerate the ready-made temporary MCP config bundle.
 exakit	mcp-setup		Configure MCP in your AI clients (permanent edit or temporary copy/paste).
 exakit	mcp-status	[clients]	Show managed MCP state for Claude Desktop, Cursor, and Codex.

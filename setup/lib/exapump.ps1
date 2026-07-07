@@ -461,7 +461,7 @@ function Request-ExakitOptionalVerification {
 }
 
 function Import-ExakitLocalFile {
-    $rawPath = Read-ExakitPrompt "Local CSV/text file path" ""
+    $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path" ""
     $path = Get-ExakitNormalizedPath $rawPath
     if (-not (Test-Path $path) -or (Get-Item $path).Length -eq 0) { Fail "File not found or empty: $path" }
     $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA } else { "STARTER_KIT" }
@@ -566,19 +566,19 @@ function Show-ExakitExapumpGuidance {
 }
 
 function Show-ExakitDataLoadMenu {
+    param([switch]$InstallMode)
     if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
         Fail "No exapump connection profile is recorded - re-run the installer, then retry."
     }
 
     Info "Choose a data loading option"
-    Write-Host "    1. Default: load bundled data/ folder (TPC-H sample)"
-    Write-Host "    2. Local CSV/Text File"
-    Write-Host "    3. Remote CSV/Text File"
-    Write-Host "    4. Import from Another Database"
-    Write-Host "    5. Import from Another Exasol"
-    Write-Host "    6. Exapump"
-    Write-Host "    7. SQL Script"
-    Write-Host "    8. Skip for now"
+    Write-Host "    1. Bundled sample dataset (TPC-H)"
+    Write-Host "    2. Local CSV/text/Parquet file"
+    if ($InstallMode) {
+        Write-Host "    3. Skip for now"
+    } else {
+        Write-Host "    3. Terminate"
+    }
     $defaultChoice = "1"
     $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
     switch ($choice) {
@@ -588,12 +588,13 @@ function Show-ExakitDataLoadMenu {
             Invoke-ExakitSampleDataLoad -KitRoot $kitRoot
         }
         "2" { Import-ExakitLocalFile }
-        "3" { Import-ExakitRemoteFile }
-        "4" { Show-ExakitDatabaseImportGuidance "Import from Another Database" }
-        "5" { Show-ExakitDatabaseImportGuidance "Import from Another Exasol" }
-        "6" { Show-ExakitExapumpGuidance }
-        "7" { Invoke-ExakitSqlScript }
-        { $_ -eq "8" -or $_ -eq "" } { Info "Skipping data load. Run it any time with: exakit data-load" }
+        { $_ -eq "3" -or $_ -eq "" } {
+            if ($InstallMode) {
+                Info "Skipping data load. Run it any time with: exakit data-load"
+            } else {
+                Info "Data loading terminated."
+            }
+        }
         default { Fail "Unknown data loading option: $choice" }
     }
 }
@@ -602,7 +603,7 @@ function Show-ExakitDataLoadMenu {
 # pipeline: create the schema, bulk-load every data/*.csv, run any transform,
 # verify, then record the result in the manifest. One implementation, shared
 # by the installer's interactive offer, `exakit load-data`, and the guided
-# data-load menu's option 7, so the entry points cannot drift apart.
+# data-load menu's option 1, so the entry points cannot drift apart.
 function Invoke-ExakitSampleDataLoad {
     param([Parameter(Mandatory)][string]$KitRoot, [switch]$Force)
     $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA } else { "STARTER_KIT" }
@@ -692,5 +693,5 @@ function Request-ExakitDataLoadOffer {
         Info "Skipping data loading. Run it any time with: exakit data-load"
         return
     }
-    Show-ExakitDataLoadMenu
+    Show-ExakitDataLoadMenu -InstallMode
 }
