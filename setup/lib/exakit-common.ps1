@@ -117,14 +117,25 @@ function Info([string]$Msg) {
     Write-ExakitLog "INFO" $Msg
 }
 function Ok([string]$Msg) {
-    if ($script:UiFancy) { Write-Host ("    {0}{1}{2} {3}" -f $script:UiOk, $script:UiTick, $script:UiReset, $Msg) }
-    else { Write-Host ("    {0} {1}" -f $script:UiTick, $Msg) -ForegroundColor Green }
+    if ($script:UiFancy) { Write-Host ("      {0}{1}{2} {3}" -f $script:UiOk, $script:UiTick, $script:UiReset, $Msg) }
+    else { Write-Host ("      {0} {1}" -f $script:UiTick, $Msg) -ForegroundColor Green }
     Write-ExakitLog "OK" $Msg
 }
 function Warn2([string]$Msg) {
-    if ($script:UiFancy) { Write-Host ("    {0}!{1} {2}" -f $script:UiWarn, $script:UiReset, $Msg) }
-    else { Write-Host "    ! $Msg" -ForegroundColor Yellow }
+    if ($script:UiFancy) { Write-Host ("      {0}!{1} {2}" -f $script:UiWarn, $script:UiReset, $Msg) }
+    else { Write-Host "      ! $Msg" -ForegroundColor Yellow }
     Write-ExakitLog "WARN" $Msg
+}
+# Menu rendering (mirrors ui.sh's ui_menu_option/ui_menu_hint): options nest
+# under the "Choose ..." action line with the number in the accent colour; the
+# how-to-answer hint is a dim afterthought.
+function Write-ExakitMenuOption([int]$Number, [string]$Label) {
+    if ($script:UiFancy) { Write-Host ("      {0}{1}.{2} {3}" -f $script:UiAccent, $Number, $script:UiReset, $Label) }
+    else { Write-Host ("      {0}. {1}" -f $Number, $Label) }
+}
+function Write-ExakitMenuHint([string]$Text) {
+    if ($script:UiFancy) { Write-Host ("      {0}{1}{2}" -f $script:UiDim, $Text, $script:UiReset) }
+    else { Write-Host ("      {0}" -f $Text) }
 }
 # ExakitFailException - a distinct exception type so callers can tell a
 # deliberate Fail() apart from an unexpected error. Bash's die() only halts
@@ -595,9 +606,9 @@ function Test-ExakitSha256 {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Expected)
     $actual = Get-ExakitSha256 $Path
     if ($actual -ne $Expected.ToLowerInvariant()) {
-        Write-Host ("    {0}{1}{2} Checksum mismatch for {3}" -f $script:UiErr, $script:UiCross, $script:UiReset, (Split-Path $Path -Leaf))
-        Write-Host ("    {0}{1} expected: {2}{3}" -f $script:UiDim, $script:UiVB, $Expected, $script:UiReset)
-        Write-Host ("    {0}{1} actual:   {2}{3}" -f $script:UiDim, $script:UiVB, $actual, $script:UiReset)
+        Write-Host ("      {0}{1}{2} Checksum mismatch for {3}" -f $script:UiErr, $script:UiCross, $script:UiReset, (Split-Path $Path -Leaf))
+        Write-Host ("      {0}{1} expected: {2}{3}" -f $script:UiDim, $script:UiVB, $Expected, $script:UiReset)
+        Write-Host ("      {0}{1} actual:   {2}{3}" -f $script:UiDim, $script:UiVB, $actual, $script:UiReset)
         Fail "Refusing to continue with an unverified artifact"
     }
     Ok "Checksum verified: $(Split-Path $Path -Leaf)"

@@ -102,13 +102,20 @@ _exakit_log_file() {
 
 # Glyphs/colours come from the shared palette (ui.sh): bold + Unicode on an
 # interactive UTF-8 terminal, plain ASCII with no escapes when piped/CI/log.
-# One gutter for everything under a step header: actions/results all indent to
-# the same column so a step's children read as one group. Dim bullet = an action
-# of ours; ✓/!/✗ = its outcome. (Step headers themselves sit one level out.)
+# Three visual levels under the banner: step headers (2-space, begin_step),
+# actions (4-space dim bullet: info/prompts), and outcomes nested under their
+# action (6-space: ✓ ok, ! warn, ✗ error — plus contained tool output). The
+# nesting is what makes a step read as "action → what happened".
 info() { printf '    %s%s%s %s\n' "${UI_DIM:-}" "${UI_BULLET:--}" "${UI_RESET:-}" "$*";      _exakit_log_file "INFO  $*"; }
-ok()   { printf '    %s%s%s %s\n' "${UI_OK:-}"   "${UI_TICK:-[ok]}"  "${UI_RESET:-}" "$*"; _exakit_log_file "OK    $*"; }
-warn() { printf '    %s!%s %s\n'  "${UI_WARN:-}" "${UI_RESET:-}" "$*" >&2;        _exakit_log_file "WARN  $*"; }
-error(){ printf '    %s%s%s %s\n' "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:-}" "$*" >&2; _exakit_log_file "ERROR $*"; }
+ok()   { printf '      %s%s%s %s\n' "${UI_OK:-}"   "${UI_TICK:-[ok]}"  "${UI_RESET:-}" "$*"; _exakit_log_file "OK    $*"; }
+warn() { printf '      %s!%s %s\n'  "${UI_WARN:-}" "${UI_RESET:-}" "$*" >&2;        _exakit_log_file "WARN  $*"; }
+error(){ printf '      %s%s%s %s\n' "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:-}" "$*" >&2; _exakit_log_file "ERROR $*"; }
+
+# Menu rendering: options nest under the "Choose ..." action line with the
+# number in the accent colour; the how-to-answer hint is a dim afterthought.
+# usage: ui_menu_option <number> <label>; ui_menu_hint <text>
+ui_menu_option() { printf '      %s%s.%s %s\n' "${UI_ACCENT:-}" "$1" "${UI_RESET:-}" "$2"; }
+ui_menu_hint()   { printf '      %s%s%s\n' "${UI_DIM:-}" "$1" "${UI_RESET:-}"; }
 
 # --- containing third-party output ------------------------------------------
 # We can style only our own lines; a tool we invoke (e.g. the Exasol launcher)
@@ -116,11 +123,11 @@ error(){ printf '    %s%s%s %s\n' "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:
 # foreign_note prints a dim marker line, and exakit_stream_foreign pipes a
 # command's output through a dim, indented gutter so it reads as "not ours" —
 # while the full, unmodified text still goes to the log.
-foreign_note() { printf '    %s%s %s%s\n' "${UI_DIM:-}" "${UI_HR:--}" "$*" "${UI_RESET:-}"; }
+foreign_note() { printf '      %s%s %s%s\n' "${UI_DIM:-}" "${UI_HR:--}" "$*" "${UI_RESET:-}"; }
 exakit_stream_foreign() {
     while IFS= read -r _sf_line || [ -n "$_sf_line" ]; do
         [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_sf_line" >> "$EXAKIT_LOG_FILE"
-        printf '    %s%s %s%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "$_sf_line" "${UI_RESET:-}"
+        printf '      %s%s %s%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "$_sf_line" "${UI_RESET:-}"
     done
 }
 
@@ -826,7 +833,11 @@ begin_step() {
     EXAKIT_CURRENT_STEP="$1"
     EXAKIT_ACTIVE_LABEL="$2"     # spinner label for run_logged inside this step
     if step_done "$1"; then
-        ok "$2 — already done, skipping"
+        # Step-level line (a whole step's status, not a nested outcome).
+        printf '\n  %s%s%s %s%s%s %s— already done, skipping%s\n' \
+            "${UI_OK:-}" "${UI_TICK:-[ok]}" "${UI_RESET:-}" \
+            "${UI_BOLD:-}" "$2" "${UI_RESET:-}" "${UI_DIM:-}" "${UI_RESET:-}"
+        _exakit_log_file "OK    $2 — already done, skipping"
         return 1
     fi
     # Styled step header: accent arrow + bold title, set off by a blank line.
@@ -845,7 +856,10 @@ exakit_on_failure() {
     ui_restore_cursor
     exakit_sweep_sensitive_tmp     # never leave credential temp files behind
     [ $_status -eq 0 ] && return 0
-    error "Setup failed${EXAKIT_CURRENT_STEP:+ during step: $EXAKIT_CURRENT_STEP}"
+    # Same "card" shape as die(): prominent ✗ header, dim gutter details.
+    printf '\n  %s%s %s%s%s\n' "${UI_ERR:-}" "${UI_CROSS:-[x]}" "${UI_BOLD:-}" \
+        "Setup failed${EXAKIT_CURRENT_STEP:+ during step: $EXAKIT_CURRENT_STEP}" "${UI_RESET:-}" >&2
+    _exakit_log_file "ERROR Setup failed${EXAKIT_CURRENT_STEP:+ during step: $EXAKIT_CURRENT_STEP}"
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
         printf '    %s%s Log: %s%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "$EXAKIT_LOG_FILE" "${UI_RESET:-}" >&2
     fi
@@ -924,9 +938,9 @@ fetch() {
     if [ "$_fetch_rc" -ne 0 ]; then
         rm -f "$_dest"
         error "Download failed: $_url"
-        printf '    Check your internet connection. Behind a corporate proxy, set\n' >&2
-        printf '    HTTPS_PROXY (curl honors it) and re-run. If the URL looks wrong,\n' >&2
-        printf '    a version override (EXAKIT_*_VERSION) may point at a missing release.\n' >&2
+        printf '      %s%s Check your internet connection. Behind a corporate proxy, set%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
+        printf '      %s%s HTTPS_PROXY (curl honors it) and re-run. If the URL looks wrong,%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
+        printf '      %s%s a version override (EXAKIT_*_VERSION) may point at a missing release.%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
         die "Could not download $(basename "$_dest")"
     fi
 }
@@ -971,8 +985,8 @@ ensure_path_hint() {
         *":$1:"*) ;;
         *)
             warn "$1 is not on your PATH."
-            printf '    Add this to your shell profile:\n' >&2
-            printf '      export PATH="%s:$PATH"\n' "$1" >&2
+            printf '      %s%s Add this to your shell profile:%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
+            printf '      %s%s%s   export PATH="%s:$PATH"\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" "$1" >&2
             ;;
     esac
 }
@@ -1658,11 +1672,12 @@ exakit_print_mcp_ready_panel() {
     info "Config files updated — restart the selected client now."
     info "After the restart, look for an MCP server named: exasol"
     printf '\n'
-    printf '    %s%s%s First prompt to try in your AI client:\n' "${UI_DIM:-}" "${UI_BULLET:--}" "${UI_RESET:-}"
-    printf '      %s"Use the exasol MCP server connected to my local Exasol database. List%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
-    printf '      %sthe available schemas and tables first. Then answer my questions with%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
-    printf '      %sread-only SQL only, show me the SQL before you run it, and do not create,%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
-    printf '      %supdate, or delete anything."%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
+    ui_panel_begin "First prompt to try in your AI client"
+    ui_panel_line '"Use the exasol MCP server connected to my local Exasol database.'
+    ui_panel_line 'List the available schemas and tables first. Then answer my'
+    ui_panel_line 'questions with read-only SQL only, show me the SQL before you run'
+    ui_panel_line 'it, and do not create, update, or delete anything."'
+    ui_panel_end
 }
 
 exakit_print_mcp_operation_summary() {
@@ -1764,10 +1779,10 @@ exakit_mcp_setup() {
     else
         printf '\n'
         info "Choose one or more clients"
-        printf '    1. Claude\n'
-        printf '    2. Cursor\n'
-        printf '    3. Codex\n'
-        printf '    %sEnter numbers separated by commas, or type all.%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
+        ui_menu_option 1 "Claude"
+        ui_menu_option 2 "Cursor"
+        ui_menu_option 3 "Codex"
+        ui_menu_hint "numbers separated by commas, or all"
         while :; do
             _selection="$(prompt_text "Choose client numbers" "all")"
             _clients_csv="$(exakit_parse_mcp_client_selection "$_selection")" && break

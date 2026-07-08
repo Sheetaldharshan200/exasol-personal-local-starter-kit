@@ -520,12 +520,12 @@ exakit_data_load_menu() {
 
     while :; do
         info "Choose a data loading option"
-        printf '    1. Bundled sample dataset (TPC-H)\n'
-        printf '    2. Local CSV/Parquet file\n'
+        ui_menu_option 1 "Bundled sample dataset (TPC-H)"
+        ui_menu_option 2 "Local CSV/Parquet file"
         if [ "$_mode" = "install" ]; then
-            printf '    3. Skip for now\n'
+            ui_menu_option 3 "Skip for now"
         else
-            printf '    3. Cancel (skip data loading)\n'
+            ui_menu_option 3 "Cancel (skip data loading)"
         fi
         _default_choice="1"
         _choice="$(prompt_text "Choose data option" "$_default_choice")"
@@ -643,14 +643,17 @@ exakit_load_sample_data() {
         rm -f "$_verify_output"
     fi
 
-    # 5. row-count summary + manifest flags
-    info "Row counts:"
+    # 5. row-count summary (as a panel, like the other summaries) + manifest flags
+    ui_panel_begin "Row counts"
     for _csv in "$_kit_root"/data/*.csv; do
         [ -s "$_csv" ] || continue
         _table="$(basename "$_csv" .csv | tr '[:lower:]' '[:upper:]')"
         _rows="$(exapump_count "$_schema.$_table")"
-        printf '    %-30s %s rows\n' "$_schema.$_table" "${_rows:-?}" | tee -a "${EXAKIT_LOG_FILE:-/dev/null}"
+        _row_line="$(printf '%-30s %s rows' "$_schema.$_table" "${_rows:-?}")"
+        ui_panel_line "$_row_line"
+        _exakit_log_file "DATA  $_row_line"
     done
+    ui_panel_end
     manifest_set data.loaded true
     manifest_set data.schema "$_schema"
     manifest_set data.loaded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

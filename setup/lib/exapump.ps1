@@ -55,10 +55,10 @@ function Write-ExapumpOutput {
     if (-not "$Output".Trim()) { return }
     # Tool output: warn-style header on the gutter, lines in the dim | gutter
     # (same contained shape the verify step uses).
-    Write-Host "    ! $Header" -ForegroundColor Yellow
+    Write-Host "      ! $Header" -ForegroundColor Yellow
     "$Output".Trim() -split "`n" | ForEach-Object {
-        if ($script:UiFancy) { Write-Host ("    {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
-        else { Write-Host ("    | {0}" -f $_) }
+        if ($script:UiFancy) { Write-Host ("      {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
+        else { Write-Host ("      | {0}" -f $_) }
     }
 }
 
@@ -715,12 +715,12 @@ function Show-ExakitDataLoadMenu {
 
     while ($true) {
         Info "Choose a data loading option"
-        Write-Host "    1. Bundled sample dataset (TPC-H)"
-        Write-Host "    2. Local CSV/Parquet file"
+        Write-ExakitMenuOption 1 "Bundled sample dataset (TPC-H)"
+        Write-ExakitMenuOption 2 "Local CSV/Parquet file"
         if ($InstallMode) {
-            Write-Host "    3. Skip for now"
+            Write-ExakitMenuOption 3 "Skip for now"
         } else {
-            Write-Host "    3. Cancel (skip data loading)"
+            Write-ExakitMenuOption 3 "Cancel (skip data loading)"
         }
         $defaultChoice = "1"
         $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
@@ -823,8 +823,8 @@ function Invoke-ExakitSampleDataLoad {
         # exapump's raw CSV is tool output - contain it in the dim gutter
         # (mirrors ui.sh's exakit_stream_foreign).
         "$($verify.Output)".Trim() -split "`n" | ForEach-Object {
-            if ($script:UiFancy) { Write-Host ("    {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
-            else { Write-Host ("    | {0}" -f $_) }
+            if ($script:UiFancy) { Write-Host ("      {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
+            else { Write-Host ("      | {0}" -f $_) }
         }
         # Two independent conditions: the query itself must have run (exapump
         # success, exit-code-quirk-aware), AND no verification check may have
@@ -835,14 +835,16 @@ function Invoke-ExakitSampleDataLoad {
     }
 
     # 5. row-count summary + manifest flags
-    Info "Row counts:"
+    # Row-count summary as a panel, like the other summaries (mirrors ui.sh).
+    Start-ExakitPanel "Row counts"
     foreach ($csv in $csvFiles) {
         $table = ConvertTo-UpperInvariantString ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name))
         $rows = Get-ExapumpRowCount "$schema.$table"
-        $line = "    {0,-30} {1} rows" -f "$schema.$table", $(if ($rows) { $rows } else { "?" })
-        Write-Host $line
-        if ($script:LogFile) { $line | Add-Content -Path $script:LogFile }
+        $line = "{0,-30} {1} rows" -f "$schema.$table", $(if ($rows) { $rows } else { "?" })
+        Write-ExakitPanelLine $line
+        if ($script:LogFile) { "DATA  $line" | Add-Content -Path $script:LogFile }
     }
+    Complete-ExakitPanel
     Set-ExakitManifestValue "data.loaded" $true
     Set-ExakitManifestValue "data.schema" $schema
     Set-ExakitManifestValue "data.loaded_at" ((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
