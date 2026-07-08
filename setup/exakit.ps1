@@ -19,8 +19,6 @@
 #   mcp-restore [snapshot] restore the latest (or a chosen) MCP snapshot
 #   skills-install        install the kit's AI skills for CLI agents
 #                         (~\.claude\skills, ~\.agents\skills)
-#   teardown [-Data]      remove the runtime; -Data also deletes database
-#                         content (Nano volume)
 #   uninstall [-Yes] [-DryRun]
 #                         remove EVERYTHING the kit installed: database + all
 #                         data, MCP client configs, skills, exapump, the kit
@@ -92,18 +90,6 @@ function Invoke-CmdStop {
     switch (Get-RuntimeType) { "nano" { Stop-Nano } }
 }
 
-function Invoke-CmdTeardown {
-    param([switch]$Data)
-    Assert-ExakitInstalled
-    $type = Get-RuntimeType
-    Warn2 "This removes the local Exasol runtime ($type)."
-    if ($Data) { Warn2 "It will ALSO delete all database content." }
-    if (-not (Confirm-ExakitPrompt "Continue with teardown?" $false)) { Info "Teardown cancelled"; return }
-    switch ($type) { "nano" { Remove-Nano -Data:$Data } }
-    Ok "Teardown finished. Credentials, logs and the manifest remain in $script:ExakitHome"
-    Info "Remove them with: Remove-Item -Recurse -Force $script:ExakitHome"
-}
-
 # Invoke-ExakitUninstallRun -DryRun - remove every artifact the kit installs, in
 # dependency order: the local database and ALL its data, the managed MCP client
 # configs, the installed AI skills, the exapump profile, the kit home, and the
@@ -121,8 +107,8 @@ function Invoke-ExakitUninstallRun {
         } else {
             Info "Removing the local Exasol $type deployment and all data"
             switch ($type) {
-                "nano" { try { Remove-Nano -Data } catch { Warn2 "Database teardown reported errors (continuing uninstall)" } }
-                default { Warn2 "Unknown runtime type '$type'; skipping database teardown" }
+                "nano" { try { Remove-Nano -Data } catch { Warn2 "Database removal reported errors (continuing uninstall)" } }
+                default { Warn2 "Unknown runtime type '$type'; skipping database removal" }
             }
         }
     }
@@ -130,7 +116,7 @@ function Invoke-ExakitUninstallRun {
     # 2) Managed MCP configuration in the AI clients. Best-effort.
     if (Get-Command Invoke-McpOperation -ErrorAction SilentlyContinue) {
         if ($DryRun) {
-            Info "  will remove: managed MCP configuration in Claude Desktop, Cursor, and Codex"
+            Info "  will remove: managed MCP configuration in Claude, Cursor, and Codex"
         } else {
             Info "Removing managed MCP configuration from AI clients"
             try { [void](Invoke-McpOperation -Operation "uninstall" -InputArgs @()) }
@@ -176,12 +162,54 @@ function Invoke-ExakitUninstallRun {
     }
 
     # 6) CLI binaries. Removed last so earlier steps can still call them.
+    #    exakit.cmd is the wrapper cmd.exe is still executing right now; deleting
+    #    it in-process makes cmd.exe print "The batch file cannot be found." when
+    #    it re-reads the file after we exit. So collect the binaries and hand
+    #    their removal to a detached process that waits for us to exit first.
+    $binPaths = @()
     foreach ($bin in @("exakit.cmd", "exapump.exe", "exasol.exe", "exakit.ps1")) {
         $p = Join-Path $script:BinDir $bin
         if (Test-Path $p) {
             if ($DryRun) { Info "  will remove: CLI binary $p" }
-            else { Remove-Item -Force -ErrorAction SilentlyContinue $p }
+            else { $binPaths += $p }
         }
+    }
+    if (-not $DryRun -and $binPaths.Count -gt 0) {
+        Remove-ExakitBinariesDeferred -Paths $binPaths
+    }
+}
+
+# Delete the CLI binaries from a short-lived detached PowerShell that first
+# waits for this process (and the cmd.exe running exakit.cmd) to exit. Deleting
+# exakit.cmd while cmd.exe is still executing it is what makes the shell print
+# "The batch file cannot be found."; deferring avoids that entirely.
+function Remove-ExakitBinariesDeferred {
+    param([string[]]$Paths)
+    $waitPids = @($PID)
+    try {
+        $me = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
+        # The parent is the cmd.exe running exakit.cmd - the one that re-reads
+        # the batch file after we return. Wait for it too, but not its parent
+        # (the user's interactive shell, which never exits).
+        if ($me.ParentProcessId) { $waitPids += [int]$me.ParentProcessId }
+    } catch { }
+    $waitPids = @($waitPids | Sort-Object -Unique)
+    $pidList = $waitPids -join ','
+    $quoted  = ($Paths | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ','
+    $deferred = @"
+foreach (`$id in @($pidList)) { try { Wait-Process -Id `$id -Timeout 60 -ErrorAction SilentlyContinue } catch {} }
+Start-Sleep -Milliseconds 250
+foreach (`$f in @($quoted)) { try { Remove-Item -Force -ErrorAction SilentlyContinue `$f } catch {} }
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($deferred))
+    try {
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", $encoded) `
+            -WindowStyle Hidden | Out-Null
+    } catch {
+        # If we cannot spawn the detached cleaner, fall back to deleting inline.
+        # The batch-file message may reappear, but the binaries are still gone.
+        foreach ($f in $Paths) { Remove-Item -Force -ErrorAction SilentlyContinue $f }
     }
 }
 
@@ -540,7 +568,7 @@ function Show-ExakitUsage {
         "exakit - Exasol Personal Local Starter Kit"
         ""
         "Get started:"
-        "  exakit mcp-setup     connect your AI assistant (Claude Desktop, Cursor, Codex)"
+        "  exakit mcp-setup     connect your AI assistant (Claude, Cursor, Codex)"
         ""
         "Everyday commands:"
         "  status               is the database up and healthy?"
@@ -549,7 +577,7 @@ function Show-ExakitUsage {
         "  data-load            load the sample data or your own CSV / Parquet"
         "  mcp-doctor           check the AI (MCP) connection"
         ""
-        "Run 'exakit help --all' for every command (update, backup, repair, teardown, ...)."
+        "Run 'exakit help --all' for every command (update, backup, repair, uninstall, ...)."
     ) | ForEach-Object { Write-Host $_ }
 }
 
@@ -570,7 +598,6 @@ try {
         "mcp-remove"   { Invoke-CmdMcpOperation -Operation "uninstall" -OpArgs $RestArgs }
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
         "skills-install" { Invoke-CmdSkillsInstall }
-        "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
         "uninstall"    { Invoke-CmdUninstall -AssumeYes:($RestArgs -contains "-Yes" -or $RestArgs -contains "--yes" -or $RestArgs -contains "-y") -DryRun:($RestArgs -contains "-DryRun" -or $RestArgs -contains "--dry-run" -or $RestArgs -contains "-n") }
         "logs"         { Invoke-CmdLogs }
         "catalog"      { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }

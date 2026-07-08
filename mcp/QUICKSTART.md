@@ -4,8 +4,8 @@ This subsystem now has a working Python implementation plus lifecycle tests.
 
 ## Current Status
 
-- Supported verified live adapters: Claude Desktop, Cursor, and Codex
-- Permanent runtime client setup: Claude Desktop, Cursor, and Codex
+- Supported verified live adapters: Claude, Cursor, and Codex
+- Permanent runtime client setup: Claude, Cursor, and Codex
 - Supported operations: discover, configure, validate, repair, backup, restore, doctor, uninstall, status
 - Explicitly blocked operation: install
 - Runtime files are generated under the request-specific runtime root, defaulting to `~/.exasol-starter-kit`

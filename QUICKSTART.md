@@ -51,7 +51,7 @@ Run the guided MCP setup:
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected supported client config files for Claude Desktop, Cursor, or Codex.
+The setup backs up and edits the selected supported client config files for Claude, Cursor, or Codex.
 
 When the kit can resolve the local MCP launcher path, it writes that exact path into the client config instead of assuming `uvx` is available on every desktop app's PATH. That keeps setup portable across macOS, Linux, and Windows clients.
 
@@ -98,7 +98,7 @@ exakit info                # connection details
 exakit stop                # stop the database (keeps all state)
 exakit start               # bring it back
 exakit logs                # latest setup log path
-exakit teardown --data     # remove everything database-related
+exakit uninstall           # remove everything the kit installed
 ```
 
 Re-running the installer is always safe — it skips what's done and repairs what isn't.

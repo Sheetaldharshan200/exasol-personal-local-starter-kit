@@ -41,6 +41,10 @@ function Get-RuntimeType { "nano" }
 function Get-ExakitRepoRoot { return $null }   # force fallback skill list
 function Remove-Nano { param([switch]$Data) $script:markers.nano = [bool]$Data }
 function Invoke-McpOperation { param($Operation, $InputArgs) $script:markers.mcp = $Operation; return $true }
+# The real helper defers deletion to a detached process (so cmd.exe does not
+# choke on exakit.cmd being removed mid-run); here we delete synchronously so
+# the assertions below can observe the binaries being gone.
+function Remove-ExakitBinariesDeferred { param([string[]]$Paths) foreach ($f in $Paths) { Remove-Item -Force -ErrorAction SilentlyContinue $f } }
 
 function Seed {
     if (Test-Path $sandbox) { Remove-Item -Recurse -Force $sandbox }

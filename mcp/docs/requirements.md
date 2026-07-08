@@ -43,7 +43,7 @@ Out of scope:
 
 ## Business And Technical Context
 
-- Exasol documents MCP client connectivity for Claude Desktop and describes the MCP server as usable with Claude Desktop, Cursor, Windsurf, and similar assistants.
+- Exasol documents MCP client connectivity for Claude and describes the MCP server as usable with Claude, Cursor, Windsurf, and similar assistants.
 - Exasol states that the MCP server exposes metadata exploration and SQL execution capabilities.
 - Exasol states that query restrictions are determined by the database user permissions, not by the MCP server itself.
 - Exasol recommends a dedicated least-privilege user and gives a read-only example using `CREATE SESSION` plus `GRANT SELECT ON SCHEMA`.

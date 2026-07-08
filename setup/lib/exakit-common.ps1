@@ -96,7 +96,15 @@ function Initialize-ExakitLogging {
 
 function Write-ExakitLog([string]$Level, [string]$Msg) {
     if (-not $script:LogFile) { return }
-    "{0} {1,-5} {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Msg | Add-Content -Path $script:LogFile
+    try {
+        "{0} {1,-5} {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Msg | Add-Content -Path $script:LogFile -ErrorAction Stop
+    } catch {
+        # The log directory can disappear mid-run - uninstall removes the kit
+        # home (which contains logs/) while later status lines are still being
+        # logged. Stop logging rather than surfacing a spurious "Unexpected
+        # error" after the work has already succeeded.
+        $script:LogFile = $null
+    }
 }
 # Glyphs/colours come from the shared palette (ui.ps1) when a fancy terminal
 # is available; otherwise fall back to Write-Host -ForegroundColor so basic
@@ -295,8 +303,18 @@ function Assert-ExakitPython {
 function Invoke-ExakitPython {
     param([Parameter(Mandatory)][string]$Script, [Parameter(ValueFromRemainingArguments)]$PyArgs)
     $tmp = [System.IO.Path]::GetTempFileName() + ".py"
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
         Set-Content -Path $tmp -Value $Script -Encoding UTF8
+        # Under the module-global $ErrorActionPreference = 'Stop', 2>&1 turns
+        # the interpreter's FIRST stderr write into a terminating error that
+        # tears the pipeline down - killing Python mid-run and surfacing only
+        # that first line instead of the intended "Python exited with code N"
+        # diagnostic. A script that merely warns on stderr while succeeding
+        # would abort the caller outright. 'Continue' captures the full
+        # output; the exit-code check below stays the real failure signal.
+        # Same fix as Invoke-Exapump / Invoke-ExakitLogged.
+        $ErrorActionPreference = "Continue"
         if (Test-ExakitSystemPython) {
             $out = & python $tmp @PyArgs 2>&1
         } else {
@@ -304,9 +322,11 @@ function Invoke-ExakitPython {
             $out = & $uv run --python $script:ManagedPythonVersion --no-project python $tmp @PyArgs 2>&1
         }
         $code = $LASTEXITCODE
+        $ErrorActionPreference = $previousErrorActionPreference
         if ($code -ne 0) { throw "Python exited with code ${code}: $out" }
         return ($out -join "`n")
     } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
     }
 }
@@ -736,8 +756,9 @@ function Install-ExakitSkills {
 }
 
 # Request-ExakitSkillsInstallOffer - after setup, place the skills where CLI
-# agents can find them. Mirrors exakit_maybe_offer_skills_install; matches the
-# MCP-offer behaviour on this path (installs by default when non-interactive).
+# agents can find them. Mirrors exakit_maybe_offer_skills_install. Always
+# installs - no prompt - so the skills are present without requiring
+# interactive confirmation, on both interactive and non-interactive runs.
 function Request-ExakitSkillsInstallOffer {
     $repoRoot = Get-ExakitRepoRoot
     if (-not $repoRoot) { return }
@@ -746,15 +767,6 @@ function Request-ExakitSkillsInstallOffer {
     $hasSkill = Get-ChildItem -Path $skillsSrc -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path (Join-Path $_.FullName "SKILL.md") }
     if (-not $hasSkill) { return }
-    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
-        Info "Non-interactive install - installing the kit's AI skills by default."
-        [void](Install-ExakitSkills)
-        return
-    }
-    if (-not (Confirm-ExakitPrompt "Install the kit's AI skills for your CLI agent (Claude Code / Codex)?" $true)) {
-        Info "Skipping skills install for now. You can run: exakit skills-install"
-        return
-    }
     if (-not (Install-ExakitSkills)) {
         Warn2 "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
     }

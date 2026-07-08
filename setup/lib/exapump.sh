@@ -202,31 +202,102 @@ PY
     ok "Connection profile written: [$EXAKIT_EXAPUMP_PROFILE] in $EXAPUMP_CONFIG"
 }
 
-# exapump_validate_connection — SELECT 1 through the new profile.
+# exapump_ddl_roundtrip — one DDL write-readback round through the profile.
+# Returns 0 ONLY if a freshly created schema+table is durably persisted and
+# visible from SUBSEQUENT connections (each exapump invocation reconnects).
+#
+# This is the real readiness signal. Right after first boot the Nano database
+# accepts a connection and answers SELECT 1 while still stabilizing, and in that
+# window it can ACKNOWLEDGE a DDL batch ("N statements executed, 0 failed")
+# without durably persisting it — so the schema-creation step "succeeds" but the
+# very next `exapump upload` fails with "schema STARTER_KIT not found". The probe
+# reproduces exactly that sequence (create schema in one connection, reference it
+# from the next) so we only proceed once the database really is ready.
+exapump_ddl_roundtrip() {
+    _probe="EXAKIT_READY_PROBE"
+    _cli="$(exapump_cli)"
+    # Best-effort clean slate — a probe schema left by an interrupted earlier
+    # attempt must not make this one look like a success. Result ignored.
+    "$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "DROP SCHEMA IF EXISTS $_probe CASCADE" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
+    "$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "CREATE SCHEMA $_probe" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || return 1
+    # A NEW connection must see the just-created schema (this is the exact
+    # cross-connection visibility that failed during install) and persist a table.
+    if ! "$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "CREATE TABLE $_probe.READY_PROBE (n DECIMAL(9,0))" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 \
+        || ! "$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "INSERT INTO $_probe.READY_PROBE VALUES (42)" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        "$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "DROP SCHEMA IF EXISTS $_probe CASCADE" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
+        return 1
+    fi
+    _out="$("$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "SELECT 'EXAKIT_DDL[' || CAST(n AS VARCHAR(10)) || ']' AS R FROM $_probe.READY_PROBE" 2>/dev/null)"
+    "$_cli" sql -p "$EXAKIT_EXAPUMP_PROFILE" "DROP SCHEMA IF EXISTS $_probe CASCADE" >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1
+    case "$_out" in
+        *"EXAKIT_DDL[42]"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# exapump_confirm_database_ready — block until the database can durably persist
+# a schema, not merely answer SELECT 1. Polls exapump_ddl_roundtrip with a
+# bounded budget (EXAKIT_DDL_READY_TIMEOUT, default 180s) so the sample-data and
+# MCP steps that follow can trust that CREATE SCHEMA/TABLE will stick.
+exapump_confirm_database_ready() {
+    _timeout="${EXAKIT_DDL_READY_TIMEOUT:-180}"
+    info "Confirming the database can persist schema changes"
+    _waited=0
+    while :; do
+        if exapump_ddl_roundtrip; then
+            if [ "$_waited" -eq 0 ]; then
+                ok "Database is ready for schema changes"
+            else
+                ok "Database is ready for schema changes (after ~${_waited}s)"
+            fi
+            return 0
+        fi
+        [ "$_waited" -ge "$_timeout" ] && break
+        sleep 5
+        _waited=$((_waited + 5))
+        if [ $((_waited % 30)) -eq 0 ]; then
+            info "Database still stabilizing... (${_waited}s)"
+        fi
+    done
+    die "The database accepts connections but could not durably persist a schema within ${_timeout}s (first-boot stabilization window). Wait a moment, then retry: exakit data-load"
+}
+
+# exapump_validate_connection — SELECT 1 through the new profile, then confirm
+# the database can durably persist DDL before any caller relies on CREATE SCHEMA
+# sticking.
 exapump_validate_connection() {
     if [ -z "$(manifest_get components.exapump.profile 2>/dev/null)" ]; then
         die "No connection profile exists (no database password was available to write one). Create it manually with 'exapump profile init $EXAKIT_EXAPUMP_PROFILE', then re-run this script."
     fi
     info "Validating the database connection (SELECT 1)"
+    _connected=0
     _tries=0
     while [ "$_tries" -lt 6 ]; do
         if run_logged "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" 'SELECT 1'; then
-            ok "Connection works"
-            manifest_set components.exapump.validated true
-            # Now that the password is proven to work, persist it as the runtime
-            # password if the runtime step could not (adopted deployment with
-            # unreadable secrets) — the MCP step needs runtime.password_file.
-            if [ -n "${_EXAKIT_PENDING_RUNTIME_PASSWORD:-}" ]; then
-                store_credential runtime_sys_password "$_EXAKIT_PENDING_RUNTIME_PASSWORD"
-                manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/runtime_sys_password"
-                unset _EXAKIT_PENDING_RUNTIME_PASSWORD
-            fi
-            return 0
+            _connected=1
+            break
         fi
         _tries=$((_tries + 1))
         sleep 5
     done
-    die "SELECT 1 failed via profile '$EXAKIT_EXAPUMP_PROFILE'. Try: exapump sql -p $EXAKIT_EXAPUMP_PROFILE 'SELECT 1'"
+    [ "$_connected" -eq 1 ] || \
+        die "SELECT 1 failed via profile '$EXAKIT_EXAPUMP_PROFILE'. Try: exapump sql -p $EXAKIT_EXAPUMP_PROFILE 'SELECT 1'"
+    ok "Connection works"
+
+    # A working connection is NOT proof the database can persist schema changes
+    # yet — see exapump_ddl_roundtrip. Gate here so both the data-load and MCP
+    # steps that follow run against a database that is genuinely ready.
+    exapump_confirm_database_ready
+
+    manifest_set components.exapump.validated true
+    # Now that the password is proven to work, persist it as the runtime
+    # password if the runtime step could not (adopted deployment with
+    # unreadable secrets) — the MCP step needs runtime.password_file.
+    if [ -n "${_EXAKIT_PENDING_RUNTIME_PASSWORD:-}" ]; then
+        store_credential runtime_sys_password "$_EXAKIT_PENDING_RUNTIME_PASSWORD"
+        manifest_set runtime.password_file "$EXAKIT_CREDS_DIR/runtime_sys_password"
+        unset _EXAKIT_PENDING_RUNTIME_PASSWORD
+    fi
 }
 
 # exapump_run_sql_file <file> [description] — execute a SQL file, logged.
@@ -324,12 +395,20 @@ exakit_upper_table_target() {
         "$(printf '%s' "$_table" | tr '[:lower:]' '[:upper:]')"
 }
 
+# exakit_schema_present <schema> — read-only check that a schema exists, from a
+# fresh connection. Distinct from exakit_ensure_schema, which also creates it.
+exakit_schema_present() {
+    _schema="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    [ -n "$_schema" ] || return 1
+    "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$_schema') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" \
+        2>> "${EXAKIT_LOG_FILE:-/dev/null}" | grep -q "EXAKIT_SCHEMA_PRESENT"
+}
+
 exakit_ensure_schema() {
     _schema="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
     [ -n "$_schema" ] || return 1
-    if "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" \
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$_schema') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" \
-        2>> "${EXAKIT_LOG_FILE:-/dev/null}" | grep -q "EXAKIT_SCHEMA_PRESENT"; then
+    if exakit_schema_present "$_schema"; then
         return 0
     fi
     info "Creating schema $_schema"
@@ -553,9 +632,20 @@ exakit_load_sample_data() {
 
     info "Loading the sample dataset into schema $_schema"
 
-    # 1. schema
+    # 1. schema. exapump can report a DDL batch as "0 failed" while the database
+    # (still stabilizing after first boot) persists none of it — which then
+    # surfaces as a misleading "schema not found" on the first upload. Verify the
+    # schema really landed from a fresh connection, re-run the idempotent script
+    # once if it did not, and fail loudly rather than running uploads doomed to
+    # "schema not found".
     if [ -s "$_kit_root/sql/01_create_schema.sql" ]; then
         exapump_run_sql_file "$_kit_root/sql/01_create_schema.sql" "schema creation (01_create_schema.sql)"
+        if ! exakit_schema_present "$_schema"; then
+            warn "Schema $_schema is not present after creation — re-running the schema script"
+            exapump_run_sql_file "$_kit_root/sql/01_create_schema.sql" "schema creation (re-run)"
+            exakit_schema_present "$_schema" || \
+                die "Schema $_schema was reported created but does not exist. The database may still be stabilizing after first boot; wait a moment and retry: exakit data-load"
+        fi
     else
         info "No schema script found (sql/01_create_schema.sql); skipping schema creation."
     fi

@@ -335,7 +335,7 @@ personal_stop() {
         ok "Deployment stopped"
     else
         info "This launcher version has no explicit stop command."
-        info "To remove the deployment entirely use: exakit teardown"
+        info "To remove the deployment entirely use: exakit uninstall"
     fi
 }
 
@@ -346,7 +346,7 @@ personal_stop() {
 personal_teardown() {
     if [ "${1:-}" != "--data" ]; then
         warn "Exasol Personal keeps the runtime and the database content in one deployment — removing it deletes all data."
-        info "Use 'exakit stop' to stop it without deleting, or 'exakit teardown --data' to remove everything."
+        info "Use 'exakit stop' to stop it without deleting, or 'exakit uninstall' to remove everything."
         return 1
     fi
     if personal_deployment_exists; then
@@ -354,7 +354,7 @@ personal_teardown() {
         # --auto-approve: the launcher's 'destroy' prompts for confirmation by
         # default. run_logged sends its output to the log, so that prompt is
         # invisible and the install just hangs forever waiting for input. The
-        # user has already confirmed at the exakit teardown/uninstall level.
+        # user has already confirmed at the exakit uninstall level.
         run_logged "$(personal_cli)" destroy --remove --auto-approve || warn "Destroy reported errors (see log)"
     else
         info "No active deployment found"

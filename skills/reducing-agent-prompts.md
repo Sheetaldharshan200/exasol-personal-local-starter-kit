@@ -21,7 +21,7 @@ Keep prompting (do **not** auto-allow):
 - **`exapump sql …`** — the `starter-kit` exapump profile connects as the
   **admin** user and is *not* read-only. Auto-allowing it would defeat the kit's
   inspect-before-run trust model. Every query through it should be seen first.
-- **Mutating / lifecycle commands** — `exakit teardown`, installs, upgrades,
+- **Mutating / lifecycle commands** — `exakit uninstall`, installs, upgrades,
   anything under `mcp-repair`/`mcp-remove`.
 
 That split kills the noise (all the harmless status checks) without weakening
@@ -44,7 +44,7 @@ every user benefits):
       "mcp__exasol"
     ],
     "deny": [
-      "Bash(exakit teardown:*)"
+      "Bash(exakit uninstall:*)"
     ]
   }
 }

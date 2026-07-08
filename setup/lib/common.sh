@@ -748,7 +748,7 @@ PY
 # Steps register undo commands as they make changes. On failure the handler
 # reports what failed and (interactively) offers to undo this run's changes.
 # Completed runs discard their rollback stack — the manifest is then the
-# source of truth for teardown.
+# source of truth for uninstall.
 # ---------------------------------------------------------------------------
 EXAKIT_ROLLBACK_FILE=""
 EXAKIT_CURRENT_STEP=""
@@ -984,17 +984,13 @@ exakit_install_skills() {
     return 0
 }
 
-# exakit_maybe_offer_skills_install — after setup, offer to place the skills
-# where CLI agents can find them. Mirrors the MCP-setup offer: tty-gated,
-# non-fatal, and idempotent.
+# exakit_maybe_offer_skills_install — after setup, place the skills where CLI
+# agents can find them. Always installs — no prompt — so the skills are
+# present without requiring interactive confirmation. Non-fatal and
+# idempotent.
 exakit_maybe_offer_skills_install() {
     _repo_root="$(exakit_repo_root)" || return 0
     ls "$_repo_root"/skills/*/SKILL.md >/dev/null 2>&1 || return 0
-    [ -n "$(_exakit_prompt_tty)" ] || return 0
-    if ! confirm "Install the kit's AI skills for your CLI agent (Claude Code / Codex)?" y; then
-        info "Skipping skills install for now. You can run: exakit skills-install"
-        return 0
-    fi
     exakit_install_skills || \
         warn "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
 }
@@ -1544,7 +1540,7 @@ exakit_print_mcp_setup_summary() {
 import json, sys
 
 LABELS = {
-    "claude_desktop": "Claude Desktop",
+    "claude_desktop": "Claude",
     "cursor": "Cursor",
     "codex": "Codex",
 }
@@ -1619,7 +1615,7 @@ exakit_print_mcp_operation_summary() {
 import json, sys
 
 LABELS = {
-    "claude_desktop": "Claude Desktop",
+    "claude_desktop": "Claude",
     "cursor": "Cursor",
     "codex": "Codex",
 }
@@ -1702,7 +1698,7 @@ exakit_mcp_setup() {
 
     printf '\n'
     info "Choose one or more clients"
-    printf '    1. Claude Desktop\n'
+    printf '    1. Claude\n'
     printf '    2. Cursor\n'
     printf '    3. Codex\n'
     printf '    Enter numbers separated by commas, or type all.\n'
@@ -2017,24 +2013,24 @@ exakit_uninstall_run() {
         [ "$_dry" = "1" ] || rm -rf "$1"
     }
 
-    # 1) Database + all data. Uses the runtime teardown (always --data), which
-    #    for Personal also reaps any orphaned runner daemon on the DB port.
+    # 1) Database + all data. Uses the runtime removal helper (always --data),
+    #    which for Personal also reaps any orphaned runner daemon on the DB port.
     _type="$(manifest_get runtime.type 2>/dev/null || true)"
     if [ -n "$_type" ]; then
         _step "local Exasol $_type deployment and ALL its data"
         if [ "$_dry" != "1" ]; then
             case "$_type" in
-                nano)     nano_teardown --data     || warn "Database teardown reported errors (continuing uninstall)" ;;
-                personal) personal_teardown --data || warn "Database teardown reported errors (continuing uninstall)" ;;
-                *)        warn "Unknown runtime type '$_type'; skipping database teardown" ;;
+                nano)     nano_teardown --data     || warn "Database removal reported errors (continuing uninstall)" ;;
+                personal) personal_teardown --data || warn "Database removal reported errors (continuing uninstall)" ;;
+                *)        warn "Unknown runtime type '$_type'; skipping database removal" ;;
             esac
         fi
     fi
 
-    # 2) Managed MCP configuration in the AI clients (Claude Desktop, Cursor,
+    # 2) Managed MCP configuration in the AI clients (Claude, Cursor,
     #    Codex). Best-effort: a failure here must not block the rest.
     if command -v exakit_mcp_operation >/dev/null 2>&1; then
-        _step "managed MCP configuration in Claude Desktop, Cursor, and Codex"
+        _step "managed MCP configuration in Claude, Cursor, and Codex"
         if [ "$_dry" != "1" ]; then
             exakit_mcp_operation uninstall >/dev/null 2>&1 || \
                 warn "Removing the managed MCP client config reported issues (continuing uninstall)"
