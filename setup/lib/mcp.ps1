@@ -524,8 +524,17 @@ function Invoke-McpModule {
     if (-not $repoRoot) { return $null }
     Push-Location $repoRoot
     $previousPythonPath = $env:PYTHONPATH
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
         $env:PYTHONPATH = if ($previousPythonPath) { "$repoRoot;$previousPythonPath" } else { $repoRoot }
+        # Under the module-global $ErrorActionPreference = 'Stop', 2>&1 turns
+        # the module's FIRST stderr write into a terminating error that tears
+        # the pipeline down - killing the CLI mid-run and reporting a bogus
+        # ExitCode 1 with only that first line as Output, even when the module
+        # would have succeeded (Python warnings and pip/uv notices go to
+        # stderr). 'Continue' captures the full output and lets the real exit
+        # code through. Same fix as Invoke-Exapump / Invoke-ExapumpAdminSql.
+        $ErrorActionPreference = "Continue"
         if (Test-ExakitSystemPythonForMcp) {
             $out = & python -m mcp @ModuleArgs 2>&1 | Out-String
         } else {
@@ -539,6 +548,7 @@ function Invoke-McpModule {
     } catch {
         return @{ Output = "$_"; ExitCode = 1 }
     } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         if ($null -ne $previousPythonPath) { $env:PYTHONPATH = $previousPythonPath } else { Remove-Item Env:\PYTHONPATH -ErrorAction SilentlyContinue }
         Pop-Location
     }
