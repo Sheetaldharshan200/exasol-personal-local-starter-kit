@@ -69,10 +69,12 @@ function Set-ExakitPalette {
     if ($script:UiFancy) {
         $script:UiReset="${e}[0m"; $script:UiBold="${e}[1m"; $script:UiDim="${e}[2m"
         $script:UiAccent="${e}[38;5;35m"
+        $script:UiGreen="${e}[38;5;77m"; $script:UiFg="${e}[39m"
         $script:UiOk="${e}[1;32m"; $script:UiWarn="${e}[1;33m"; $script:UiErr="${e}[1;31m"
         $script:UiInfo="${e}[1;34m"; $script:UiAsk="${e}[1;36m"
     } else {
         $script:UiReset=""; $script:UiBold=""; $script:UiDim=""; $script:UiAccent=""
+        $script:UiGreen=""; $script:UiFg=""
         $script:UiOk=""; $script:UiWarn=""; $script:UiErr=""; $script:UiInfo=""; $script:UiAsk=""
     }
     # Glyphs rely on the UTF-8 console set above; fall back to ASCII when we
@@ -88,14 +90,19 @@ function Set-ExakitPalette {
     }
 }
 
-# EXASOL wordmark (ANSI Shadow) - byte-identical to ui.sh's UI_WORDMARK.
-$script:UiWordmark = @(
-'███████╗██╗  ██╗ █████╗ ███████╗ ██████╗ ██╗',
-'██╔════╝╚██╗██╔╝██╔══██╗██╔════╝██╔═══██╗██║',
-'█████╗   ╚███╔╝ ███████║███████╗██║   ██║██║',
-'██╔══╝   ██╔██╗ ██╔══██║╚════██║██║   ██║██║',
-'███████╗██╔╝ ██╗██║  ██║███████║╚██████╔╝███████╗',
-'╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝'
+# EXASOL wordmark (ANSI Shadow) - segments mirror ui.sh's UI_WM_* so the "X"
+# gets the logo's two-tone look (green left strokes + crossing peak; the rest
+# in the terminal's default colour).
+$script:UiWmE  = @('███████╗','██╔════╝','█████╗  ','██╔══╝  ','███████╗','╚══════╝')
+$script:UiWmXL = @('██╗ ','╚██╗',' ╚███',' ██╔','██╔╝','╚═╝ ')
+$script:UiWmXR = @(' ██╗','██╔╝','╔╝ ','██╗ ',' ██╗',' ╚═╝')
+$script:UiWmR  = @(
+' █████╗ ███████╗ ██████╗ ██╗',
+'██╔══██╗██╔════╝██╔═══██╗██║',
+'███████║███████╗██║   ██║██║',
+'██╔══██║╚════██║██║   ██║██║',
+'██║  ██║███████║╚██████╔╝███████╗',
+'╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝'
 )
 
 $script:UiBoxW = 58
@@ -116,8 +123,12 @@ function Write-ExakitBanner {
     param([string]$Title = "Exasol Personal Local Starter Kit", [string]$Subtitle = "")
     Write-Host ""
     if ($script:UiFancy) {
-        foreach ($line in $script:UiWordmark) {
-            Write-Host ("  {0}{1}{2}" -f $script:UiAccent, $line, $script:UiReset)
+        for ($i = 0; $i -lt 6; $i++) {
+            Write-Host ("  {0}{1}{2}{3}{4}{5}{6}" -f `
+                ($script:UiBold + $script:UiFg), $script:UiWmE[$i], `
+                $script:UiGreen, $script:UiWmXL[$i], `
+                $script:UiFg, ($script:UiWmXR[$i] + $script:UiWmR[$i]), `
+                $script:UiReset)
         }
         Write-Host ""
     }
