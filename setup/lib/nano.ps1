@@ -237,7 +237,7 @@ function Install-Nano {
             $expectedSize = (Get-Item $pwFile).Length
             if (($mountedSize | Select-Object -Last 1).Trim() -ne "$expectedSize") {
                 Warn2 "The generated password file did not mount into the container as expected (this is a known Docker Desktop on Windows bind-mount issue). The database may be using a different password than the one recorded locally."
-                Warn2 "If the connection check below fails, try: Settings > Resources > File sharing in Docker Desktop, ensure your user profile drive is shared, then run 'exakit teardown -Data' and re-install."
+                Warn2 "If the connection check below fails, try: Settings > Resources > File sharing in Docker Desktop, ensure your user profile drive is shared, then run 'exakit uninstall' and re-install."
             }
         } catch {
             # Diagnostic-only: if we can't even check (container not exec-able

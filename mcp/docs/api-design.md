@@ -163,7 +163,7 @@ All operations return a shared base result shape.
   "request_id": "optional-correlation-id",
   "operation": "configure",
   "status": "success_with_warnings",
-  "summary": "Configured Claude Desktop and detected one unmanaged conflicting file for Cursor.",
+  "summary": "Configured Claude and detected one unmanaged conflicting file for Cursor.",
   "findings": [],
   "changes": [],
   "artifacts": [],
@@ -372,7 +372,7 @@ Fields:
 ```json
 {
   "kind": "restart_client",
-  "message": "Restart Claude Desktop to load the updated MCP configuration."
+  "message": "Restart Claude to load the updated MCP configuration."
 }
 ```
 

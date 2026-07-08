@@ -1,4 +1,4 @@
-"""Claude Desktop adapter."""
+"""Claude adapter."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from .base import (
 
 
 class ClaudeDesktopAdapter(ClientAdapter):
-    """Adapter for the officially documented Claude Desktop config file."""
+    """Adapter for the officially documented Claude config file."""
 
     _CONFIG_ENV_NAME = "CLAUDE_DESKTOP_CONFIG_PATH"
 
@@ -30,7 +30,7 @@ class ClaudeDesktopAdapter(ClientAdapter):
         return "claude_desktop"
 
     def display_name(self) -> str:
-        return "Claude Desktop"
+        return "Claude"
 
     def describe_capabilities(self) -> AdapterCapabilities:
         return AdapterCapabilities(
@@ -57,7 +57,7 @@ class ClaudeDesktopAdapter(ClientAdapter):
                 available=True,
                 path=path,
                 evidence=[
-                    "Using the official macOS Claude Desktop config location.",
+                    "Using the official macOS Claude config location.",
                 ],
             )
         if environment.os_name == "win32":
@@ -65,11 +65,11 @@ class ClaudeDesktopAdapter(ClientAdapter):
         return LocationResult(
             available=False,
             path=None,
-            evidence=["Claude Desktop local config is only documented for macOS and Windows."],
+            evidence=["Claude local config is only documented for macOS and Windows."],
         )
 
     def _locate_windows(self, environment: ExecutionEnvironment) -> LocationResult:
-        # Two Claude Desktop builds exist on Windows and they read different
+        # Two Claude builds exist on Windows and they read different
         # files:
         #   * The direct-download (.exe) build reads %APPDATA%\Claude\...
         #   * The Microsoft Store (MSIX) build is filesystem-virtualized: when
@@ -121,9 +121,9 @@ class ClaudeDesktopAdapter(ClientAdapter):
 
         is_packaged = "Packages" in chosen.parts
         evidence = [
-            "Using the Microsoft Store (packaged) Claude Desktop config location."
+            "Using the Microsoft Store (packaged) Claude config location."
             if is_packaged
-            else "Using the official Windows Claude Desktop config location."
+            else "Using the official Windows Claude config location."
         ]
         return LocationResult(available=True, path=chosen, evidence=evidence)
 
@@ -175,7 +175,7 @@ class ClaudeDesktopAdapter(ClientAdapter):
             finding = Finding(
                 code="invalid_client_config",
                 severity=Severity.ERROR,
-                message="Claude Desktop configuration is not valid JSON.",
+                message="Claude configuration is not valid JSON.",
                 scope={"path": str(path)},
                 evidence=[str(exc)],
                 recommended_action="Repair or restore the managed client configuration before applying changes.",
@@ -192,7 +192,7 @@ class ClaudeDesktopAdapter(ClientAdapter):
             finding = Finding(
                 code="invalid_client_config",
                 severity=Severity.ERROR,
-                message="Claude Desktop configuration must be a JSON object.",
+                message="Claude configuration must be a JSON object.",
                 scope={"path": str(path)},
                 recommended_action="Replace the file with a valid JSON object before continuing.",
                 blocking=True,
@@ -240,9 +240,9 @@ class ClaudeDesktopAdapter(ClientAdapter):
         self, server_definition: ServerDefinition, inspection: AdapterInspection
     ) -> RenderResult:
         if server_definition.transport != DeploymentMode.STDIO:
-            raise ValueError("Claude Desktop rendering currently supports stdio only.")
+            raise ValueError("Claude rendering currently supports stdio only.")
         if not server_definition.command:
-            raise ValueError("Claude Desktop stdio rendering requires a command.")
+            raise ValueError("Claude stdio rendering requires a command.")
         document = copy.deepcopy(inspection.document or {"mcpServers": {}})
         mcp_servers = document.setdefault("mcpServers", {})
         entry: dict[str, Any] = {
@@ -288,7 +288,7 @@ class ClaudeDesktopAdapter(ClientAdapter):
                 Finding(
                     code="invalid_render_output",
                     severity=Severity.ERROR,
-                    message="Rendered Claude Desktop configuration is not valid JSON.",
+                    message="Rendered Claude configuration is not valid JSON.",
                     scope={"path": str(rendered.path)},
                     evidence=[str(exc)],
                     recommended_action="Inspect the rendered configuration before applying it.",
@@ -300,6 +300,6 @@ class ClaudeDesktopAdapter(ClientAdapter):
         return [
             NextAction(
                 kind="restart_client",
-                message="Restart Claude Desktop to load the updated MCP configuration.",
+                message="Restart Claude to load the updated MCP configuration.",
             )
         ]

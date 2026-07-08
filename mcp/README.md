@@ -37,7 +37,7 @@ mcp/
 
 When the starter kit runtime is already installed and its manifest contains the MCP connection details, the MCP package can permanently configure:
 
-- Claude Desktop
+- Claude
 - Cursor
 - Codex
 

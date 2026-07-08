@@ -68,7 +68,7 @@ Purpose:
 Expected adapter categories:
 
 - `desktop_mcp_clients`
-  Claude Desktop, Cursor, Codex
+  Claude, Cursor, Codex
 - `editor_embedded_clients`
   VS Code, GitHub Copilot when applicable
 

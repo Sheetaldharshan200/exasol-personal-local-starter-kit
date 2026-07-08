@@ -69,4 +69,4 @@ exakit data-load -Force     # reload the bundled TPC-H sample directly
 | Laptop reboot | The container has a restart policy of none by default: `exakit start` (or `docker start exasol-nano`) brings it back with all data intact |
 | exapump has no Windows ARM64 build | Only x86_64 Windows is supported for exapump today; the database container itself works on both |
 
-Remove everything: `exakit teardown -Data`, or manually with `docker rm -f exasol-nano; docker volume rm exasol-nano-data`, then delete `~\.exasol-starter-kit`.
+Remove everything: `exakit uninstall`, or manually with `docker rm -f exasol-nano; docker volume rm exasol-nano-data`, then delete `~\.exasol-starter-kit`.

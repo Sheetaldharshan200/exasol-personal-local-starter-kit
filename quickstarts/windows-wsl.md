@@ -53,7 +53,7 @@ Use `exakit data-load --force` when you only want to reload the bundled sample d
 
 ## Connect your AI assistant
 
-Run `exakit mcp-setup` to permanently configure Claude Desktop, Cursor, or Codex. The setup backs up the selected client config files before updating them.
+Run `exakit mcp-setup` to permanently configure Claude, Cursor, or Codex. The setup backs up the selected client config files before updating them.
 
 Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. If you configure a Windows desktop app from inside WSL, make sure the selected client config uses a launcher command Windows can run. The two practical options are:
 
@@ -74,4 +74,4 @@ Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 | Database state after `wsl --shutdown` | Safe — data lives in the named Docker volume; `exakit start` brings it back |
 | WSL clock drift after laptop sleep | If TLS/downloads act strange: `sudo hwclock -s` |
 
-Remove everything: `exakit teardown --data` inside WSL, then `rm -rf ~/.exasol-starter-kit`.
+Remove everything: `exakit uninstall` inside WSL (removes the database, kit home, and CLI binaries).
