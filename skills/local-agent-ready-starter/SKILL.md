@@ -65,9 +65,9 @@ options before piping a remote script into a shell:
   can be read first; installs nothing until the user runs the setup themselves.
 
 When **you** run the installer (no terminal is attached, so the install cannot prompt the
-user), it silently takes safe defaults — it would configure MCP for *all* detected clients
-and load the sample data without asking. Instead, ask the user these questions first, then
-pass the answers so their choices are honored (macOS/Linux/WSL):
+user), it silently takes safe defaults — it would connect **Claude and Codex** over MCP and
+load the **bundled sample data** without asking. Instead, ask the user these questions first,
+then pass the answers so their choices are honored (macOS/Linux/WSL):
 - which MCP client(s) to connect → `EXAKIT_MCP_CLIENTS=claude` (also `cursor`, `codex`, `all`,
   comma-separated, or numbers `1-3`); or `EXAKIT_SKIP_MCP=1` to set MCP up later via `exakit mcp-setup`
 - load the bundled sample data? → `EXAKIT_LOAD_SAMPLE=1` (yes) or `EXAKIT_LOAD_SAMPLE=0` (no)
@@ -76,7 +76,9 @@ pass the answers so their choices are honored (macOS/Linux/WSL):
 Example: `curl -fsSL <install.sh URL> | EXAKIT_MCP_CLIENTS=claude EXAKIT_LOAD_SAMPLE=1 sh`.
 
 Tell the user what to expect: a detection summary, an install plan, then numbered steps
-ending in a connection panel. **On macOS the first database deployment takes 10–20 minutes**
+ending in a connection panel — and the suggested first AI prompt is copied to the user's
+clipboard automatically when a clipboard tool is available, ready to paste into their client.
+**On macOS the first database deployment takes 10–20 minutes**
 (one-time); container platforms come up in a few minutes. Do not treat a long-running macOS
 deploy as a hang — it holds the foreground for a while. If you cannot keep a long foreground
 command open, have the user run the install command themselves and tell you when the
@@ -106,8 +108,9 @@ A returned timestamp means the local database works end to end. If `status` is n
 exakit mcp-setup
 ```
 
-Tell the user that setup backs up and edits the selected client configs (Claude,
-Cursor, Codex) directly. The user restarts the client afterward.
+Tell the user that setup backs up and edits the selected client configs directly — it
+presents a checkbox multi-select of Claude, Cursor, and Codex with **Claude and Codex
+pre-selected**. The user restarts the client afterward.
 
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not
 a background service). Verify with `exakit mcp-doctor`.

@@ -654,6 +654,13 @@ function Show-McpReadyPanel {
     Write-ExakitPanelLine "questions with read-only SQL only, show me the SQL before you run"
     Write-ExakitPanelLine "it, and do not create, update, or delete anything."""
     Complete-ExakitPanel
+    # Best-effort: put the prompt straight on the clipboard so the first thing
+    # the user does in their AI client is just paste. Silent when unavailable.
+    $firstPrompt = 'Use the exasol MCP server connected to my local Exasol database. List the available schemas and tables first. Then answer my questions with read-only SQL only, show me the SQL before you run it, and do not create, update, or delete anything.'
+    try {
+        Set-Clipboard -Value $firstPrompt
+        Ok "This prompt is copied to your clipboard - paste it after restarting your client."
+    } catch { }
 }
 
 function Show-McpOperationSummary {
@@ -711,17 +718,9 @@ function Invoke-McpSetup {
     Info "MCP setup will edit the selected AI client config files."
 
     Write-Host ""
-    Info "Choose one or more clients"
-    Write-ExakitMenuOption 1 "Claude"
-    Write-ExakitMenuOption 2 "Cursor"
-    Write-ExakitMenuOption 3 "Codex"
-    Write-ExakitMenuHint "numbers separated by commas, or all"
-    $clients = $null
-    while (-not $clients) {
-        $selection = Read-ExakitPrompt "Choose client numbers" "all"
-        $clients = ConvertTo-McpClientSelection $selection
-        if (-not $clients) { Warn2 "Please choose valid client numbers, for example 1,2,3 or all." }
-    }
+    $selection = Read-ExakitCheckboxMenu -Title "Select the AI clients to connect (MCP)" -Options @("Claude", "Cursor", "Codex") -Defaults @(1, 3)
+    $clientIds = @{ 1 = "claude_desktop"; 2 = "cursor"; 3 = "codex" }
+    $clients = @($selection | ForEach-Object { $clientIds[$_] })
 
     Info "Applying MCP setup"
     $resultJson = Invoke-McpSetupCli -Clients $clients
@@ -768,24 +767,13 @@ function New-McpUpdateSnapshot {
     return ""
 }
 
-# Request-ExakitMcpSetupOffer - interactively offer to set up MCP in the
-# user's AI client(s) during install. Non-interactive installs print the
-# follow-up command and continue.
+# Request-ExakitMcpSetupOffer - connect the user's AI client(s) during
+# install. A required step: the client checkbox menu handles the choice
+# (Claude + Codex preselected), and non-interactive installs keep those
+# defaults inside Read-ExakitCheckboxMenu.
 function Request-ExakitMcpSetupOffer {
     if ((Get-ExakitManifestValue "components.mcp_server.client_setup.completed") -eq $true) { return }
-    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
-        Info "Non-interactive install - setting up MCP in your AI client(s) by default."
-        if (-not (Invoke-McpSetup)) {
-            Warn2 "Your local runtime is installed, but MCP client setup did not finish cleanly."
-            Warn2 "Retry any time with: exakit mcp-setup"
-        }
-        return
-    }
     Info "The Exasol runtime and MCP server are ready."
-    if (-not (Confirm-ExakitPrompt "Set up MCP in your AI client(s) now?" $true)) {
-        Info "Skipping live MCP client setup for now. You can run: exakit mcp-setup"
-        return
-    }
     if (-not (Invoke-McpSetup)) {
         Warn2 "Your local runtime is installed, but MCP client setup did not finish cleanly."
         Warn2 "Retry any time with: exakit mcp-setup"
