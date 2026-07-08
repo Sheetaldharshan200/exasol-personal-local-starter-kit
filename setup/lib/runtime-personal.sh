@@ -351,7 +351,11 @@ personal_teardown() {
     fi
     if personal_deployment_exists; then
         info "Destroying the local Exasol Personal deployment"
-        run_logged "$(personal_cli)" destroy --remove || warn "Destroy reported errors (see log)"
+        # --auto-approve: the launcher's 'destroy' prompts for confirmation by
+        # default. run_logged sends its output to the log, so that prompt is
+        # invisible and the install just hangs forever waiting for input. The
+        # user has already confirmed at the exakit teardown/uninstall level.
+        run_logged "$(personal_cli)" destroy --remove --auto-approve || warn "Destroy reported errors (see log)"
     else
         info "No active deployment found"
     fi
