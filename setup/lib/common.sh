@@ -888,13 +888,20 @@ require_cmd() {
 }
 
 # fetch <url> <dest-file>
+# Runs curl silently (-sS) under the kit's braille spinner so downloads animate
+# consistently with every other step, instead of curl's own hash progress bar.
+# The spinner no-ops on non-interactive terminals, so logs/CI stay clean.
 fetch() {
     _url="$1"
     _dest="$2"
     mkdir -p "$(dirname "$_dest")"
     _exakit_log_file "GET   $_url -> $_dest"
-    if ! curl -fL --proto '=https' --retry 3 --connect-timeout 15 \
-            --progress-bar -o "$_dest" "$_url"; then
+    ui_spin_begin "${EXAKIT_ACTIVE_LABEL:-downloading $(basename "$_dest")}"
+    curl -fL --proto '=https' --retry 3 --connect-timeout 15 \
+        -sS -o "$_dest" "$_url"
+    _fetch_rc=$?
+    ui_spin_end
+    if [ "$_fetch_rc" -ne 0 ]; then
         rm -f "$_dest"
         error "Download failed: $_url"
         printf '    Check your internet connection. Behind a corporate proxy, set\n' >&2
