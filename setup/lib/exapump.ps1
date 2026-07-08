@@ -72,11 +72,25 @@ function Invoke-Exapump {
     param([Parameter(Mandatory)][string[]]$Arguments)
     $out = ""
     $code = 1
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
+        # exapump writes its progress/summary lines to stderr on Windows. Under
+        # the module-global $ErrorActionPreference = 'Stop', 2>&1 turns that very
+        # first stderr write into a terminating error, so the catch below would
+        # capture ONLY that first line and discard the actual result grid and the
+        # "N statements executed" summary. That silently broke every caller that
+        # reads query results back (the DDL-readiness probe, Test-ExapumpSchemaPresent,
+        # row counts) - they saw a truncated output and concluded the schema was
+        # missing / the database was not ready, spinning or failing on a database
+        # that was in fact fine. Switch to 'Continue' for the native call so the
+        # whole output is captured, exactly as Invoke-ExapumpAdminSql already does.
+        $ErrorActionPreference = "Continue"
         $out = & (Get-ExapumpCli) @Arguments 2>&1 | Out-String
         $code = $LASTEXITCODE
     } catch {
         $out = "$_"
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
     }
     if ($script:LogFile) { "exapump $($Arguments -join ' ')" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
     return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
@@ -511,9 +525,17 @@ function Test-ExapumpSchemaPresent {
     param([Parameter(Mandatory)][string]$Schema)
     $schemaUc = ConvertTo-UpperInvariantString $Schema
     if (-not $schemaUc) { return $false }
-    $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS"
+    # Decide presence from the ROW COUNT of a row-returning query, not by
+    # scraping a sentinel token out of the rendered result grid. When exapump's
+    # stdout is a pipe (every install runs it that way) it omits the result grid
+    # entirely, so a sentinel like EXAKIT_SCHEMA_PRESENT never reaches the
+    # captured output and this check always reported the schema missing - which
+    # aborted the sample-data load even though the schema existed. The "<n> rows"
+    # count on exapump's progress line IS reliably captured: a present schema
+    # yields "1 rows", an absent one "0 rows".
+    $sql = "SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc'"
     $check = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
-    return ("$($check.Output)" -match "EXAKIT_SCHEMA_PRESENT")
+    return ($check.Success -and "$($check.Output)" -match '(?im)\b[1-9]\d*\s+rows?\b')
 }
 
 function Confirm-ExakitSchemaExists {
