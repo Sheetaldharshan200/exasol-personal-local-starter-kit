@@ -588,7 +588,7 @@ function Invoke-McpOperationCli {
     return $result.Output
 }
 
-$script:McpClientLabels = @{ claude_desktop = "Claude Desktop"; cursor = "Cursor"; codex = "Codex" }
+$script:McpClientLabels = @{ claude_desktop = "Claude"; cursor = "Cursor"; codex = "Codex" }
 
 function Show-McpSetupSummary {
     param([Parameter(Mandatory)][string]$ResultJson)
@@ -703,7 +703,7 @@ function Invoke-McpSetup {
 
     Write-Host ""
     Info "Choose one or more clients"
-    Write-Host "    1. Claude Desktop"
+    Write-Host "    1. Claude"
     Write-Host "    2. Cursor"
     Write-Host "    3. Codex"
     Write-Host "    Enter numbers separated by commas, or type all."

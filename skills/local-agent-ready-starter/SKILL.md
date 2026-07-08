@@ -95,7 +95,7 @@ A returned timestamp means the local database works end to end. If `status` is n
 exakit mcp-setup
 ```
 
-Tell the user that setup backs up and edits the selected client configs (Claude Desktop,
+Tell the user that setup backs up and edits the selected client configs (Claude,
 Cursor, Codex) directly. The user restarts the client afterward.
 
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not

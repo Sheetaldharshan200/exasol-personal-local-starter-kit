@@ -33,7 +33,7 @@ You already use AI. The hard part is trusting it with your data. This kit gives 
 |---|---|---|
 | 🗄️ | **Exasol database** | A full in-memory analytics database, running locally |
 | ⚡ | **exapump** | Load CSV/Parquet files and run SQL from your terminal |
-| 🤖 | **MCP server** | Lets Claude Desktop, Cursor, or other supported MCP clients query your database with a dedicated read-only login |
+| 🤖 | **MCP server** | Lets Claude, Cursor, or other supported MCP clients query your database with a dedicated read-only login |
 | 🐍 | **pyexasol** | The official Exasol Python driver, ready in its own environment — script against your database from Python |
 
 At the end you get your connection details on screen, a managed runtime state under `~/.exasol-starter-kit/`, and guided MCP setup for supported clients. Time to first AI-assisted query: **about 15 minutes**.
@@ -84,7 +84,7 @@ Run:
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected supported client config files for Claude Desktop, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
+The setup backs up and edits the selected supported client config files for Claude, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
 
 When the kit can detect the local MCP launcher path, it writes that exact path into the client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
 

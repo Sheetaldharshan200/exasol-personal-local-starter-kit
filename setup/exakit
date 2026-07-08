@@ -252,7 +252,7 @@ usage() {
 exakit — Exasol Personal Local Starter Kit
 
 Get started:
-  exakit mcp-setup     connect your AI assistant (Claude Desktop, Cursor, Codex)
+  exakit mcp-setup     connect your AI assistant (Claude, Cursor, Codex)
 
 Everyday commands:
   status               is the database up and healthy?

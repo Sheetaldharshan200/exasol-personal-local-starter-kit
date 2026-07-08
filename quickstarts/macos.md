@@ -54,9 +54,9 @@ Use `exakit data-load --force` when you only want to reload the bundled sample d
 
 ## Connect your AI assistant
 
-Run `exakit mcp-setup` to permanently configure Claude Desktop, Cursor, or Codex. The setup backs up the selected client config files before updating them.
+Run `exakit mcp-setup` to permanently configure Claude, Cursor, or Codex. The setup backs up the selected client config files before updating them.
 
-For Claude Desktop: after setup, restart the app and look for an MCP server named `exasol`.
+For Claude: after setup, restart the app and look for an MCP server named `exasol`.
 
 **Using Claude Code or Codex CLI?** Run `exakit skills-install`, then say **"setup starter kit"** in a fresh session — the kit's AI skill drives setup and the first query for you. See [`skills/README.md`](../skills/README.md).
 

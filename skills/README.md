@@ -36,7 +36,7 @@ finds it automatically:
 Re-running is safe — it refreshes the installed copy. The kit setup also offers
 to do this once at the end of an install.
 
-> **Chat-only clients (Claude Desktop, Cursor GUI over MCP):** these do not read
+> **Chat-only clients (Claude, Cursor GUI over MCP):** these do not read
 > filesystem skills the same way. There, the skill still works as guidance you
 > paste in, and the query loop (Step 5) runs against the connected `exasol` MCP
 > server. Filesystem auto-discovery is for terminal/CLI agents.

@@ -1,6 +1,6 @@
 # Example questions for your AI assistant
 
-Copy any of these into your AI client (Claude Desktop, Cursor, Codex) once the kit
+Copy any of these into your AI client (Claude, Cursor, Codex) once the kit
 is installed and the MCP server is connected. They all run against the bundled
 **TPC-H** sample data in the `STARTER_KIT` schema, using nothing but the read-only
 SELECT access the MCP server is given — so they are safe to ask verbatim.

@@ -89,7 +89,7 @@ class CodexAdapter(ClientAdapter):
                         severity=Severity.ERROR,
                         message="Codex configuration support requires Python 3.11 or newer.",
                         scope={"path": str(path)},
-                        recommended_action="Run this tool under Python 3.11+ (the starter kit's managed runtime), or configure Claude Desktop or Cursor instead.",
+                        recommended_action="Run this tool under Python 3.11+ (the starter kit's managed runtime), or configure Claude or Cursor instead.",
                         blocking=True,
                     )
                 ],

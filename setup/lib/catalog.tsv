@@ -10,7 +10,7 @@ exakit	start		Start the local Exasol database container.
 exakit	stop		Stop the local Exasol database container.
 exakit	data-load	[--force | -Force]	Open the focused data-loading menu: bundled sample data or a local CSV/text/Parquet file. --force reloads the bundled sample.
 exakit	mcp-setup		Permanently configure MCP in supported AI clients.
-exakit	mcp-status	[clients]	Show managed MCP state for Claude Desktop, Cursor, and Codex.
+exakit	mcp-status	[clients]	Show managed MCP state for Claude, Cursor, and Codex.
 exakit	mcp-validate	[clients]	Validate managed MCP configs and test connectivity.
 exakit	mcp-repair	[clients]	Repair managed MCP config drift back to the known-good state.
 exakit	mcp-doctor	[clients]	Run MCP diagnostics and report problems.

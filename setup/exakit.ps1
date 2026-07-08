@@ -116,7 +116,7 @@ function Invoke-ExakitUninstallRun {
     # 2) Managed MCP configuration in the AI clients. Best-effort.
     if (Get-Command Invoke-McpOperation -ErrorAction SilentlyContinue) {
         if ($DryRun) {
-            Info "  will remove: managed MCP configuration in Claude Desktop, Cursor, and Codex"
+            Info "  will remove: managed MCP configuration in Claude, Cursor, and Codex"
         } else {
             Info "Removing managed MCP configuration from AI clients"
             try { [void](Invoke-McpOperation -Operation "uninstall" -InputArgs @()) }
@@ -568,7 +568,7 @@ function Show-ExakitUsage {
         "exakit - Exasol Personal Local Starter Kit"
         ""
         "Get started:"
-        "  exakit mcp-setup     connect your AI assistant (Claude Desktop, Cursor, Codex)"
+        "  exakit mcp-setup     connect your AI assistant (Claude, Cursor, Codex)"
         ""
         "Everyday commands:"
         "  status               is the database up and healthy?"
