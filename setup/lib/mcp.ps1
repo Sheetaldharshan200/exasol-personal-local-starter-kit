@@ -249,10 +249,10 @@ function Assert-ExapumpResult {
         Write-ExakitLog "ERROR_DETAIL" "$Label failed with exit code $($Result.ExitCode): $text"
         # Tool output on the failure path: same contained gutter as everywhere
         # else, red so it reads as the error detail it is.
-        Write-Host "    ! $Label error details:" -ForegroundColor Red
+        Write-Host "      ! $Label error details:" -ForegroundColor Red
         "$text" -split "`n" | ForEach-Object {
-            if ($script:UiFancy) { Write-Host ("    {0}{1} {2}{3}" -f $script:UiErr, $script:UiVB, $_, $script:UiReset) }
-            else { Write-Host ("    | {0}" -f $_) -ForegroundColor Red }
+            if ($script:UiFancy) { Write-Host ("      {0}{1} {2}{3}" -f $script:UiErr, $script:UiVB, $_, $script:UiReset) }
+            else { Write-Host ("      | {0}" -f $_) -ForegroundColor Red }
         }
         Fail $FailMessage
     }
@@ -648,19 +648,12 @@ function Show-McpReadyPanel {
     Info "Config files updated - restart the selected client now."
     Info "After the restart, look for an MCP server named: exasol"
     Write-Host ""
-    if ($script:UiFancy) {
-        Write-Host ("    {0}{1}{2} First prompt to try in your AI client:" -f $script:UiDim, $script:UiBullet, $script:UiReset)
-        Write-Host ("      {0}""Use the exasol MCP server connected to my local Exasol database. List{1}" -f $script:UiDim, $script:UiReset)
-        Write-Host ("      {0}the available schemas and tables first. Then answer my questions with{1}" -f $script:UiDim, $script:UiReset)
-        Write-Host ("      {0}read-only SQL only, show me the SQL before you run it, and do not create,{1}" -f $script:UiDim, $script:UiReset)
-        Write-Host ("      {0}update, or delete anything.""{1}" -f $script:UiDim, $script:UiReset)
-    } else {
-        Write-Host "    - First prompt to try in your AI client:"
-        Write-Host "      ""Use the exasol MCP server connected to my local Exasol database. List"
-        Write-Host "      the available schemas and tables first. Then answer my questions with"
-        Write-Host "      read-only SQL only, show me the SQL before you run it, and do not create,"
-        Write-Host "      update, or delete anything."""
-    }
+    Start-ExakitPanel "First prompt to try in your AI client"
+    Write-ExakitPanelLine """Use the exasol MCP server connected to my local Exasol database."
+    Write-ExakitPanelLine "List the available schemas and tables first. Then answer my"
+    Write-ExakitPanelLine "questions with read-only SQL only, show me the SQL before you run"
+    Write-ExakitPanelLine "it, and do not create, update, or delete anything."""
+    Complete-ExakitPanel
 }
 
 function Show-McpOperationSummary {
@@ -719,10 +712,10 @@ function Invoke-McpSetup {
 
     Write-Host ""
     Info "Choose one or more clients"
-    Write-Host "    1. Claude"
-    Write-Host "    2. Cursor"
-    Write-Host "    3. Codex"
-    Write-Host "    Enter numbers separated by commas, or type all."
+    Write-ExakitMenuOption 1 "Claude"
+    Write-ExakitMenuOption 2 "Cursor"
+    Write-ExakitMenuOption 3 "Codex"
+    Write-ExakitMenuHint "numbers separated by commas, or all"
     $clients = $null
     while (-not $clients) {
         $selection = Read-ExakitPrompt "Choose client numbers" "all"
