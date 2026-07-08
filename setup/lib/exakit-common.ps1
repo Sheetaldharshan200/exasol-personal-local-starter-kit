@@ -137,6 +137,62 @@ function Write-ExakitMenuHint([string]$Text) {
     if ($script:UiFancy) { Write-Host ("      {0}{1}{2}" -f $script:UiDim, $Text, $script:UiReset) }
     else { Write-Host ("      {0}" -f $Text) }
 }
+# Read-ExakitCheckboxMenu (mirrors ui.sh's ui_checkbox_menu): multi-select
+# rendered as checkboxes - type numbers to toggle, Enter confirms. At least
+# one option must stay selected (Enter on an empty selection re-asks). In
+# fancy mode the block redraws in place so toggling feels live. Non-
+# interactive runs keep the defaults and say so. Returns the selected
+# 1-based indices, ascending.
+function Read-ExakitCheckboxMenu {
+    param([string]$Title, [string[]]$Options, [int[]]$Defaults = @())
+    Info $Title
+    $sel = New-Object 'System.Collections.Generic.List[int]'
+    foreach ($d in $Defaults) {
+        if ($d -ge 1 -and $d -le $Options.Count -and -not $sel.Contains($d)) { [void]$sel.Add($d) }
+    }
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+        foreach ($i in @($sel | Sort-Object)) { Ok ("{0} (selected by default)" -f $Options[$i - 1]) }
+        return @($sel | Sort-Object)
+    }
+    $firstDraw = $true
+    while ($true) {
+        if (-not $firstDraw -and $script:UiFancy) {
+            # redraw the block in place: options + hint + the answered prompt line
+            Write-Host ("{0}[{1}A{0}[0J" -f $script:UiEsc, ($Options.Count + 2)) -NoNewline
+        }
+        $firstDraw = $false
+        for ($i = 1; $i -le $Options.Count; $i++) {
+            if ($sel.Contains($i)) {
+                if ($script:UiFancy) { Write-Host ("      {0}[{1}]{2} {3}{4}.{5} {6}" -f $script:UiOk, $script:UiTick, $script:UiReset, $script:UiAccent, $i, $script:UiReset, $Options[$i - 1]) }
+                else { Write-Host ("      [x] {0}. {1}" -f $i, $Options[$i - 1]) }
+            } else {
+                if ($script:UiFancy) { Write-Host ("      [ ] {0}{1}.{2} {3}" -f $script:UiAccent, $i, $script:UiReset, $Options[$i - 1]) }
+                else { Write-Host ("      [ ] {0}. {1}" -f $i, $Options[$i - 1]) }
+            }
+        }
+        Write-ExakitMenuHint "type numbers to toggle - Enter to confirm"
+        if ($script:UiFancy) { Write-Host ("    {0}?{1} Selection: " -f $script:UiAsk, $script:UiReset) -NoNewline }
+        else { Write-Host "    ? Selection: " -ForegroundColor Cyan -NoNewline }
+        $answer = Read-Host
+        if ([string]::IsNullOrWhiteSpace($answer)) {
+            if ($sel.Count -gt 0) { break }
+            continue
+        }
+        $tokens = @(($answer -replace ',', ' ') -split '\s+' | Where-Object { $_ })
+        if (@($tokens | Where-Object { $_ -match '^(?i)all$' }).Count -gt 0) {
+            $sel.Clear()
+            for ($i = 1; $i -le $Options.Count; $i++) { [void]$sel.Add($i) }
+            continue
+        }
+        foreach ($t in $tokens) {
+            if ($t -notmatch '^[0-9]+$') { continue }
+            $n = [int]$t
+            if ($n -lt 1 -or $n -gt $Options.Count) { continue }
+            if ($sel.Contains($n)) { [void]$sel.Remove($n) } else { [void]$sel.Add($n) }
+        }
+    }
+    return @($sel | Sort-Object)
+}
 # ExakitFailException - a distinct exception type so callers can tell a
 # deliberate Fail() apart from an unexpected error. Bash's die() only halts
 # the current subshell (kit_shared_steps runs risky steps in one so a

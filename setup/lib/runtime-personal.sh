@@ -232,7 +232,7 @@ personal_deploy_local() {
     push_rollback "$(personal_cli) destroy --remove || true"
     # The launcher prints its own (verbose) output; contain it in a dim gutter so
     # it reads as "not ours", while the full text still lands in the log.
-    foreign_note "exasol launcher output — not part of the kit"
+    foreign_note "exasol launcher output"
     "$(personal_cli)" install local 2>&1 | exakit_stream_foreign
     _deploy_rc=${PIPESTATUS[0]}
     foreign_note "launcher finished"

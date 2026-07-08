@@ -76,7 +76,7 @@ The installer detects your OS and hardware, shows you the plan, then does the re
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
-> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults. To answer its questions up front — for example when an AI agent runs it for you — set these before `sh` (macOS/Linux/WSL): `EXAKIT_MCP_CLIENTS=claude,cursor,codex` (which MCP clients to configure; also accepts `all` or numbers `1-3`), `EXAKIT_SKIP_MCP=1` (skip MCP setup), `EXAKIT_LOAD_SAMPLE=0|1` (skip / load the bundled sample), `EXAKIT_REUSE_DB=0|1` (fresh deploy / reuse a running database on macOS). Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_LOAD_SAMPLE=1 sh`.
+> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it connects **Claude and Codex** over MCP and loads the **bundled sample data**. To answer its choices up front — for example when an AI agent runs it for you — set these before `sh` (macOS/Linux/WSL): `EXAKIT_MCP_CLIENTS=claude,cursor,codex` (which MCP clients to configure; also accepts `all` or numbers `1-3`), `EXAKIT_SKIP_MCP=1` (skip MCP setup), `EXAKIT_LOAD_SAMPLE=0|1` (skip / load the bundled sample), `EXAKIT_REUSE_DB=0|1` (fresh deploy / reuse a running database on macOS). Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_LOAD_SAMPLE=1 sh`.
 
 ### Connect your AI assistant
 
@@ -86,7 +86,7 @@ Run:
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected supported client config files for Claude, Cursor, or Codex. The flow supports multi-select, validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant.
+The setup backs up and edits the selected supported client config files for Claude, Cursor, or Codex. The flow is a checkbox multi-select (Claude and Codex pre-selected), validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant — copied to your clipboard when a clipboard tool is available. The installer runs this step for you; `exakit mcp-setup` re-runs it any time.
 
 When the kit can detect the local MCP launcher path, it writes that exact path into the client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
 

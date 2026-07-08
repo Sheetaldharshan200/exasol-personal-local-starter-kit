@@ -513,8 +513,10 @@ exakit_run_sql_script() {
     ok "SQL script completed"
 }
 
+# Standalone `exakit data-load` menu. The install flow no longer routes here —
+# it uses the required checkbox selection in exakit_maybe_offer_data_load — so
+# this menu always offers a plain Cancel.
 exakit_data_load_menu() {
-    _mode="${1:-manual}"
     [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
         die "No exapump connection profile is recorded — re-run the installer, then retry."
 
@@ -522,11 +524,7 @@ exakit_data_load_menu() {
         info "Choose a data loading option"
         ui_menu_option 1 "Bundled sample dataset (TPC-H)"
         ui_menu_option 2 "Local CSV/Parquet file"
-        if [ "$_mode" = "install" ]; then
-            ui_menu_option 3 "Skip for now"
-        else
-            ui_menu_option 3 "Cancel (skip data loading)"
-        fi
+        ui_menu_option 3 "Cancel (skip data loading)"
         _default_choice="1"
         _choice="$(prompt_text "Choose data option" "$_default_choice")"
         case "$_choice" in
@@ -541,20 +539,8 @@ exakit_data_load_menu() {
                 [ "$_local_status" -eq 2 ] && continue
                 return "$_local_status"
                 ;;
-            3|b|B|back|Back|BACK)
-                if [ "$_mode" = "install" ]; then
-                    info "Skipping data load. Run it any time with: exakit data-load"
-                else
-                    info "Data loading cancelled."
-                fi
-                return 0
-                ;;
-            "")
-                if [ "$_mode" = "install" ]; then
-                    info "Skipping data load. Run it any time with: exakit data-load"
-                else
-                    info "Data loading cancelled."
-                fi
+            3|b|B|back|Back|BACK|"")
+                info "Data loading cancelled."
                 return 0
                 ;;
             *) warn "Unknown data loading option: $_choice" ;;

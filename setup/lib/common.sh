@@ -117,6 +117,122 @@ error(){ printf '      %s%s%s %s\n' "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESE
 ui_menu_option() { printf '      %s%s.%s %s\n' "${UI_ACCENT:-}" "$1" "${UI_RESET:-}" "$2"; }
 ui_menu_hint()   { printf '      %s%s%s\n' "${UI_DIM:-}" "$1" "${UI_RESET:-}"; }
 
+# --- checkbox multi-select ---------------------------------------------------
+# _ui_checkbox_toggle <selected_csv> <count> <input> — pure selection logic.
+# Toggles the 1-based indices named in <input> (numbers separated by spaces or
+# commas; "all" selects everything) in or out of <selected_csv>, echoing the
+# new csv. Non-numeric or out-of-range tokens are ignored.
+_ui_checkbox_toggle() {
+    _ct_sel="$1"
+    _ct_n="$2"
+    _ct_in="$(printf '%s' "$3" | tr ',' ' ')"
+    case " $_ct_in " in
+        *" all "*|*" ALL "*|*" All "*)
+            _ct_sel=""
+            _ct_i=1
+            while [ "$_ct_i" -le "$_ct_n" ]; do
+                _ct_sel="${_ct_sel:+$_ct_sel,}$_ct_i"
+                _ct_i=$((_ct_i + 1))
+            done
+            printf '%s' "$_ct_sel"
+            return 0
+            ;;
+    esac
+    for _ct_tok in $_ct_in; do
+        case "$_ct_tok" in ''|*[!0-9]*) continue ;; esac
+        [ "$_ct_tok" -ge 1 ] && [ "$_ct_tok" -le "$_ct_n" ] || continue
+        case ",$_ct_sel," in
+            *",$_ct_tok,"*)
+                _ct_sel="$(printf ',%s,' "$_ct_sel" | sed "s/,$_ct_tok,/,/")"
+                _ct_sel="${_ct_sel#,}"
+                _ct_sel="${_ct_sel%,}"
+                ;;
+            *) _ct_sel="${_ct_sel:+$_ct_sel,}$_ct_tok" ;;
+        esac
+    done
+    printf '%s' "$_ct_sel"
+}
+
+# ui_checkbox_menu <title> <defaults_csv> <label> [label ...] — multi-select
+# rendered as checkboxes: the user types numbers to toggle and presses Enter
+# to confirm. At least one option must stay selected (Enter on an empty
+# selection re-asks). In fancy mode the block redraws in place so toggling
+# feels live; plain mode reprints below. Non-interactive runs (and EOF on the
+# input) keep the defaults and say so. The confirmed selection lands in
+# EXAKIT_CHECKBOX_SELECTION as an ascending csv of 1-based indices.
+EXAKIT_CHECKBOX_SELECTION=""
+ui_checkbox_menu() {
+    _cb_title="$1"
+    _cb_defaults="$2"
+    shift 2
+    _cb_sel="$_cb_defaults"
+    _cb_n=$#
+    info "$_cb_title"
+    _cb_tty="$(_exakit_prompt_tty)"
+    if [ -z "$_cb_tty" ]; then
+        EXAKIT_CHECKBOX_SELECTION="$_cb_defaults"
+        _cb_i=1
+        for _cb_label in "$@"; do
+            case ",$_cb_defaults," in *",$_cb_i,"*) ok "$_cb_label (selected by default)" ;; esac
+            _cb_i=$((_cb_i + 1))
+        done
+        return 0
+    fi
+    # Checked mark: the palette tick in fancy mode; plain "x" otherwise (the
+    # plain-palette tick is the multi-char "[ok]", which would double-bracket).
+    if [ "${UI_FANCY:-0}" = 1 ]; then _cb_mark="${UI_TICK:-x}"; else _cb_mark="x"; fi
+    _cb_first=1
+    while :; do
+        if [ "$_cb_first" -ne 1 ] && [ "$UI_FANCY" = 1 ]; then
+            printf '\033[%dA\033[0J' "$((_cb_n + 2))"    # redraw the block in place
+        fi
+        _cb_first=0
+        _cb_i=1
+        for _cb_label in "$@"; do
+            case ",$_cb_sel," in
+                *",$_cb_i,"*)
+                    printf '      %s[%s]%s %s%s.%s %s\n' \
+                        "${UI_OK:-}" "$_cb_mark" "${UI_RESET:-}" \
+                        "${UI_ACCENT:-}" "$_cb_i" "${UI_RESET:-}" "$_cb_label"
+                    ;;
+                *)
+                    printf '      [ ] %s%s.%s %s\n' \
+                        "${UI_ACCENT:-}" "$_cb_i" "${UI_RESET:-}" "$_cb_label"
+                    ;;
+            esac
+            _cb_i=$((_cb_i + 1))
+        done
+        ui_menu_hint "type numbers to toggle · Enter to confirm"
+        printf '    %s?%s Selection: ' "${UI_ASK:-}" "${UI_RESET:-}"
+        if [ "$_cb_tty" = "/dev/tty" ]; then
+            read -r _cb_in < /dev/tty || { _cb_sel="$_cb_defaults"; printf '\n'; break; }
+        else
+            read -r _cb_in || { _cb_sel="$_cb_defaults"; printf '\n'; break; }
+        fi
+        if [ -z "$_cb_in" ]; then
+            [ -n "$_cb_sel" ] && break
+            continue                                     # at least one selection required
+        fi
+        _cb_sel="$(_ui_checkbox_toggle "$_cb_sel" "$_cb_n" "$_cb_in")"
+    done
+    EXAKIT_CHECKBOX_SELECTION="$(printf '%s' "$_cb_sel" | tr ',' '\n' | sort -n | paste -sd, -)"
+    return 0
+}
+
+# exakit_copy_clipboard — best-effort: stdin -> the system clipboard, across
+# macOS (pbcopy), Wayland (wl-copy), X11 (xclip/xsel), and WSL (clip.exe).
+# Returns 1 when no clipboard tool is available.
+exakit_copy_clipboard() {
+    if command -v pbcopy >/dev/null 2>&1; then pbcopy
+    elif command -v wl-copy >/dev/null 2>&1; then wl-copy
+    elif command -v xclip >/dev/null 2>&1; then xclip -selection clipboard
+    elif command -v xsel >/dev/null 2>&1; then xsel --clipboard --input
+    elif command -v clip.exe >/dev/null 2>&1; then clip.exe
+    else
+        return 1
+    fi
+}
+
 # --- containing third-party output ------------------------------------------
 # We can style only our own lines; a tool we invoke (e.g. the Exasol launcher)
 # prints whatever it likes. Rather than let that blend into our output, frame it:
@@ -1678,6 +1794,12 @@ exakit_print_mcp_ready_panel() {
     ui_panel_line 'questions with read-only SQL only, show me the SQL before you run'
     ui_panel_line 'it, and do not create, update, or delete anything."'
     ui_panel_end
+    # Put the prompt straight onto the clipboard so the first interaction is a
+    # paste, not a retype. Best-effort: silent when no clipboard tool exists.
+    _first_prompt='Use the exasol MCP server connected to my local Exasol database. List the available schemas and tables first. Then answer my questions with read-only SQL only, show me the SQL before you run it, and do not create, update, or delete anything.'
+    if printf '%s' "$_first_prompt" | exakit_copy_clipboard 2>/dev/null; then
+        ok "This prompt is copied to your clipboard — paste it after restarting your client."
+    fi
 }
 
 exakit_print_mcp_operation_summary() {
@@ -1778,15 +1900,16 @@ exakit_mcp_setup() {
         info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $_clients_csv"
     else
         printf '\n'
-        info "Choose one or more clients"
-        ui_menu_option 1 "Claude"
-        ui_menu_option 2 "Cursor"
-        ui_menu_option 3 "Codex"
-        ui_menu_hint "numbers separated by commas, or all"
-        while :; do
-            _selection="$(prompt_text "Choose client numbers" "all")"
-            _clients_csv="$(exakit_parse_mcp_client_selection "$_selection")" && break
-            warn "Please choose valid client numbers, for example 1,2,3 or all."
+        ui_checkbox_menu "Select the AI clients to connect (MCP)" "1,3" "Claude" "Cursor" "Codex"
+        _clients_csv=""
+        for _client_idx in $(printf '%s' "$EXAKIT_CHECKBOX_SELECTION" | tr ',' ' '); do
+            case "$_client_idx" in
+                1) _client_id="claude_desktop" ;;
+                2) _client_id="cursor" ;;
+                3) _client_id="codex" ;;
+                *) continue ;;
+            esac
+            _clients_csv="${_clients_csv:+$_clients_csv,}$_client_id"
         done
     fi
 
@@ -1863,33 +1986,27 @@ exakit_maybe_offer_mcp_setup() {
         info "Skipping MCP client setup (EXAKIT_SKIP_MCP=1). Run it any time with: exakit mcp-setup"
         return 0
     fi
-    if [ -z "$(_exakit_prompt_tty)" ]; then
-        info "Non-interactive install - setting up MCP in your AI client(s) by default."
-        if ! exakit_mcp_setup; then
-            warn "Your local runtime is installed, but MCP client setup did not finish cleanly."
-            warn "Retry any time with: exakit mcp-setup"
-        fi
-        return 0
-    fi
+    # Connecting an AI client is the point of the kit, so this step always
+    # runs (EXAKIT_SKIP_MCP=1 above is the scripted escape hatch). The client
+    # selection defaults to Claude + Codex; non-interactive runs keep those.
     info "The Exasol runtime and MCP server are ready."
-    if ! confirm "Set up MCP in your AI client(s) now?" y; then
-        info "Skipping live MCP client setup for now. You can run: exakit mcp-setup"
-        return 0
-    fi
     if ! exakit_mcp_setup; then
         warn "Your local runtime is installed, but MCP client setup did not finish cleanly."
         warn "Retry any time with: exakit mcp-setup"
     fi
 }
 
-# exakit_maybe_offer_data_load <kit_root> — interactively offer the guided data
-# loading menu during install. Non-interactive installs print the follow-up
-# command and continue. The selected load runs in a subshell so a die() inside
-# the loading flow never aborts the surrounding install.
+# exakit_maybe_offer_data_load <kit_root> — load data during install. The step
+# is required (an empty database defeats the first-query experience): the
+# bundled sample is pre-selected, and the user can additionally (or instead)
+# pick a local file — but at least one source must stay selected. Scripted
+# installs can still steer with EXAKIT_LOAD_SAMPLE (=0 skips, =1 bundled);
+# non-interactive runs keep the bundled default. Each load runs in a subshell
+# so a die() inside the loading flow never aborts the surrounding install.
 exakit_maybe_offer_data_load() {
     _kit_root="$1"
     : "$_kit_root"
-    command -v exakit_data_load_menu >/dev/null 2>&1 || return 0
+    command -v exakit_load_sample_data >/dev/null 2>&1 || return 0
 
     # EXAKIT_LOAD_SAMPLE lets an agent-driven or scripted install decide up front:
     # =1 loads the bundled sample without asking, =0 skips data loading entirely.
@@ -1905,24 +2022,28 @@ exakit_maybe_offer_data_load() {
         return 0
     fi
 
-    if [ -z "$(_exakit_prompt_tty)" ]; then
-        info "Non-interactive install - loading the bundled sample data by default."
-        if ! ( exakit_load_sample_data "$_kit_root" ); then
-            warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
-        fi
-        return 0
-    fi
-
-    info "The database is ready for data. Loading data now lets MCP validate against real tables."
-    if ! confirm "Load or verify data before MCP setup?" y; then
-        info "Skipping data loading. Run it any time with: exakit data-load"
-        return 0
-    fi
-    if ( exakit_data_load_menu install ); then
-        :
-    else
-        warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
-    fi
+    info "The database is ready for data. Loading it now lets MCP validate against real tables."
+    ui_checkbox_menu "Select data to load" "1" \
+        "Bundled sample dataset (TPC-H)" \
+        "A local CSV/text/Parquet file"
+    case ",$EXAKIT_CHECKBOX_SELECTION," in
+        *",1,"*)
+            if ! ( exakit_load_sample_data "$_kit_root" ); then
+                warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+            fi
+            ;;
+    esac
+    case ",$EXAKIT_CHECKBOX_SELECTION," in
+        *",2,"*)
+            ( exakit_load_local_file )
+            _local_status=$?
+            if [ "$_local_status" -eq 2 ]; then
+                info "Local file load skipped."
+            elif [ "$_local_status" -ne 0 ]; then
+                warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+            fi
+            ;;
+    esac
 }
 
 # kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>

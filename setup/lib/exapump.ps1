@@ -708,7 +708,6 @@ function Invoke-ExakitSqlScript {
 }
 
 function Show-ExakitDataLoadMenu {
-    param([switch]$InstallMode)
     if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
         Fail "No exapump connection profile is recorded - re-run the installer, then retry."
     }
@@ -717,11 +716,7 @@ function Show-ExakitDataLoadMenu {
         Info "Choose a data loading option"
         Write-ExakitMenuOption 1 "Bundled sample dataset (TPC-H)"
         Write-ExakitMenuOption 2 "Local CSV/Parquet file"
-        if ($InstallMode) {
-            Write-ExakitMenuOption 3 "Skip for now"
-        } else {
-            Write-ExakitMenuOption 3 "Cancel (skip data loading)"
-        }
+        Write-ExakitMenuOption 3 "Cancel (skip data loading)"
         $defaultChoice = "1"
         $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
         switch ($choice) {
@@ -737,19 +732,11 @@ function Show-ExakitDataLoadMenu {
                 return
             }
             { $_ -match '^(3|b|back)$' } {
-                if ($InstallMode) {
-                    Info "Skipping data load. Run it any time with: exakit data-load"
-                } else {
-                    Info "Data loading cancelled."
-                }
+                Info "Data loading cancelled."
                 return
             }
             "" {
-                if ($InstallMode) {
-                    Info "Skipping data load. Run it any time with: exakit data-load"
-                } else {
-                    Info "Data loading cancelled."
-                }
+                Info "Data loading cancelled."
                 return
             }
             default { Warn2 "Unknown data loading option: $choice" }
@@ -860,15 +847,16 @@ function Invoke-ExakitSampleDataLoad {
 # pwsh process instead (see setup-windows-docker.ps1).
 function Request-ExakitDataLoadOffer {
     param([Parameter(Mandatory)][string]$KitRoot)
-    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
-        Info "Non-interactive install - loading the bundled sample data by default."
-        Invoke-ExakitSampleDataLoad -KitRoot $KitRoot
-        return
-    }
+    # Data loading is a required install step: MCP validates against real
+    # tables, so the bundled sample is preselected; the checkbox menu keeps
+    # that default on non-interactive installs.
     Info "The database is ready for data. Loading data now lets MCP validate against real tables."
-    if (-not (Confirm-ExakitPrompt "Load or verify data before MCP setup?" $true)) {
-        Info "Skipping data loading. Run it any time with: exakit data-load"
-        return
+    $selection = Read-ExakitCheckboxMenu -Title "Select data to load" -Options @("Bundled sample dataset (TPC-H)", "A local CSV/text/Parquet file") -Defaults @(1)
+    if ($selection -contains 1) {
+        Invoke-ExakitSampleDataLoad -KitRoot $KitRoot
     }
-    Show-ExakitDataLoadMenu -InstallMode
+    if ($selection -contains 2) {
+        $result = Import-ExakitLocalFile
+        if ($result -eq "back") { Info "Local file load skipped. Run it any time with: exakit data-load" }
+    }
 }
