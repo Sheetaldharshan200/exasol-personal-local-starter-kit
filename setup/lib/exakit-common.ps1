@@ -96,7 +96,15 @@ function Initialize-ExakitLogging {
 
 function Write-ExakitLog([string]$Level, [string]$Msg) {
     if (-not $script:LogFile) { return }
-    "{0} {1,-5} {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Msg | Add-Content -Path $script:LogFile
+    try {
+        "{0} {1,-5} {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Msg | Add-Content -Path $script:LogFile -ErrorAction Stop
+    } catch {
+        # The log directory can disappear mid-run - uninstall removes the kit
+        # home (which contains logs/) while later status lines are still being
+        # logged. Stop logging rather than surfacing a spurious "Unexpected
+        # error" after the work has already succeeded.
+        $script:LogFile = $null
+    }
 }
 # Glyphs/colours come from the shared palette (ui.ps1) when a fancy terminal
 # is available; otherwise fall back to Write-Host -ForegroundColor so basic
