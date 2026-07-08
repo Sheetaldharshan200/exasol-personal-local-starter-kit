@@ -41,7 +41,14 @@ main() {
     EXAKIT_REF="${EXAKIT_REF:-main}"
     kit_dir="$EXAKIT_HOME/kit"
 
-    say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+    # Top-level installer actions: a blue bullet at the outer indent, matching
+    # the step/gutter hierarchy the setup scripts use once ui.sh is loaded.
+    # UTF-8 bullet only on UTF-8 locales; ASCII everywhere else.
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *[Uu][Tt][Ff]*) _say_glyph='•' ;;
+        *)              _say_glyph='*' ;;
+    esac
+    say() { printf '  \033[1;34m%s\033[0m %s\n' "$_say_glyph" "$*"; }
     fail() { printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2; exit 1; }
 
     # Banner + plan: reuse the kit's shared visual layer (setup/lib/ui.sh) so

@@ -179,7 +179,7 @@ confirm() {
         return
     fi
     if [ "$_default" = "y" ]; then _hint="[Y/n]"; else _hint="[y/N]"; fi
-    printf '  %s?%s %s %s%s%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_hint" "${UI_RESET:-}"
+    printf '    %s?%s %s %s%s%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_hint" "${UI_RESET:-}"
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     _answer="${_answer:-$_default}"
     case "$_answer" in
@@ -223,9 +223,9 @@ prompt_text() {
         return 0
     fi
     if [ -n "$_default" ]; then
-        printf '  %s?%s %s %s[%s]%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_default" "${UI_RESET:-}" >&2
+        printf '    %s?%s %s %s[%s]%s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" "${UI_DIM:-}" "$_default" "${UI_RESET:-}" >&2
     else
-        printf '  %s?%s %s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" >&2
+        printf '    %s?%s %s ' "${UI_ASK:-}" "${UI_RESET:-}" "$_question" >&2
     fi
     if [ "$_tty" = "/dev/tty" ]; then read -r _answer < /dev/tty; else read -r _answer; fi
     printf '%s\n' "${_answer:-$_default}"
@@ -1581,7 +1581,9 @@ exakit_run_mcp_operation_cli() {
 exakit_print_mcp_setup_summary() {
     _result_file="$1"
     require_python3
-    run_python - "$_result_file" <<'PY'
+    # Python renders the content as bare lines; the shell wraps them in the
+    # same rounded panel used for the install plan / connection details.
+    _summary_lines="$(run_python - "$_result_file" <<'PY'
 import json, sys
 
 LABELS = {
@@ -1594,30 +1596,41 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     doc = json.load(handle)
 
 clients = ", ".join(LABELS.get(item, item) for item in doc.get("selected_clients", []))
-print("")
-print("  MCP setup summary")
-print("  Mode:     managed")
-print("  Meaning:  Wrote managed MCP entries into the selected client config files.")
-print(f"  Clients:  {clients or 'none'}")
-print(f"  Status:   {doc.get('status', 'unknown')}")
+lines = [
+    "Mode:     managed",
+    "Meaning:  wrote managed MCP entries into the selected client config files",
+    f"Clients:  {clients or 'none'}",
+    f"Status:   {doc.get('status', 'unknown')}",
+]
 for artifact in doc.get("artifacts", []):
     client = LABELS.get(artifact.get("client"), artifact.get("client", "unknown"))
-    print(f"  File:     {client} -> {artifact.get('path', 'unknown')}")
+    lines.append(f"File:     {client} -> {artifact.get('path', 'unknown')}")
 
 findings = doc.get("findings", [])
 if findings:
-    print("")
-    print("  Notes:")
+    lines.append(" ")
+    lines.append("Notes:")
     for finding in findings:
-        print(f"  - {finding.get('message', 'Unknown issue')}")
+        lines.append(f"- {finding.get('message', 'Unknown issue')}")
 
 actions = doc.get("next_actions", [])
 if actions:
-    print("")
-    print("  Next:")
+    lines.append(" ")
+    lines.append("Next:")
     for action in actions:
-        print(f"  - {action.get('message', '')}")
+        lines.append(f"- {action.get('message', '')}")
+
+print("\n".join(lines))
 PY
+)" || { warn "Could not render the MCP setup summary (see log)."; return 0; }
+    printf '\n'
+    ui_panel_begin "MCP setup summary"
+    while IFS= read -r _sum_line; do
+        ui_panel_line "$_sum_line"
+    done <<EOF
+$_summary_lines
+EOF
+    ui_panel_end
 }
 
 exakit_print_mcp_ready_panel() {
@@ -1631,26 +1644,25 @@ exakit_print_mcp_ready_panel() {
     [ -n "$_mcp_command" ] || _mcp_command="uvx"
 
     printf '\n'
-    printf '  MCP is ready\n'
-    printf '  Server name:   exasol\n'
-    printf '  How it runs:   your AI client starts it on demand over stdio\n'
-    printf '  Command:       %s %s@%s\n' "$_mcp_command" "$_mcp_package" "$_mcp_version"
-    printf '  Database:      %s\n' "${_dsn:-unknown}"
-    printf '  DB user:       %s (read-only)\n' "${_mcp_user:-mcp_readonly}"
+    ui_panel_begin "MCP is ready"
+    ui_panel_line "Server name:   exasol"
+    ui_panel_line "How it runs:   your AI client starts it on demand over stdio"
+    ui_panel_line "Command:       $_mcp_command $_mcp_package@$_mcp_version"
+    ui_panel_line "Database:      ${_dsn:-unknown}"
+    ui_panel_line "DB user:       ${_mcp_user:-mcp_readonly} (read-only)"
     if [ "$_tls" = "self-signed" ]; then
-        printf '  TLS:           local self-signed certificate accepted for 127.0.0.1\n'
+        ui_panel_line "TLS:           local self-signed certificate accepted for 127.0.0.1"
     fi
-    printf '  Managed state: %s\n' "$EXAKIT_MCP_DIR"
+    ui_panel_line "Managed state: $EXAKIT_MCP_DIR"
+    ui_panel_end
+    info "Config files updated — restart the selected client now."
+    info "After the restart, look for an MCP server named: exasol"
     printf '\n'
-    printf '  MCP setup updated the selected client config files.\n'
-    printf '  Next step: restart the selected client now.\n'
-    printf '  After setup/restart, look for an MCP server named: exasol\n'
-    printf '\n'
-    printf '  First prompt to try in your AI client:\n'
-    printf '  "Use the exasol MCP server connected to my local Exasol database. List\n'
-    printf '  the available schemas and tables first. Then answer my questions with\n'
-    printf '  read-only SQL only, show me the SQL before you run it, and do not create,\n'
-    printf '  update, or delete anything."\n'
+    printf '    %s%s%s First prompt to try in your AI client:\n' "${UI_DIM:-}" "${UI_BULLET:--}" "${UI_RESET:-}"
+    printf '      %s"Use the exasol MCP server connected to my local Exasol database. List%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
+    printf '      %sthe available schemas and tables first. Then answer my questions with%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
+    printf '      %sread-only SQL only, show me the SQL before you run it, and do not create,%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
+    printf '      %supdate, or delete anything."%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
 }
 
 exakit_print_mcp_operation_summary() {

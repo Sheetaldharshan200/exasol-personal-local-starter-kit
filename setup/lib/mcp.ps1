@@ -594,24 +594,28 @@ function Show-McpSetupSummary {
     param([Parameter(Mandatory)][string]$ResultJson)
     $doc = $ResultJson | ConvertFrom-Json
     $clients = @($doc.selected_clients) | ForEach-Object { if ($script:McpClientLabels.ContainsKey($_)) { $script:McpClientLabels[$_] } else { $_ } }
+    # Same rounded panel as the install plan / connection details (ui.ps1).
     Write-Host ""
-    Write-Host "  MCP setup summary"
-    Write-Host "  Mode:     managed"
-    Write-Host "  Meaning:  Wrote managed MCP entries into the selected client config files."
-    Write-Host "  Clients:  $(if ($clients) { $clients -join ', ' } else { 'none' })"
-    Write-Host "  Status:   $($doc.status)"
+    Start-ExakitPanel "MCP setup summary"
+    Write-ExakitPanelLine "Mode:     managed"
+    Write-ExakitPanelLine "Meaning:  wrote managed MCP entries into the selected client config files"
+    Write-ExakitPanelLine "Clients:  $(if ($clients) { $clients -join ', ' } else { 'none' })"
+    Write-ExakitPanelLine "Status:   $($doc.status)"
     foreach ($artifact in @($doc.artifacts)) {
         $label = if ($script:McpClientLabels.ContainsKey($artifact.client)) { $script:McpClientLabels[$artifact.client] } else { $artifact.client }
-        Write-Host "  File:     $label -> $($artifact.path)"
+        Write-ExakitPanelLine "File:     $label -> $($artifact.path)"
     }
     if (@($doc.findings).Count -gt 0) {
-        Write-Host ""; Write-Host "  Notes:"
-        foreach ($f in @($doc.findings)) { Write-Host "  - $($f.message)" }
+        Write-ExakitPanelLine ""
+        Write-ExakitPanelLine "Notes:"
+        foreach ($f in @($doc.findings)) { Write-ExakitPanelLine "- $($f.message)" }
     }
     if (@($doc.next_actions).Count -gt 0) {
-        Write-Host ""; Write-Host "  Next:"
-        foreach ($a in @($doc.next_actions)) { Write-Host "  - $($a.message)" }
+        Write-ExakitPanelLine ""
+        Write-ExakitPanelLine "Next:"
+        foreach ($a in @($doc.next_actions)) { Write-ExakitPanelLine "- $($a.message)" }
     }
+    Complete-ExakitPanel
 }
 
 function Show-McpReadyPanel {
@@ -627,24 +631,31 @@ function Show-McpReadyPanel {
     $tls = Get-ExakitManifestValue "runtime.tls"
 
     Write-Host ""
-    Write-Host "  MCP is ready"
-    Write-Host "  Server name:   exasol"
-    Write-Host "  How it runs:   your AI client starts it on demand over stdio"
-    Write-Host "  Command:       $mcpCommand $mcpPackage@$mcpVersion"
-    Write-Host "  Database:      $(if ($dsn) { $dsn } else { 'unknown' })"
-    Write-Host "  DB user:       $(if ($mcpUser) { $mcpUser } else { 'mcp_readonly' }) (read-only)"
-    if ($tls -eq "self-signed") { Write-Host "  TLS:           local self-signed certificate accepted for 127.0.0.1" }
-    Write-Host "  Managed state: $script:McpDir"
+    Start-ExakitPanel "MCP is ready"
+    Write-ExakitPanelLine "Server name:   exasol"
+    Write-ExakitPanelLine "How it runs:   your AI client starts it on demand over stdio"
+    Write-ExakitPanelLine "Command:       $mcpCommand $mcpPackage@$mcpVersion"
+    Write-ExakitPanelLine "Database:      $(if ($dsn) { $dsn } else { 'unknown' })"
+    Write-ExakitPanelLine "DB user:       $(if ($mcpUser) { $mcpUser } else { 'mcp_readonly' }) (read-only)"
+    if ($tls -eq "self-signed") { Write-ExakitPanelLine "TLS:           local self-signed certificate accepted for 127.0.0.1" }
+    Write-ExakitPanelLine "Managed state: $script:McpDir"
+    Complete-ExakitPanel
+    Info "Config files updated - restart the selected client now."
+    Info "After the restart, look for an MCP server named: exasol"
     Write-Host ""
-    Write-Host "  MCP setup updated the selected client config files."
-    Write-Host "  Next step: restart the selected client now."
-    Write-Host "  After setup/restart, look for an MCP server named: exasol"
-    Write-Host ""
-    Write-Host "  First prompt to try in your AI client:"
-    Write-Host "  ""Use the exasol MCP server connected to my local Exasol database. List"
-    Write-Host "  the available schemas and tables first. Then answer my questions with"
-    Write-Host "  read-only SQL only, show me the SQL before you run it, and do not create,"
-    Write-Host "  update, or delete anything."""
+    if ($script:UiFancy) {
+        Write-Host ("    {0}{1}{2} First prompt to try in your AI client:" -f $script:UiDim, $script:UiBullet, $script:UiReset)
+        Write-Host ("      {0}""Use the exasol MCP server connected to my local Exasol database. List{1}" -f $script:UiDim, $script:UiReset)
+        Write-Host ("      {0}the available schemas and tables first. Then answer my questions with{1}" -f $script:UiDim, $script:UiReset)
+        Write-Host ("      {0}read-only SQL only, show me the SQL before you run it, and do not create,{1}" -f $script:UiDim, $script:UiReset)
+        Write-Host ("      {0}update, or delete anything.""{1}" -f $script:UiDim, $script:UiReset)
+    } else {
+        Write-Host "    - First prompt to try in your AI client:"
+        Write-Host "      ""Use the exasol MCP server connected to my local Exasol database. List"
+        Write-Host "      the available schemas and tables first. Then answer my questions with"
+        Write-Host "      read-only SQL only, show me the SQL before you run it, and do not create,"
+        Write-Host "      update, or delete anything."""
+    }
 }
 
 function Show-McpOperationSummary {

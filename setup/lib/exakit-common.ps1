@@ -207,9 +207,9 @@ function Confirm-ExakitPrompt {
     }
     $hint = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
     if ($script:UiFancy) {
-        Write-Host ("  {0}?{1} {2} {3}{4}{5} " -f $script:UiAsk, $script:UiReset, $Question, $script:UiDim, $hint, $script:UiReset) -NoNewline
+        Write-Host ("    {0}?{1} {2} {3}{4}{5} " -f $script:UiAsk, $script:UiReset, $Question, $script:UiDim, $hint, $script:UiReset) -NoNewline
     } else {
-        Write-Host "  ? $Question $hint " -ForegroundColor Cyan -NoNewline
+        Write-Host "    ? $Question $hint " -ForegroundColor Cyan -NoNewline
     }
     $answer = Read-Host
     if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultYes }
@@ -225,14 +225,14 @@ function Read-ExakitPrompt {
     }
     if ($script:UiFancy) {
         if ($Default) {
-            Write-Host ("  {0}?{1} {2} {3}[{4}]{5} " -f $script:UiAsk, $script:UiReset, $Question, $script:UiDim, $Default, $script:UiReset) -NoNewline
+            Write-Host ("    {0}?{1} {2} {3}[{4}]{5} " -f $script:UiAsk, $script:UiReset, $Question, $script:UiDim, $Default, $script:UiReset) -NoNewline
         } else {
-            Write-Host ("  {0}?{1} {2} " -f $script:UiAsk, $script:UiReset, $Question) -NoNewline
+            Write-Host ("    {0}?{1} {2} " -f $script:UiAsk, $script:UiReset, $Question) -NoNewline
         }
     } elseif ($Default) {
-        Write-Host "  ? $Question [$Default] " -ForegroundColor Cyan -NoNewline
+        Write-Host "    ? $Question [$Default] " -ForegroundColor Cyan -NoNewline
     } else {
-        Write-Host "  ? $Question " -ForegroundColor Cyan -NoNewline
+        Write-Host "    ? $Question " -ForegroundColor Cyan -NoNewline
     }
     $answer = Read-Host
     if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
