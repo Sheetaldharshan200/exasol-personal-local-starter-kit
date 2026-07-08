@@ -158,7 +158,7 @@ main() {
     if [ "${EXAKIT_DRY_RUN:-0}" = "1" ]; then
         say "Dry run requested (EXAKIT_DRY_RUN=1) — nothing was installed."
         say "Inspect the scripts under $kit_dir, then run:"
-        printf '      bash %s/%s\n\n' "$kit_dir" "$setup_script"
+        printf '    bash %s/%s\n\n' "$kit_dir" "$setup_script"
         exit 0
     fi
 

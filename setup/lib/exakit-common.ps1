@@ -33,7 +33,7 @@ if (-not (Get-Command Start-ExakitSpinner -ErrorAction SilentlyContinue)) {
     foreach ($v in 'UiReset','UiBold','UiDim','UiAccent','UiOk','UiWarn','UiErr','UiInfo','UiAsk') {
         Set-Variable -Scope script -Name $v -Value ""
     }
-    $script:UiTick = "+"; $script:UiCross = "x"; $script:UiArrow = ">"; $script:UiBullet = "-"
+    $script:UiTick = "+"; $script:UiCross = "x"; $script:UiArrow = ">"; $script:UiBullet = "-"; $script:UiVB = "|"
     function Start-ExakitSpinner([string]$Label) { }
     function Stop-ExakitSpinner { }
     function Restore-ExakitCursor { }
@@ -595,9 +595,9 @@ function Test-ExakitSha256 {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Expected)
     $actual = Get-ExakitSha256 $Path
     if ($actual -ne $Expected.ToLowerInvariant()) {
-        Write-Host "  x Checksum mismatch for $(Split-Path $Path -Leaf)" -ForegroundColor Red
-        Write-Host "      expected: $Expected"
-        Write-Host "      actual:   $actual"
+        Write-Host ("    {0}{1}{2} Checksum mismatch for {3}" -f $script:UiErr, $script:UiCross, $script:UiReset, (Split-Path $Path -Leaf))
+        Write-Host ("    {0}{1} expected: {2}{3}" -f $script:UiDim, $script:UiVB, $Expected, $script:UiReset)
+        Write-Host ("    {0}{1} actual:   {2}{3}" -f $script:UiDim, $script:UiVB, $actual, $script:UiReset)
         Fail "Refusing to continue with an unverified artifact"
     }
     Ok "Checksum verified: $(Split-Path $Path -Leaf)"

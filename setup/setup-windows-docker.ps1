@@ -159,6 +159,9 @@ try {
 } catch [ExakitFailException] {
     exit 1
 } catch {
-    Write-Host "  x Unexpected error: $_" -ForegroundColor Red
+    # Same "card" shape as Fail(): prominent x header + dim gutter line to the log.
+    Write-Host ""
+    Write-Host ("  {0}{1} {2}Unexpected error: $_{3}" -f $script:UiErr, $script:UiCross, $script:UiBold, $script:UiReset)
+    if ($script:LogFile) { Write-Host ("    {0}{1} Log: {2}{3}" -f $script:UiDim, $script:UiVB, $script:LogFile, $script:UiReset) }
     exit 1
 }
