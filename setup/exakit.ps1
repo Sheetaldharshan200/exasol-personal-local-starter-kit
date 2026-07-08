@@ -176,12 +176,54 @@ function Invoke-ExakitUninstallRun {
     }
 
     # 6) CLI binaries. Removed last so earlier steps can still call them.
+    #    exakit.cmd is the wrapper cmd.exe is still executing right now; deleting
+    #    it in-process makes cmd.exe print "The batch file cannot be found." when
+    #    it re-reads the file after we exit. So collect the binaries and hand
+    #    their removal to a detached process that waits for us to exit first.
+    $binPaths = @()
     foreach ($bin in @("exakit.cmd", "exapump.exe", "exasol.exe", "exakit.ps1")) {
         $p = Join-Path $script:BinDir $bin
         if (Test-Path $p) {
             if ($DryRun) { Info "  will remove: CLI binary $p" }
-            else { Remove-Item -Force -ErrorAction SilentlyContinue $p }
+            else { $binPaths += $p }
         }
+    }
+    if (-not $DryRun -and $binPaths.Count -gt 0) {
+        Remove-ExakitBinariesDeferred -Paths $binPaths
+    }
+}
+
+# Delete the CLI binaries from a short-lived detached PowerShell that first
+# waits for this process (and the cmd.exe running exakit.cmd) to exit. Deleting
+# exakit.cmd while cmd.exe is still executing it is what makes the shell print
+# "The batch file cannot be found."; deferring avoids that entirely.
+function Remove-ExakitBinariesDeferred {
+    param([string[]]$Paths)
+    $waitPids = @($PID)
+    try {
+        $me = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
+        # The parent is the cmd.exe running exakit.cmd - the one that re-reads
+        # the batch file after we return. Wait for it too, but not its parent
+        # (the user's interactive shell, which never exits).
+        if ($me.ParentProcessId) { $waitPids += [int]$me.ParentProcessId }
+    } catch { }
+    $waitPids = @($waitPids | Sort-Object -Unique)
+    $pidList = $waitPids -join ','
+    $quoted  = ($Paths | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ','
+    $deferred = @"
+foreach (`$id in @($pidList)) { try { Wait-Process -Id `$id -Timeout 60 -ErrorAction SilentlyContinue } catch {} }
+Start-Sleep -Milliseconds 250
+foreach (`$f in @($quoted)) { try { Remove-Item -Force -ErrorAction SilentlyContinue `$f } catch {} }
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($deferred))
+    try {
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", $encoded) `
+            -WindowStyle Hidden | Out-Null
+    } catch {
+        # If we cannot spawn the detached cleaner, fall back to deleting inline.
+        # The batch-file message may reappear, but the binaries are still gone.
+        foreach ($f in $Paths) { Remove-Item -Force -ErrorAction SilentlyContinue $f }
     }
 }
 
