@@ -236,9 +236,11 @@ class LoadWiringTests(unittest.TestCase):
             with self.subTest(menu=menu_name):
                 self.assertIn("Bundled sample dataset (TPC-H)", menu)
                 self.assertIn("Local CSV/text/Parquet file", menu)
-                self.assertIn("Back", menu)
+                # One clear exit (commit 0e06e2e collapsed the old redundant
+                # "Back" + "Terminate" pair): "Skip for now" in install mode,
+                # "Cancel" in manual mode.
                 self.assertIn("Skip for now", menu)
-                self.assertIn("Terminate", menu)
+                self.assertIn("Cancel", menu)
                 for removed_option in (
                     "Remote CSV/Text File",
                     "Import from Another Database",
