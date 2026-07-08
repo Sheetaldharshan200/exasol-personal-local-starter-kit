@@ -54,7 +54,7 @@ Restart your AI client, then continue with the [first workflow](../demo/first-re
 ## Load or manage sample data
 
 ```powershell
-exakit data-load            # guided menu: bundled sample data or a local CSV/text/Parquet file
+exakit data-load            # guided menu: bundled sample data or a local CSV/Parquet file
 exakit data-load -Force     # reload the bundled TPC-H sample directly
 ```
 

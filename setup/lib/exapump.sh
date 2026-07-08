@@ -442,7 +442,7 @@ exakit_prompt_optional_verification() {
 
 exakit_load_local_file() {
     while :; do
-        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (type back to return)")"
+        _raw_path="$(prompt_text "Local CSV/Parquet file path (type back to return)")"
         case "$_raw_path" in
             b|B|back|Back|BACK)
                 info "Returning to data loading options."
@@ -450,7 +450,7 @@ exakit_load_local_file() {
                 ;;
         esac
         if [ -z "$_raw_path" ]; then
-            warn "Please enter a local CSV/text/Parquet file path, or type back to return."
+            warn "Please enter a local CSV/Parquet file path, or type back to return."
             continue
         fi
         _path="$(exakit_normalize_path "$_raw_path")"
@@ -480,7 +480,7 @@ exakit_load_local_file() {
 }
 
 exakit_load_remote_file() {
-    _url="$(prompt_text "Remote CSV/text URL")"
+    _url="$(prompt_text "Remote CSV/Parquet URL")"
     [ -n "$_url" ] || die "Remote URL is required."
     _name="$(basename "${_url%%\?*}")"
     [ -n "$_name" ] || _name="remote-data.csv"
@@ -567,7 +567,7 @@ exakit_data_load_menu() {
     while :; do
         info "Choose a data loading option"
         printf '    1. Bundled sample dataset (TPC-H)\n'
-        printf '    2. Local CSV/text/Parquet file\n'
+        printf '    2. Local CSV/Parquet file\n'
         if [ "$_mode" = "install" ]; then
             printf '    3. Skip for now\n'
         else

@@ -114,7 +114,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 - **[data/example-questions.md](data/example-questions.md)** — 14 ready-to-ask questions (revenue, customers, orders, suppliers), each with validated reference SQL to inspect before you run
 
-Prefer your own data? Run `exakit data-load` — a focused guided menu that loads the bundled sample or a **local CSV, text, or Parquet file**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
+Prefer your own data? Run `exakit data-load` — a focused guided menu that loads the bundled sample or a **local CSV or Parquet file**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 ### Day-to-day
 

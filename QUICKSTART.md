@@ -71,7 +71,7 @@ Then, in a **fresh** agent session, say **"setup starter kit"** — it checks st
 
 ## 5. Ask your first question
 
-The installer offers a focused data loading menu after exapump is ready and before MCP setup. Open it any time for the bundled sample or a local CSV, text, or Parquet file; the default option loads and verifies the bundled `data/` folder:
+The installer offers a focused data loading menu after exapump is ready and before MCP setup. Open it any time for the bundled sample or a local CSV or Parquet file; the default option loads and verifies the bundled `data/` folder:
 
 ```bash
 exakit data-load

@@ -629,13 +629,13 @@ function Request-ExakitOptionalVerification {
 
 function Import-ExakitLocalFile {
     while ($true) {
-        $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path (type back to return)" ""
+        $rawPath = Read-ExakitPrompt "Local CSV/Parquet file path (type back to return)" ""
         if ($rawPath -match '^(b|back)$') {
             Info "Returning to data loading options."
             return "back"
         }
         if (-not $rawPath) {
-            Warn2 "Please enter a local CSV/text/Parquet file path, or type back to return."
+            Warn2 "Please enter a local CSV/Parquet file path, or type back to return."
             continue
         }
         $path = Get-ExakitNormalizedPath $rawPath
@@ -664,7 +664,7 @@ function Import-ExakitLocalFile {
 }
 
 function Import-ExakitRemoteFile {
-    $url = Read-ExakitPrompt "Remote CSV/text URL" ""
+    $url = Read-ExakitPrompt "Remote CSV/Parquet URL" ""
     if (-not $url) { Fail "Remote URL is required." }
     $name = Split-Path ($url -replace '\?.*$', '') -Leaf
     if (-not $name) { $name = "remote-data.csv" }
@@ -757,7 +757,7 @@ function Show-ExakitDataLoadMenu {
     while ($true) {
         Info "Choose a data loading option"
         Write-Host "    1. Bundled sample dataset (TPC-H)"
-        Write-Host "    2. Local CSV/text/Parquet file"
+        Write-Host "    2. Local CSV/Parquet file"
         if ($InstallMode) {
             Write-Host "    3. Skip for now"
         } else {
