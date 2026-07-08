@@ -140,7 +140,7 @@ exapump_create_profile() {
         _password="$(cat "$_pwfile")"
     fi
     if [ -z "$_password" ] && (: < /dev/tty) 2>/dev/null; then
-        printf '\033[1;36m  ?\033[0m Database password for user %s (input hidden): ' "$_user"
+        printf '    %s?%s Database password for user %s (input hidden): ' "${UI_ASK:-}" "${UI_RESET:-}" "$_user"
         stty -echo < /dev/tty 2>/dev/null
         read -r _password < /dev/tty
         stty echo < /dev/tty 2>/dev/null
@@ -511,52 +511,6 @@ exakit_run_sql_script() {
     manifest_set data.last_load.source "$_path"
     exakit_prompt_optional_verification ""
     ok "SQL script completed"
-}
-
-exakit_show_database_import_guidance() {
-    _kind="$1"
-    printf '\n'
-    printf '  %s\n' "$_kind"
-    printf '  Use this option when your source is another database and you already\n'
-    printf '  have an Exasol IMPORT statement or a script that creates the needed\n'
-    printf '  connection object. The kit will run that SQL through the starter-kit\n'
-    printf '  exapump profile and log the result.\n'
-    printf '\n'
-    printf '  Typical flow:\n'
-    printf '  1. Put your IMPORT statements in a .sql file.\n'
-    printf '  2. Run this option and provide that file path.\n'
-    printf '  3. Verify the target table with exapump sql -p starter-kit.\n'
-    printf '\n'
-    printf '  Self-signed certificate: if the source is an Exasol with a\n'
-    printf '  self-signed cert (the kit deploys one), the CONNECTION must pin\n'
-    printf '  its TLS fingerprint in the host string:\n'
-    printf "        TO 'HOST/FINGERPRINT:PORT'\n"
-    printf '  To get the fingerprint, run the IMPORT once without it: the\n'
-    printf '  "ETL-4211 ... self-signed certificate" error prints the exact\n'
-    printf '  HOST/FINGERPRINT:PORT to paste back. Never disable cert validation.\n'
-    printf '\n'
-    printf '  Security: once CREATE CONNECTION runs, Exasol stores the password\n'
-    printf '  encrypted inside the database - do not leave a plaintext password\n'
-    printf '  in the .sql file; delete or scrub it after the connection exists.\n'
-    printf '\n'
-    if confirm "Run an import SQL script now?" y; then
-        exakit_run_sql_script
-    else
-        info "Skipping import execution. Run it any time with: exakit data-load"
-    fi
-}
-
-exakit_show_exapump_guidance() {
-    printf '\n'
-    printf '  Exapump is installed and connected.\n'
-    printf '  Profile: starter-kit\n'
-    printf '  Binary:  %s\n' "$(exapump_cli)"
-    printf '\n'
-    printf '  Useful commands:\n'
-    printf '    exapump sql -p starter-kit '\''SELECT CURRENT_TIMESTAMP'\''\n'
-    printf '    exapump upload ./data.csv --table STARTER_KIT.MY_TABLE -p starter-kit\n'
-    printf '    exapump sql -p starter-kit < ./script.sql\n'
-    printf '\n'
 }
 
 exakit_data_load_menu() {

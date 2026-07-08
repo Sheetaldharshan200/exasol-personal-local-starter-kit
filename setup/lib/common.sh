@@ -847,9 +847,9 @@ exakit_on_failure() {
     [ $_status -eq 0 ] && return 0
     error "Setup failed${EXAKIT_CURRENT_STEP:+ during step: $EXAKIT_CURRENT_STEP}"
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
-        printf '    Full log: %s\n' "$EXAKIT_LOG_FILE" >&2
+        printf '    %s%s Log: %s%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "$EXAKIT_LOG_FILE" "${UI_RESET:-}" >&2
     fi
-    printf '    Re-running the installer is safe: completed steps are skipped.\n' >&2
+    printf '    %s%s Re-running the installer is safe: completed steps are skipped.%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
     if [ "${EXAKIT_AUTO_ROLLBACK:-0}" = "1" ]; then
         run_rollback
     elif confirm "Undo the failed step's changes?" n; then
@@ -1767,7 +1767,7 @@ exakit_mcp_setup() {
         printf '    1. Claude\n'
         printf '    2. Cursor\n'
         printf '    3. Codex\n'
-        printf '    Enter numbers separated by commas, or type all.\n'
+        printf '    %sEnter numbers separated by commas, or type all.%s\n' "${UI_DIM:-}" "${UI_RESET:-}"
         while :; do
             _selection="$(prompt_text "Choose client numbers" "all")"
             _clients_csv="$(exakit_parse_mcp_client_selection "$_selection")" && break

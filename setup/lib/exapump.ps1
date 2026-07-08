@@ -53,8 +53,13 @@ function Test-ExapumpSucceeded {
 function Write-ExapumpOutput {
     param([AllowEmptyString()][string]$Output, [string]$Header = "exapump output:")
     if (-not "$Output".Trim()) { return }
-    Write-Host "  $Header" -ForegroundColor Yellow
-    "$Output".Trim() -split "`n" | ForEach-Object { Write-Host "    $_" }
+    # Tool output: warn-style header on the gutter, lines in the dim | gutter
+    # (same contained shape the verify step uses).
+    Write-Host "    ! $Header" -ForegroundColor Yellow
+    "$Output".Trim() -split "`n" | ForEach-Object {
+        if ($script:UiFancy) { Write-Host ("    {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
+        else { Write-Host ("    | {0}" -f $_) }
+    }
 }
 
 # Invoke-Exapump - run one exapump invocation, capturing combined output and
@@ -700,52 +705,6 @@ function Invoke-ExakitSqlScript {
     Set-ExakitManifestValue "data.last_load.source" $path
     Request-ExakitOptionalVerification ""
     Ok "SQL script completed"
-}
-
-function Show-ExakitDatabaseImportGuidance {
-    param([Parameter(Mandatory)][string]$Kind)
-    Write-Host ""
-    Write-Host "  $Kind"
-    Write-Host "  Use this option when your source is another database and you already"
-    Write-Host "  have an Exasol IMPORT statement or a script that creates the needed"
-    Write-Host "  connection object. The kit will run that SQL through the starter-kit"
-    Write-Host "  exapump profile and log the result."
-    Write-Host ""
-    Write-Host "  Typical flow:"
-    Write-Host "  1. Put your IMPORT statements in a .sql file."
-    Write-Host "  2. Run this option and provide that file path."
-    Write-Host "  3. Verify the target table with exapump sql -p starter-kit."
-    Write-Host ""
-    Write-Host "  Self-signed certificate: if the source is an Exasol with a"
-    Write-Host "  self-signed cert (the kit deploys one), the CONNECTION must pin"
-    Write-Host "  its TLS fingerprint in the host string:"
-    Write-Host "        TO 'HOST/FINGERPRINT:PORT'"
-    Write-Host "  To get the fingerprint, run the IMPORT once without it: the"
-    Write-Host "  'ETL-4211 ... self-signed certificate' error prints the exact"
-    Write-Host "  HOST/FINGERPRINT:PORT to paste back. Never disable cert validation."
-    Write-Host ""
-    Write-Host "  Security: once CREATE CONNECTION runs, Exasol stores the password"
-    Write-Host "  encrypted inside the database - do not leave a plaintext password"
-    Write-Host "  in the .sql file; delete or scrub it after the connection exists."
-    Write-Host ""
-    if (Confirm-ExakitPrompt "Run an import SQL script now?" $true) {
-        Invoke-ExakitSqlScript
-    } else {
-        Info "Skipping import execution. Run it any time with: exakit data-load"
-    }
-}
-
-function Show-ExakitExapumpGuidance {
-    Write-Host ""
-    Write-Host "  Exapump is installed and connected."
-    Write-Host "  Profile: starter-kit"
-    Write-Host "  Binary:  $(Get-ExapumpCli)"
-    Write-Host ""
-    Write-Host "  Useful commands:"
-    Write-Host "    exapump sql -p starter-kit 'SELECT CURRENT_TIMESTAMP'"
-    Write-Host "    exapump upload .\data.csv --table STARTER_KIT.MY_TABLE -p starter-kit"
-    Write-Host "    exapump sql -p starter-kit < .\script.sql"
-    Write-Host ""
 }
 
 function Show-ExakitDataLoadMenu {

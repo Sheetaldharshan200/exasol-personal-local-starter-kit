@@ -247,8 +247,13 @@ function Assert-ExapumpResult {
     if ($script:LogFile) { $text | Add-Content -Path $script:LogFile }
     if (-not $Result.Success) {
         Write-ExakitLog "ERROR_DETAIL" "$Label failed with exit code $($Result.ExitCode): $text"
-        Write-Host "  ! $Label error details:" -ForegroundColor Red
-        Write-Host "$text" -ForegroundColor Red
+        # Tool output on the failure path: same contained gutter as everywhere
+        # else, red so it reads as the error detail it is.
+        Write-Host "    ! $Label error details:" -ForegroundColor Red
+        "$text" -split "`n" | ForEach-Object {
+            if ($script:UiFancy) { Write-Host ("    {0}{1} {2}{3}" -f $script:UiErr, $script:UiVB, $_, $script:UiReset) }
+            else { Write-Host ("    | {0}" -f $_) -ForegroundColor Red }
+        }
         Fail $FailMessage
     }
 }
