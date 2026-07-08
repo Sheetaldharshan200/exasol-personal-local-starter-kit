@@ -756,8 +756,9 @@ function Install-ExakitSkills {
 }
 
 # Request-ExakitSkillsInstallOffer - after setup, place the skills where CLI
-# agents can find them. Mirrors exakit_maybe_offer_skills_install; matches the
-# MCP-offer behaviour on this path (installs by default when non-interactive).
+# agents can find them. Mirrors exakit_maybe_offer_skills_install. Always
+# installs - no prompt - so the skills are present without requiring
+# interactive confirmation, on both interactive and non-interactive runs.
 function Request-ExakitSkillsInstallOffer {
     $repoRoot = Get-ExakitRepoRoot
     if (-not $repoRoot) { return }
@@ -766,15 +767,6 @@ function Request-ExakitSkillsInstallOffer {
     $hasSkill = Get-ChildItem -Path $skillsSrc -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path (Join-Path $_.FullName "SKILL.md") }
     if (-not $hasSkill) { return }
-    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
-        Info "Non-interactive install - installing the kit's AI skills by default."
-        [void](Install-ExakitSkills)
-        return
-    }
-    if (-not (Confirm-ExakitPrompt "Install the kit's AI skills for your CLI agent (Claude Code / Codex)?" $true)) {
-        Info "Skipping skills install for now. You can run: exakit skills-install"
-        return
-    }
     if (-not (Install-ExakitSkills)) {
         Warn2 "Skills install did not finish cleanly. Retry any time with: exakit skills-install"
     }
