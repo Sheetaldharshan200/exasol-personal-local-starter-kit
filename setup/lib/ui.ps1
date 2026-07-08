@@ -25,7 +25,16 @@ $script:UiEsc = [char]27
 # Sets $script:UiFancy. Safe to call more than once.
 function Initialize-ExakitConsole {
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
-    try { $global:OutputEncoding    = [System.Text.Encoding]::UTF8 } catch { }
+    # $OutputEncoding encodes what PowerShell pipes INTO native commands'
+    # stdin, so it must be a BOM-LESS UTF-8: the static [Text.Encoding]::UTF8
+    # instance emits a U+FEFF preamble, which Windows PowerShell 5.1's pipe
+    # writer prepends to the piped stream. Exasol rejects U+FEFF in SQL text
+    # ("character is not allowed within unquoted identifier"). Note this alone
+    # does NOT make stdin-piping SQL safe on 5.1 - its pipe writer adds a
+    # second BOM of its own regardless of $OutputEncoding (observed under the
+    # system-wide UTF-8 codepage 65001) - which is why SQL files are fed to
+    # exapump as raw bytes instead (see Invoke-ExapumpSqlFileCapture).
+    try { $global:OutputEncoding    = New-Object System.Text.UTF8Encoding $false } catch { }
 
     $vt = $false
     try {

@@ -392,20 +392,75 @@ function Test-ExapumpConnection {
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.
 # Returns $true/$false instead of dying so callers (Invoke-ExakitSampleDataLoad)
 # can decide whether a missing/empty file is fatal.
-# Invoke-ExapumpSqlFileCapture <file> - pipe a SQL file to exapump and return a
-# structured result ({ Output; ExitCode; Success }) matching Invoke-Exapump's
-# shape, logging the invocation. Shared by Invoke-ExapumpSqlFile (needs only
-# pass/fail) and the sample-data verification step (also scans output for FAIL
-# rows), so the stdin-pipe + quirk-aware success detection lives in one place.
+# Invoke-ExapumpSqlFileCapture <file> - feed a SQL file to exapump's stdin and
+# return a structured result ({ Output; ExitCode; Success }) matching
+# Invoke-Exapump's shape, logging the invocation. Shared by
+# Invoke-ExapumpSqlFile (needs only pass/fail) and the sample-data verification
+# step (also scans output for FAIL rows), so the stdin feed + quirk-aware
+# success detection lives in one place.
+#
+# The file's RAW BYTES are handed to exapump via System.Diagnostics.Process,
+# NOT a PowerShell pipeline (Get-Content -Raw | exapump 2>&1). Two independent
+# Windows PowerShell 5.1 behaviors made the pipeline form silently destroy the
+# sample-data load:
+#   1. Under the module-global $ErrorActionPreference = 'Stop', 2>&1 turned
+#      exapump's first stderr progress line into a terminating error that tore
+#      the pipeline down - killing exapump at statement 1 of the batch - while
+#      the lone captured "[1/10] ..." line satisfied Test-ExapumpSucceeded's
+#      [n/m] marker, so schema creation reported "done" without CREATE SCHEMA
+#      ever running.
+#   2. Under the system-wide UTF-8 codepage (65001), a UTF-8 BOM gets
+#      prepended to whatever reaches exapump's stdin, and Exasol rejects the
+#      batch's first statement: "'<U+FEFF>' character is not allowed within
+#      unquoted identifier". PowerShell's own pipe writer adds one (even with
+#      $OutputEncoding set to ASCII or BOM-less UTF-8), and on .NET Framework
+#      Process.StandardInput adds another: merely accessing that property
+#      builds a StreamWriter over Console.InputEncoding (BOM-emitting UTF-8
+#      under CP 65001) with AutoFlush = $true, whose setter flushes the
+#      encoder preamble into the pipe before any payload byte. Verified: with
+#      Console.InputEncoding left alone the probe payload arrives as
+#      EF BB BF + bytes on 5.1; with a BOM-less UTF-8 InputEncoding it
+#      arrives byte-exact (and PowerShell 7 is byte-exact either way).
+# Raw-byte stdin bypasses every re-encoding layer, and keeping exapump's
+# stderr out of PowerShell's error stream sidesteps the 'Stop' teardown too.
+# stdout/stderr reads start BEFORE stdin is written to avoid the classic
+# full-pipe deadlock.
 function Invoke-ExapumpSqlFileCapture {
     param([Parameter(Mandatory)][string]$Path)
     $out = ""
     $code = 1
+    $previousInputEncoding = $null
     try {
-        $out = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
-        $code = $LASTEXITCODE
+        # Best-effort (throws when the process has no console): see BOM note
+        # above. Restored in finally.
+        try {
+            $previousInputEncoding = [Console]::InputEncoding
+            [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
+        } catch { $previousInputEncoding = $null }
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = Get-ExapumpCli
+        $psi.Arguments = "sql -p `"$($script:ExapumpProfile)`""
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $proc.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $proc.StandardInput.Close()
+        $proc.WaitForExit()
+        $out = $stdoutTask.Result + $stderrTask.Result
+        $code = $proc.ExitCode
     } catch {
         $out = "$_"
+    } finally {
+        if ($previousInputEncoding) {
+            try { [Console]::InputEncoding = $previousInputEncoding } catch { }
+        }
     }
     if ($script:LogFile) { "exapump sql -p $($script:ExapumpProfile) < $Path" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
     return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
