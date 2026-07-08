@@ -1902,17 +1902,23 @@ kit_shared_steps() {
             || die "Could not install the exakit command to $EXAKIT_BIN_DIR (is it writable? is the disk full?)."
         # Keep a copy of the kit library (and the mcp/ and sql/ packages
         # exakit_repo_root() depends on) next to the state so exakit finds
-        # them even when this checkout moves or disappears.
-        mkdir -p "$EXAKIT_HOME/kit/setup" || die "Could not create $EXAKIT_HOME/kit/setup."
-        cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/" \
-            || die "Could not copy the kit library to $EXAKIT_HOME/kit/setup."
-        # Copy the assets exakit needs after the checkout is gone: the mcp/
-        # and sql/ packages, the data/ CSVs, and load-data.sh (so both
-        # `exakit data-load --force` and the documented raw setup script keep working).
-        [ -d "$_kit_root/mcp" ] && cp -R "$_kit_root/mcp" "$EXAKIT_HOME/kit/"
-        [ -d "$_kit_root/sql" ] && cp -R "$_kit_root/sql" "$EXAKIT_HOME/kit/"
-        [ -d "$_kit_root/data" ] && cp -R "$_kit_root/data" "$EXAKIT_HOME/kit/"
-        [ -f "$_script_dir/load-data.sh" ] && cp "$_script_dir/load-data.sh" "$EXAKIT_HOME/kit/setup/"
+        # them even when this checkout moves or disappears. Skip when setup is
+        # ALREADY running from the kit home (the curl|sh flow, where install.sh
+        # placed the kit there): copying a directory onto itself makes cp error
+        # out with "are identical", which is not a real failure.
+        if [ "$_script_dir" -ef "$EXAKIT_HOME/kit/setup" ] 2>/dev/null; then
+            :   # already in place; nothing to copy
+        else
+            mkdir -p "$EXAKIT_HOME/kit/setup" || die "Could not create $EXAKIT_HOME/kit/setup."
+            cp -R "$_script_dir/lib" "$EXAKIT_HOME/kit/setup/" \
+                || die "Could not copy the kit library to $EXAKIT_HOME/kit/setup."
+            # Copy the assets exakit needs after the checkout is gone: the mcp/
+            # and sql/ packages, the data/ CSVs, and load-data.sh.
+            [ -d "$_kit_root/mcp" ] && cp -R "$_kit_root/mcp" "$EXAKIT_HOME/kit/"
+            [ -d "$_kit_root/sql" ] && cp -R "$_kit_root/sql" "$EXAKIT_HOME/kit/"
+            [ -d "$_kit_root/data" ] && cp -R "$_kit_root/data" "$EXAKIT_HOME/kit/"
+            [ -f "$_script_dir/load-data.sh" ] && cp "$_script_dir/load-data.sh" "$EXAKIT_HOME/kit/setup/"
+        fi
         ensure_path_hint "$EXAKIT_BIN_DIR"
         mark_step exakit_helper
         ok "exakit installed ($EXAKIT_BIN_DIR/exakit)"
