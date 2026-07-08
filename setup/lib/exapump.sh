@@ -442,7 +442,7 @@ exakit_prompt_optional_verification() {
 
 exakit_load_local_file() {
     while :; do
-        _raw_path="$(prompt_text "Local CSV/Parquet file path (type back to return)")"
+        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (type back to return)")"
         case "$_raw_path" in
             b|B|back|Back|BACK)
                 info "Returning to data loading options."
@@ -450,7 +450,7 @@ exakit_load_local_file() {
                 ;;
         esac
         if [ -z "$_raw_path" ]; then
-            warn "Please enter a local CSV/Parquet file path, or type back to return."
+            warn "Please enter a local CSV/text/Parquet file path, or type back to return."
             continue
         fi
         _path="$(exakit_normalize_path "$_raw_path")"
@@ -513,136 +513,288 @@ exakit_run_sql_script() {
     ok "SQL script completed"
 }
 
-# Standalone `exakit data-load` menu. The install flow no longer routes here —
-# it uses the required checkbox selection in exakit_maybe_offer_data_load — so
-# this menu always offers a plain Cancel.
-exakit_data_load_menu() {
-    [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
-        die "No exapump connection profile is recorded — re-run the installer, then retry."
+# --- bundled dataset registry ------------------------------------------------
+# The kit can ship any number of bundled datasets. TPC-H is the original one
+# (flat layout: data/*.csv + sql/0*.sql, loaded by exakit_load_sample_data);
+# every additional dataset is a self-contained directory:
+#
+#   data/datasets/<id>/dataset.conf      id=, label=, markers= (see below)
+#   data/datasets/<id>/01_create_schema.sql
+#   data/datasets/<id>/data/*.csv        optional bulk files (table = filename)
+#   data/datasets/<id>/02_load_data.sql  optional transform/generation step
+#   data/datasets/<id>/03_verify_setup.sql  optional checks (a FAIL row blocks)
+#
+# All bundled datasets load into $EXAKIT_SCHEMA (STARTER_KIT) so the dedicated
+# read-only MCP user sees them without extra grants — table names must be
+# unique across datasets. "markers" names the dataset's tables used to answer
+# "is this loaded?" against the DATABASE, not just the manifest.
 
-    while :; do
-        info "Choose a data loading option"
-        ui_menu_option 1 "Bundled sample dataset (TPC-H)"
-        ui_menu_option 2 "Local CSV/Parquet file"
-        ui_menu_option 3 "Cancel (skip data loading)"
-        _default_choice="1"
-        _choice="$(prompt_text "Choose data option" "$_default_choice")"
-        case "$_choice" in
-            1)
-                _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
-                exakit_load_sample_data "$_kit_root"
-                return 0
-                ;;
-            2)
-                exakit_load_local_file
-                _local_status=$?
-                [ "$_local_status" -eq 2 ] && continue
-                return "$_local_status"
-                ;;
-            3|b|B|back|Back|BACK|"")
-                info "Data loading cancelled."
-                return 0
-                ;;
-            *) warn "Unknown data loading option: $_choice" ;;
-        esac
+# exakit_bundled_datasets — one line per dataset: "id|label|flag|markers".
+# Every dataset (TPC-H included) lives under data/datasets/<id>/ and is
+# discovered from its dataset.conf; nothing is hardcoded here. A conf may set
+# flag= to override the default manifest key (TPC-H keeps the historical
+# data.loaded so existing installs stay recognized).
+exakit_bundled_datasets() {
+    _bdr_root="$(exakit_repo_root 2>/dev/null)" || return 0
+    for _bdr_conf in "$_bdr_root"/data/datasets/*/dataset.conf; do
+        [ -f "$_bdr_conf" ] || continue
+        _bdr_id="$(sed -n 's/^id=//p' "$_bdr_conf" | head -1)"
+        _bdr_label="$(sed -n 's/^label=//p' "$_bdr_conf" | head -1)"
+        _bdr_markers="$(sed -n 's/^markers=//p' "$_bdr_conf" | head -1)"
+        _bdr_flag="$(sed -n 's/^flag=//p' "$_bdr_conf" | head -1)"
+        [ -n "$_bdr_id" ] && [ -n "$_bdr_label" ] || continue
+        [ -n "$_bdr_flag" ] || _bdr_flag="data.datasets.${_bdr_id}.loaded"
+        printf '%s|%s|%s|%s\n' "$_bdr_id" "$_bdr_label" "$_bdr_flag" "$_bdr_markers"
     done
 }
 
-# exakit_load_sample_data <kit_root> [--force] — the full sample-data pipeline:
-# create the schema, bulk-load every data/*.csv, run any transform, verify,
-# then record the result in the manifest. One implementation, shared by
-# setup/load-data.sh, the interactive installer offer, and `exakit data-load --force`,
-# so the three entry points cannot drift apart.
-#
-# Uses die() for hard failures (missing profile, failed load/verify). Callers
-# that must survive a failure (the installer offer) run it in a subshell so
-# die()'s exit is contained; manifest writes persist because they are file I/O.
-exakit_load_sample_data() {
-    _kit_root="$1"
-    _force="${2:-}"
-    _schema="${EXAKIT_SCHEMA:-STARTER_KIT}"
+# exakit_db_reachable — one cached probe per run: can we run SQL right now?
+_EXAKIT_DB_REACHABLE=""
+exakit_db_reachable() {
+    if [ -z "$_EXAKIT_DB_REACHABLE" ]; then
+        if [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] && \
+           "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" "SELECT 1" >/dev/null 2>&1; then
+            _EXAKIT_DB_REACHABLE=1
+        else
+            _EXAKIT_DB_REACHABLE=0
+        fi
+    fi
+    [ "$_EXAKIT_DB_REACHABLE" = 1 ]
+}
+
+# exakit_table_present <table> — does the table exist in $EXAKIT_SCHEMA?
+exakit_table_present() {
+    _tp_schema="$(printf '%s' "${EXAKIT_SCHEMA:-STARTER_KIT}" | tr '[:lower:]' '[:upper:]')"
+    _tp_table="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    [ -n "$_tp_table" ] || return 1
+    "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_TABLES WHERE TABLE_SCHEMA = '$_tp_schema' AND TABLE_NAME = '$_tp_table') THEN 'EXAKIT_TABLE_PRESENT' ELSE 'EXAKIT_TABLE_MISSING' END AS STATUS" \
+        2>> "${EXAKIT_LOG_FILE:-/dev/null}" | grep -q "EXAKIT_TABLE_PRESENT"
+}
+
+# exakit_dataset_loaded <flag> <markers_csv> — is the dataset actually loaded?
+# The DATABASE is the source of truth: when it is reachable, every marker
+# table must exist (and the manifest flag is synced to what was observed, so a
+# destroy+redeploy that left a stale "loaded" flag self-heals). Only when the
+# database is unreachable do we fall back to the manifest flag alone.
+exakit_dataset_loaded() {
+    _dl_flag="$1"
+    _dl_markers="$(printf '%s' "$2" | tr ',' ' ')"
+    if exakit_db_reachable && [ -n "$_dl_markers" ]; then
+        for _dl_table in $_dl_markers; do
+            if ! exakit_table_present "$_dl_table"; then
+                [ "$(manifest_get "$_dl_flag" 2>/dev/null)" = "true" ] && \
+                    manifest_set "$_dl_flag" false
+                return 1
+            fi
+        done
+        [ "$(manifest_get "$_dl_flag" 2>/dev/null)" = "true" ] || \
+            manifest_set "$_dl_flag" true
+        return 0
+    fi
+    [ "$(manifest_get "$_dl_flag" 2>/dev/null)" = "true" ]
+}
+
+# exakit_pending_datasets — "id|label" lines for bundled datasets that are NOT
+# loaded yet. Drives the dynamic data menus: loaded datasets are not offered.
+exakit_pending_datasets() {
+    exakit_bundled_datasets | while IFS='|' read -r _bd_id _bd_label _bd_flag _bd_markers; do
+        [ -n "$_bd_id" ] || continue
+        exakit_dataset_loaded "$_bd_flag" "$_bd_markers" || printf '%s|%s\n' "$_bd_id" "$_bd_label"
+    done
+}
+
+# exakit_load_dataset <kit_root> <id> [--force] — load one bundled dataset.
+exakit_load_dataset() {
+    case "$2" in
+        tpch) exakit_load_sample_data "$1" "${3:-}" ;;
+        *) exakit_load_dataset_dir "$1" "$2" "${3:-}" ;;
+    esac
+}
+
+# exakit_load_dataset_dir <kit_root> <id> [--force] — generic pipeline for a
+# directory-based bundled dataset (see the layout above): schema script, bulk
+# files, optional transform, optional verify, then record the manifest flag.
+# Mirrors exakit_load_sample_data step-for-step so datasets behave alike.
+exakit_load_dataset_dir() {
+    _ld_kit_root="$1"
+    _ld_id="$2"
+    _ld_force="${3:-}"
+    _ld_dir="$_ld_kit_root/data/datasets/$_ld_id"
+    _ld_schema="${EXAKIT_SCHEMA:-STARTER_KIT}"
+    [ -d "$_ld_dir" ] || die "Unknown bundled dataset: $_ld_id (no $_ld_dir)"
+    # Honor a flag= override in dataset.conf (TPC-H keeps the historical
+    # data.loaded key); default to the per-dataset key.
+    _ld_flag="$(sed -n 's/^flag=//p' "$_ld_dir/dataset.conf" 2>/dev/null | head -1)"
+    [ -n "$_ld_flag" ] || _ld_flag="data.datasets.${_ld_id}.loaded"
 
     [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
         die "No exapump connection profile is recorded — the exapump setup step has not completed. Re-run the installer, then retry."
 
-    if [ "$(manifest_get data.loaded 2>/dev/null)" = "true" ] && [ "$_force" != "--force" ]; then
-        ok "Sample data already loaded (pass --force to re-run)"
+    if [ "$(manifest_get "$_ld_flag" 2>/dev/null)" = "true" ] && [ "$_ld_force" != "--force" ]; then
+        ok "Dataset '$_ld_id' already loaded (pass --force to re-run)"
         return 0
     fi
 
-    info "Loading the sample dataset into schema $_schema"
+    info "Loading the '$_ld_id' dataset into schema $_ld_schema"
 
-    # 1. schema. exapump can report a DDL batch as "0 failed" while the database
-    # (still stabilizing after first boot) persists none of it — which then
-    # surfaces as a misleading "schema not found" on the first upload. Verify the
-    # schema really landed from a fresh connection, re-run the idempotent script
-    # once if it did not, and fail loudly rather than running uploads doomed to
-    # "schema not found".
-    if [ -s "$_kit_root/sql/01_create_schema.sql" ]; then
-        exapump_run_sql_file "$_kit_root/sql/01_create_schema.sql" "schema creation (01_create_schema.sql)"
-        if ! exakit_schema_present "$_schema"; then
-            warn "Schema $_schema is not present after creation — re-running the schema script"
-            exapump_run_sql_file "$_kit_root/sql/01_create_schema.sql" "schema creation (re-run)"
-            exakit_schema_present "$_schema" || \
-                die "Schema $_schema was reported created but does not exist. The database may still be stabilizing after first boot; wait a moment and retry: exakit data-load"
+    # Schema script is OPTIONAL: exapump infers column types and creates the
+    # table itself when none exists, so a dataset can ship as bare CSVs. The
+    # script exists to pin exact types/precision and primary keys. When one is
+    # present, verify the DDL really landed from a fresh connection and re-run
+    # the idempotent script once if not (the database can report a DDL batch
+    # as applied while still stabilizing after first boot).
+    if [ -s "$_ld_dir/01_create_schema.sql" ]; then
+        exapump_run_sql_file "$_ld_dir/01_create_schema.sql" "$_ld_id schema (01_create_schema.sql)"
+        if ! exakit_schema_present "$_ld_schema"; then
+            warn "Schema $_ld_schema is not present after creation — re-running the schema script"
+            exapump_run_sql_file "$_ld_dir/01_create_schema.sql" "$_ld_id schema (re-run)"
+            exakit_schema_present "$_ld_schema" || \
+                die "Schema $_ld_schema was reported created but does not exist. The database may still be stabilizing after first boot; wait a moment and retry: exakit data-load"
         fi
     else
-        info "No schema script found (sql/01_create_schema.sql); skipping schema creation."
+        exakit_ensure_schema "$_ld_schema" || die "Could not create schema $_ld_schema."
     fi
 
-    # 2. data files
-    _loaded_any=0
-    for _csv in "$_kit_root"/data/*.csv; do
-        [ -s "$_csv" ] || continue
-        _table="$(basename "$_csv" .csv | tr '[:lower:]' '[:upper:]')"
-        exapump_upload "$_csv" "$_schema.$_table"
-        _loaded_any=1
+    _ld_tables=""
+    for _ld_csv in "$_ld_dir"/data/*.csv; do
+        [ -s "$_ld_csv" ] || continue
+        _ld_table="$(basename "$_ld_csv" .csv | tr '[:lower:]' '[:upper:]')"
+        exapump_upload "$_ld_csv" "$_ld_schema.$_ld_table"
+        _ld_tables="$_ld_tables $_ld_table"
     done
-    if [ "$_loaded_any" -eq 0 ]; then
-        info "No data files found in data/; nothing to load."
+
+    if [ -s "$_ld_dir/02_load_data.sql" ]; then
+        exapump_run_sql_file "$_ld_dir/02_load_data.sql" "$_ld_id load statements (02_load_data.sql)"
+    fi
+
+    if [ -s "$_ld_dir/03_verify_setup.sql" ]; then
+        info "Verification ($_ld_id 03_verify_setup.sql):"
+        _ld_verify="$(mktemp "${TMPDIR:-/tmp}/exakit-verify.XXXXXX")" || \
+            die "Could not create a temporary file for verification output."
+        "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" < "$_ld_dir/03_verify_setup.sql" \
+            > "$_ld_verify" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"
+        _ld_verify_status=$?
+        exakit_stream_foreign < "$_ld_verify"
+        if [ "$_ld_verify_status" -ne 0 ] || grep -qi 'FAIL' "$_ld_verify"; then
+            rm -f "$_ld_verify"
+            die "Verification failed for dataset '$_ld_id' — see ${EXAKIT_LOG_FILE:-the log}. Data is loaded but not marked ready; fix the underlying issue and re-run with --force."
+        fi
+        rm -f "$_ld_verify"
+    fi
+
+    # Row-count summary over the dataset's tables: every uploaded CSV table
+    # plus the conf's marker tables (covers SQL-generated tables too).
+    _ld_markers="$(sed -n 's/^markers=//p' "$_ld_dir/dataset.conf" 2>/dev/null | head -1 | tr ',' ' ')"
+    for _ld_marker in $_ld_markers; do
+        case " $_ld_tables " in *" $_ld_marker "*) ;; *) _ld_tables="$_ld_tables $_ld_marker" ;; esac
+    done
+    if [ -n "$_ld_tables" ]; then
+        ui_panel_begin "Row counts"
+        for _ld_table in $_ld_tables; do
+            _ld_rows="$(exapump_count "$_ld_schema.$_ld_table")"
+            _ld_row_line="$(printf '%-30s %s rows' "$_ld_schema.$_ld_table" "${_ld_rows:-?}")"
+            ui_panel_line "$_ld_row_line"
+            _exakit_log_file "DATA  $_ld_row_line"
+        done
+        ui_panel_end
+    fi
+
+    manifest_set "$_ld_flag" true
+    manifest_set data.last_load.source "dataset:$_ld_id"
+    ok "Dataset '$_ld_id' loaded and verified"
+}
+
+# exakit_data_load_select <final_label> — dynamic checkbox over the data
+# sources: every bundled dataset that is not loaded yet, then "A local
+# CSV/text/Parquet file", then <final_label> as the mutually exclusive
+# opt-out (Cancel/Skip). When every bundled dataset is already loaded, only
+# the local-file and opt-out choices are shown. Pending datasets are
+# pre-selected; with none pending the opt-out is the (safe) default, which is
+# also what a non-interactive run keeps. The result lands in
+# EXAKIT_DATA_LOAD_SELECTION as a csv of ids ("tpch", "local") or "none".
+EXAKIT_DATA_LOAD_SELECTION=""
+exakit_data_load_select() {
+    _dls_final_label="$1"
+    _dls_labels=()
+    _dls_ids=()
+    while IFS='|' read -r _dls_id _dls_label; do
+        [ -n "$_dls_id" ] || continue
+        _dls_labels+=("$_dls_label")
+        _dls_ids+=("$_dls_id")
+    done <<EXAKIT_DLS_EOF
+$(exakit_pending_datasets)
+EXAKIT_DLS_EOF
+    _dls_pending_n="${#_dls_ids[@]}"
+    _dls_labels+=("A local CSV/text/Parquet file"); _dls_ids+=("local")
+    _dls_labels+=("$_dls_final_label");             _dls_ids+=("none")
+    _dls_final_idx="${#_dls_labels[@]}"
+    if [ "$_dls_pending_n" -gt 0 ]; then
+        _dls_defaults=""
+        _dls_i=1
+        while [ "$_dls_i" -le "$_dls_pending_n" ]; do
+            _dls_defaults="${_dls_defaults:+$_dls_defaults,}$_dls_i"
+            _dls_i=$((_dls_i + 1))
+        done
+    else
+        info "Every bundled dataset is already loaded (reload with: exakit data-load --force)."
+        _dls_defaults="$_dls_final_idx"
+    fi
+    EXAKIT_CHECKBOX_EXCLUSIVE="$_dls_final_idx"
+    ui_checkbox_menu "Select data to load" "$_dls_defaults" "${_dls_labels[@]}"
+    case ",$EXAKIT_CHECKBOX_SELECTION," in
+        *",$_dls_final_idx,"*)
+            EXAKIT_DATA_LOAD_SELECTION="none"
+            return 0
+            ;;
+    esac
+    EXAKIT_DATA_LOAD_SELECTION=""
+    for _dls_idx in $(printf '%s' "$EXAKIT_CHECKBOX_SELECTION" | tr ',' ' '); do
+        [ "$_dls_idx" -ge 1 ] && [ "$_dls_idx" -lt "$_dls_final_idx" ] || continue
+        _dls_id="${_dls_ids[$((_dls_idx - 1))]}"
+        EXAKIT_DATA_LOAD_SELECTION="${EXAKIT_DATA_LOAD_SELECTION:+$EXAKIT_DATA_LOAD_SELECTION,}$_dls_id"
+    done
+    [ -n "$EXAKIT_DATA_LOAD_SELECTION" ] || EXAKIT_DATA_LOAD_SELECTION="none"
+    return 0
+}
+
+# Standalone `exakit data-load` menu: the dynamic dataset checkbox with a
+# plain Cancel as the opt-out.
+exakit_data_load_menu() {
+    [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
+        die "No exapump connection profile is recorded — re-run the installer, then retry."
+
+    exakit_data_load_select "Cancel (load nothing)"
+    if [ "$EXAKIT_DATA_LOAD_SELECTION" = "none" ]; then
+        info "Data loading cancelled."
         return 0
     fi
-
-    # 3. optional post-load transformations
-    if [ -s "$_kit_root/sql/02_load_data.sql" ]; then
-        exapump_run_sql_file "$_kit_root/sql/02_load_data.sql" "load statements (02_load_data.sql)"
-    fi
-
-    # 4. verify — a FAIL row or a query error blocks marking the data ready.
-    if [ -s "$_kit_root/sql/03_verify_setup.sql" ]; then
-        info "Verification (03_verify_setup.sql):"
-        _verify_output="$(mktemp "${TMPDIR:-/tmp}/exakit-verify.XXXXXX")" || \
-            die "Could not create a temporary file for verification output."
-        # Capture exapump's own exit code directly (not via a pipe) so the
-        # check does not depend on the caller having 'set -o pipefail';
-        # stderr goes to the log so a connection error is still recorded.
-        "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" < "$_kit_root/sql/03_verify_setup.sql" \
-            > "$_verify_output" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"
-        _verify_status=$?
-        # exapump's raw CSV is tool output — contain it in the dim gutter
-        # (exakit_stream_foreign also copies each line to the log).
-        exakit_stream_foreign < "$_verify_output"
-        if [ "$_verify_status" -ne 0 ] || grep -qi 'FAIL' "$_verify_output"; then
-            rm -f "$_verify_output"
-            die "Verification failed (query error or a FAIL row) — see ${EXAKIT_LOG_FILE:-the log}. Data is loaded but not marked ready; fix the underlying issue and re-run with --force."
-        fi
-        rm -f "$_verify_output"
-    fi
-
-    # 5. row-count summary (as a panel, like the other summaries) + manifest flags
-    ui_panel_begin "Row counts"
-    for _csv in "$_kit_root"/data/*.csv; do
-        [ -s "$_csv" ] || continue
-        _table="$(basename "$_csv" .csv | tr '[:lower:]' '[:upper:]')"
-        _rows="$(exapump_count "$_schema.$_table")"
-        _row_line="$(printf '%-30s %s rows' "$_schema.$_table" "${_rows:-?}")"
-        ui_panel_line "$_row_line"
-        _exakit_log_file "DATA  $_row_line"
+    _menu_status=0
+    for _menu_id in $(printf '%s' "$EXAKIT_DATA_LOAD_SELECTION" | tr ',' ' '); do
+        case "$_menu_id" in
+            local)
+                exakit_load_local_file
+                _local_status=$?
+                if [ "$_local_status" -eq 2 ]; then
+                    info "Local file load skipped. Run it any time with: exakit data-load"
+                elif [ "$_local_status" -ne 0 ]; then
+                    _menu_status="$_local_status"
+                fi
+                ;;
+            *)
+                _kit_root="$(exakit_repo_root)" || die "Could not find the kit's sql/ and data/ files to load."
+                exakit_load_dataset "$_kit_root" "$_menu_id"
+                ;;
+        esac
     done
-    ui_panel_end
-    manifest_set data.loaded true
-    manifest_set data.schema "$_schema"
-    manifest_set data.loaded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    ok "Sample data loaded and verified"
-    return 0
+    return "$_menu_status"
+}
+
+# exakit_load_sample_data <kit_root> [--force] — the TPC-H sample-data entry
+# point, kept for its long-standing callers (setup/load-data.sh, the installer
+# EXAKIT_LOAD_SAMPLE path, and `exakit data-load --force`). TPC-H now lives in
+# data/datasets/tpch/ like every other bundled dataset, so this simply
+# delegates to the generic directory pipeline.
+exakit_load_sample_data() {
+    exakit_load_dataset_dir "$1" tpch "${2:-}"
 }

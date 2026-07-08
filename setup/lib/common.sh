@@ -154,23 +154,53 @@ _ui_checkbox_toggle() {
 }
 
 # ui_checkbox_menu <title> <defaults_csv> <label> [label ...] — multi-select
-# rendered as checkboxes: the user types numbers to toggle and presses Enter
-# to confirm. At least one option must stay selected (Enter on an empty
-# selection re-asks). In fancy mode the block redraws in place so toggling
-# feels live; plain mode reprints below. Non-interactive runs (and EOF on the
-# input) keep the defaults and say so. The confirmed selection lands in
-# EXAKIT_CHECKBOX_SELECTION as an ascending csv of 1-based indices.
+# rendered as checkboxes with a movable cursor: ↑/↓ (or j/k) move, Space
+# toggles the highlighted option, Enter confirms and moves to the next step
+# ("a" selects all). At least one option must stay selected (Enter on an
+# empty selection re-asks). In fancy mode the block redraws in place so
+# toggling feels live; plain mode reprints below. Non-interactive runs (and
+# EOF on the input) keep the defaults and say so. The confirmed selection
+# lands in EXAKIT_CHECKBOX_SELECTION as an ascending csv of 1-based indices.
+#
+# EXAKIT_CHECKBOX_EXCLUSIVE (optional, cleared after each call): 1-based index
+# of an option that cannot be combined with the others — think "Skip for now".
+# Selecting it clears every other choice; selecting any other choice clears it.
+# "a" (select all) selects all non-exclusive options.
 EXAKIT_CHECKBOX_SELECTION=""
+EXAKIT_CHECKBOX_EXCLUSIVE=""
+
+# _ui_checkbox_apply_exclusive <selected_csv> <toggled_idx> <exclusive_idx> —
+# pure post-toggle rule, echoing the adjusted csv.
+_ui_checkbox_apply_exclusive() {
+    _ce_sel="$1"; _ce_toggled="$2"; _ce_excl="$3"
+    [ -n "$_ce_excl" ] || { printf '%s' "$_ce_sel"; return 0; }
+    if [ "$_ce_toggled" = "$_ce_excl" ]; then
+        # The exclusive option was just toggled: if it landed selected, it
+        # becomes the only selection.
+        case ",$_ce_sel," in
+            *",$_ce_excl,"*) printf '%s' "$_ce_excl" ;;
+            *) printf '%s' "$_ce_sel" ;;
+        esac
+        return 0
+    fi
+    # Any other toggle drops the exclusive option from the selection.
+    _ce_sel="$(printf ',%s,' "$_ce_sel" | sed "s/,$_ce_excl,/,/")"
+    _ce_sel="${_ce_sel#,}"; _ce_sel="${_ce_sel%,}"
+    printf '%s' "$_ce_sel"
+}
+
 ui_checkbox_menu() {
     _cb_title="$1"
     _cb_defaults="$2"
     shift 2
     _cb_sel="$_cb_defaults"
     _cb_n=$#
+    _cb_cur=1
     info "$_cb_title"
     _cb_tty="$(_exakit_prompt_tty)"
     if [ -z "$_cb_tty" ]; then
         EXAKIT_CHECKBOX_SELECTION="$_cb_defaults"
+        EXAKIT_CHECKBOX_EXCLUSIVE=""
         _cb_i=1
         for _cb_label in "$@"; do
             case ",$_cb_defaults," in *",$_cb_i,"*) ok "$_cb_label (selected by default)" ;; esac
@@ -184,38 +214,68 @@ ui_checkbox_menu() {
     _cb_first=1
     while :; do
         if [ "$_cb_first" -ne 1 ] && [ "$UI_FANCY" = 1 ]; then
-            printf '\033[%dA\033[0J' "$((_cb_n + 2))"    # redraw the block in place
+            printf '\033[%dA\033[0J' "$((_cb_n + 1))"    # redraw the block in place
         fi
         _cb_first=0
         _cb_i=1
         for _cb_label in "$@"; do
+            if [ "$_cb_i" -eq "$_cb_cur" ]; then
+                if [ "${UI_FANCY:-0}" = 1 ]; then _cb_ptr="${UI_ACCENT:-}❯${UI_RESET:-}"; else _cb_ptr=">"; fi
+            else
+                _cb_ptr=" "
+            fi
             case ",$_cb_sel," in
                 *",$_cb_i,"*)
-                    printf '      %s[%s]%s %s%s.%s %s\n' \
-                        "${UI_OK:-}" "$_cb_mark" "${UI_RESET:-}" \
-                        "${UI_ACCENT:-}" "$_cb_i" "${UI_RESET:-}" "$_cb_label"
+                    printf '    %s %s[%s]%s %s\n' \
+                        "$_cb_ptr" "${UI_OK:-}" "$_cb_mark" "${UI_RESET:-}" "$_cb_label"
                     ;;
                 *)
-                    printf '      [ ] %s%s.%s %s\n' \
-                        "${UI_ACCENT:-}" "$_cb_i" "${UI_RESET:-}" "$_cb_label"
+                    printf '    %s [ ] %s\n' "$_cb_ptr" "$_cb_label"
                     ;;
             esac
             _cb_i=$((_cb_i + 1))
         done
-        ui_menu_hint "type numbers to toggle · Enter to confirm"
-        printf '    %s?%s Selection: ' "${UI_ASK:-}" "${UI_RESET:-}"
+        ui_menu_hint "↑/↓ move · Space select · Enter continue"
+        # One raw keypress, no echo. Enter arrives as an empty read; IFS= keeps
+        # a Space keypress from being stripped to an empty string.
         if [ "$_cb_tty" = "/dev/tty" ]; then
-            read -r _cb_in < /dev/tty || { _cb_sel="$_cb_defaults"; printf '\n'; break; }
+            IFS= read -rsn1 _cb_key < /dev/tty || { _cb_sel="$_cb_defaults"; break; }
         else
-            read -r _cb_in || { _cb_sel="$_cb_defaults"; printf '\n'; break; }
+            IFS= read -rsn1 _cb_key || { _cb_sel="$_cb_defaults"; break; }
         fi
-        if [ -z "$_cb_in" ]; then
-            [ -n "$_cb_sel" ] && break
-            continue                                     # at least one selection required
-        fi
-        _cb_sel="$(_ui_checkbox_toggle "$_cb_sel" "$_cb_n" "$_cb_in")"
+        case "$_cb_key" in
+            "")                                          # Enter → confirm, next step
+                [ -n "$_cb_sel" ] && break
+                continue                                 # at least one selection required
+                ;;
+            " ")                                         # Space → toggle highlighted
+                _cb_sel="$(_ui_checkbox_toggle "$_cb_sel" "$_cb_n" "$_cb_cur")"
+                _cb_sel="$(_ui_checkbox_apply_exclusive "$_cb_sel" "$_cb_cur" "$EXAKIT_CHECKBOX_EXCLUSIVE")"
+                ;;
+            "$(printf '\033')")                          # arrows: ESC [ A / ESC [ B
+                if [ "$_cb_tty" = "/dev/tty" ]; then
+                    IFS= read -rsn2 -t 1 _cb_seq < /dev/tty || _cb_seq=""
+                else
+                    IFS= read -rsn2 -t 1 _cb_seq || _cb_seq=""
+                fi
+                case "$_cb_seq" in
+                    '[A') if [ "$_cb_cur" -gt 1 ]; then _cb_cur=$((_cb_cur - 1)); else _cb_cur=$_cb_n; fi ;;
+                    '[B') if [ "$_cb_cur" -lt "$_cb_n" ]; then _cb_cur=$((_cb_cur + 1)); else _cb_cur=1; fi ;;
+                esac
+                ;;
+            k|K) if [ "$_cb_cur" -gt 1 ]; then _cb_cur=$((_cb_cur - 1)); else _cb_cur=$_cb_n; fi ;;
+            j|J) if [ "$_cb_cur" -lt "$_cb_n" ]; then _cb_cur=$((_cb_cur + 1)); else _cb_cur=1; fi ;;
+            a|A)
+                _cb_sel="$(_ui_checkbox_toggle "$_cb_sel" "$_cb_n" all)"
+                # "all" means all real choices, never the exclusive option.
+                if [ -n "$EXAKIT_CHECKBOX_EXCLUSIVE" ]; then
+                    _cb_sel="$(_ui_checkbox_apply_exclusive "$_cb_sel" 0 "$EXAKIT_CHECKBOX_EXCLUSIVE")"
+                fi
+                ;;
+        esac
     done
     EXAKIT_CHECKBOX_SELECTION="$(printf '%s' "$_cb_sel" | tr ',' '\n' | sort -n | paste -sd, -)"
+    EXAKIT_CHECKBOX_EXCLUSIVE=""
     return 0
 }
 
@@ -1718,6 +1778,7 @@ import json, sys
 
 LABELS = {
     "claude_desktop": "Claude",
+    "claude_code": "Claude Code (CLI)",
     "cursor": "Cursor",
     "codex": "Codex",
 }
@@ -1810,6 +1871,7 @@ import json, sys
 
 LABELS = {
     "claude_desktop": "Claude",
+    "claude_code": "Claude Code (CLI)",
     "cursor": "Cursor",
     "codex": "Codex",
 }
@@ -1852,7 +1914,7 @@ PY
 
 exakit_mcp_clients_from_args() {
     if [ "$#" -eq 0 ]; then
-        printf '%s\n' "claude_desktop,cursor,codex"
+        printf '%s\n' "claude_desktop,claude_code,cursor,codex"
         return 0
     fi
     exakit_parse_mcp_client_selection "$*"
@@ -1862,29 +1924,70 @@ exakit_parse_mcp_client_selection() {
     _raw="$(printf '%s' "$1" | tr ',/' '  ' | tr -s ' ')"
     case "$_raw" in
         "" ) return 1 ;;
-        all|ALL|All ) printf '%s\n' "claude_desktop,cursor,codex"; return 0 ;;
+        all|ALL|All ) printf '%s\n' "claude_desktop,claude_code,cursor,codex"; return 0 ;;
     esac
     _result=""
     for _token in $_raw; do
+        # "claude" (or 1) covers both Claude surfaces — the desktop app and the
+        # Claude Code CLI — one user choice, two configs. The explicit ids
+        # (claude_desktop / claude_code) still address a single surface.
         case "$_token" in
-            1|claude|claude_desktop) _client="claude_desktop" ;;
-            2|cursor) _client="cursor" ;;
-            3|codex) _client="codex" ;;
+            1|claude) _clients="claude_desktop claude_code" ;;
+            claude_desktop) _clients="claude_desktop" ;;
+            claude_code) _clients="claude_code" ;;
+            2|codex) _clients="codex" ;;
+            3|cursor) _clients="cursor" ;;
             *) return 1 ;;
         esac
-        case ",$_result," in
-            *,"$_client",*) ;;
-            *)
-                if [ -n "$_result" ]; then
-                    _result="$_result,$_client"
-                else
-                    _result="$_client"
-                fi
-                ;;
-        esac
+        for _client in $_clients; do
+            case ",$_result," in
+                *,"$_client",*) ;;
+                *)
+                    if [ -n "$_result" ]; then
+                        _result="$_result,$_client"
+                    else
+                        _result="$_client"
+                    fi
+                    ;;
+            esac
+        done
     done
     [ -n "$_result" ] || return 1
     printf '%s\n' "$_result"
+}
+
+# exakit_mcp_discover_pending — one client id per line for every supported MCP
+# client that is installed on this machine but has no managed config yet
+# (detected && !configured, straight from the adapters' own detection). Used to
+# build the setup menu dynamically: already-connected clients and clients that
+# are not installed are simply not offered. Fails (rc 1) when discovery is
+# unavailable so the caller can fall back to the static menu.
+exakit_mcp_discover_pending() {
+    require_python3 2>/dev/null || return 1
+    _repo_root="$(exakit_repo_root)" || return 1
+    _discover_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-discover.XXXXXX")"
+    if ! (
+        cd "$_repo_root" &&
+        PYTHONPATH="$_repo_root${PYTHONPATH:+:$PYTHONPATH}" \
+            run_python -m mcp discover-clients --runtime-root "$EXAKIT_HOME"
+    ) > "$_discover_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+        rm -f "$_discover_file"
+        return 1
+    fi
+    run_python - "$_discover_file" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        doc = json.load(handle)
+except Exception:
+    sys.exit(1)
+for client in doc.get("clients", []):
+    if client.get("detected") and not client.get("configured"):
+        print(client["id"])
+PY
+    _parse_status=$?
+    rm -f "$_discover_file"
+    return "$_parse_status"
 }
 
 exakit_mcp_setup() {
@@ -1893,22 +1996,72 @@ exakit_mcp_setup() {
     # EXAKIT_MCP_CLIENTS lets an agent-driven or scripted install pick clients
     # without a prompt (e.g. "claude", "claude,cursor", "all", or "1,2").
     if [ -n "${EXAKIT_MCP_CLIENTS:-}" ]; then
+        case "$EXAKIT_MCP_CLIENTS" in
+            skip|SKIP|Skip|none|NONE|None)
+                info "Skipping MCP client setup (EXAKIT_MCP_CLIENTS=$EXAKIT_MCP_CLIENTS) — run 'exakit mcp-setup' any time."
+                return 0
+                ;;
+        esac
         _clients_csv="$(exakit_parse_mcp_client_selection "$EXAKIT_MCP_CLIENTS")" || {
-            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, cursor, codex, all, or numbers 1-3)."
+            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, codex, cursor, all, skip, or numbers 1-3)."
             return 1
         }
         info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $_clients_csv"
     else
         printf '\n'
-        ui_checkbox_menu "Select the AI clients to connect (MCP)" "1,3" "Claude" "Cursor" "Codex"
+        # Build the menu dynamically: offer only clients that are installed on
+        # this machine AND not already connected. One "Claude" choice covers
+        # both Claude surfaces (desktop app + Claude Code CLI); when only one
+        # surface still needs setup, the label names that surface. Falls back
+        # to the full static list when discovery is unavailable.
+        _pending="$(exakit_mcp_discover_pending)" || \
+            _pending="$(printf 'claude_desktop\nclaude_code\ncodex\ncursor\n')"
+        _cd_pending=0; _cc_pending=0; _codex_pending=0; _cursor_pending=0
+        for _pending_id in $_pending; do
+            case "$_pending_id" in
+                claude_desktop) _cd_pending=1 ;;
+                claude_code)    _cc_pending=1 ;;
+                codex)          _codex_pending=1 ;;
+                cursor)         _cursor_pending=1 ;;
+            esac
+        done
+        _menu_labels=()
+        _menu_ids=()
+        if [ "$_cd_pending" = 1 ] && [ "$_cc_pending" = 1 ]; then
+            _menu_labels+=("Claude"); _menu_ids+=("claude_desktop,claude_code")
+        elif [ "$_cd_pending" = 1 ]; then
+            _menu_labels+=("Claude (desktop app)"); _menu_ids+=("claude_desktop")
+        elif [ "$_cc_pending" = 1 ]; then
+            _menu_labels+=("Claude Code (CLI)"); _menu_ids+=("claude_code")
+        fi
+        [ "$_codex_pending" = 1 ] && { _menu_labels+=("Codex"); _menu_ids+=("codex"); }
+        [ "$_cursor_pending" = 1 ] && { _menu_labels+=("Cursor"); _menu_ids+=("cursor"); }
+        if [ "${#_menu_ids[@]}" -eq 0 ]; then
+            ok "All AI clients found on this machine are already connected over MCP."
+            info "Check them with 'exakit mcp-status'; new clients appear here once installed."
+            return 0
+        fi
+        _menu_labels+=("Skip for now (no MCP client changes)")
+        _skip_idx="${#_menu_labels[@]}"
+        # Pre-select every pending client (ascending indices), never Skip.
+        _defaults=""
+        _menu_i=1
+        while [ "$_menu_i" -lt "$_skip_idx" ]; do
+            _defaults="${_defaults:+$_defaults,}$_menu_i"
+            _menu_i=$((_menu_i + 1))
+        done
+        EXAKIT_CHECKBOX_EXCLUSIVE="$_skip_idx"
+        ui_checkbox_menu "Select the AI clients to connect (MCP)" "$_defaults" "${_menu_labels[@]}"
+        case ",$EXAKIT_CHECKBOX_SELECTION," in
+            *",$_skip_idx,"*)
+                info "Skipping MCP client setup — run 'exakit mcp-setup' any time to connect a client."
+                return 0
+                ;;
+        esac
         _clients_csv=""
         for _client_idx in $(printf '%s' "$EXAKIT_CHECKBOX_SELECTION" | tr ',' ' '); do
-            case "$_client_idx" in
-                1) _client_id="claude_desktop" ;;
-                2) _client_id="cursor" ;;
-                3) _client_id="codex" ;;
-                *) continue ;;
-            esac
+            [ "$_client_idx" -ge 1 ] && [ "$_client_idx" -lt "$_skip_idx" ] || continue
+            _client_id="${_menu_ids[$((_client_idx - 1))]}"
             _clients_csv="${_clients_csv:+$_clients_csv,}$_client_id"
         done
     fi
@@ -1967,7 +2120,7 @@ exakit_mcp_restore() {
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-restore.XXXXXX")"
     _operation_status=0
     info "Running MCP restore"
-    if exakit_run_mcp_operation_cli "restore" "claude_desktop,cursor,codex" "$_result_file" "$_snapshot_id"; then
+    if exakit_run_mcp_operation_cli "restore" "claude_desktop,claude_code,cursor,codex" "$_result_file" "$_snapshot_id"; then
         :
     else
         _operation_status=$?
@@ -1996,13 +2149,13 @@ exakit_maybe_offer_mcp_setup() {
     fi
 }
 
-# exakit_maybe_offer_data_load <kit_root> — load data during install. The step
-# is required (an empty database defeats the first-query experience): the
-# bundled sample is pre-selected, and the user can additionally (or instead)
-# pick a local file — but at least one source must stay selected. Scripted
-# installs can still steer with EXAKIT_LOAD_SAMPLE (=0 skips, =1 bundled);
-# non-interactive runs keep the bundled default. Each load runs in a subshell
-# so a die() inside the loading flow never aborts the surrounding install.
+# exakit_maybe_offer_data_load <kit_root> — load data during install, via the
+# dynamic dataset checkbox (bundled datasets not loaded yet are pre-selected;
+# the user can additionally or instead pick a local file, or explicitly skip).
+# Scripted installs can still steer with EXAKIT_LOAD_SAMPLE (=0 skips,
+# =1 bundled); non-interactive runs keep the pre-selected defaults. Each load
+# runs in a subshell so a die() inside the loading flow never aborts the
+# surrounding install.
 exakit_maybe_offer_data_load() {
     _kit_root="$1"
     : "$_kit_root"
@@ -2023,27 +2176,33 @@ exakit_maybe_offer_data_load() {
     fi
 
     info "The database is ready for data. Loading it now lets MCP validate against real tables."
-    ui_checkbox_menu "Select data to load" "1" \
-        "Bundled sample dataset (TPC-H)" \
-        "A local CSV/text/Parquet file"
-    case ",$EXAKIT_CHECKBOX_SELECTION," in
-        *",1,"*)
-            if ! ( exakit_load_sample_data "$_kit_root" ); then
-                warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
-            fi
-            ;;
-    esac
-    case ",$EXAKIT_CHECKBOX_SELECTION," in
-        *",2,"*)
-            ( exakit_load_local_file )
-            _local_status=$?
-            if [ "$_local_status" -eq 2 ]; then
-                info "Local file load skipped."
-            elif [ "$_local_status" -ne 0 ]; then
-                warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
-            fi
-            ;;
-    esac
+    # Dynamic dataset checkbox (shared with `exakit data-load`): only bundled
+    # datasets that are not loaded yet are offered, plus the local-file option
+    # and an explicit skip. Each load runs in a subshell so a die() inside the
+    # loading flow never aborts the surrounding install.
+    exakit_data_load_select "Skip for now (no data loading)"
+    if [ "$EXAKIT_DATA_LOAD_SELECTION" = "none" ]; then
+        info "Skipping data loading. Run it any time with: exakit data-load"
+        return 0
+    fi
+    for _data_id in $(printf '%s' "$EXAKIT_DATA_LOAD_SELECTION" | tr ',' ' '); do
+        case "$_data_id" in
+            local)
+                ( exakit_load_local_file )
+                _local_status=$?
+                if [ "$_local_status" -eq 2 ]; then
+                    info "Local file load skipped."
+                elif [ "$_local_status" -ne 0 ]; then
+                    warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+                fi
+                ;;
+            *)
+                if ! ( exakit_load_dataset "$_kit_root" "$_data_id" ); then
+                    warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+                fi
+                ;;
+        esac
+    done
 }
 
 # kit_shared_steps <first-step-no> <total-steps> <script-dir> <kit-root>
@@ -2251,7 +2410,7 @@ exakit_uninstall_run() {
     # 2) Managed MCP configuration in the AI clients (Claude, Cursor,
     #    Codex). Best-effort: a failure here must not block the rest.
     if command -v exakit_mcp_operation >/dev/null 2>&1; then
-        _step "managed MCP configuration in Claude, Cursor, and Codex"
+        _step "managed MCP configuration in Claude (desktop + Claude Code CLI), Cursor, and Codex"
         if [ "$_dry" != "1" ]; then
             exakit_mcp_operation uninstall >/dev/null 2>&1 || \
                 warn "Removing the managed MCP client config reported issues (continuing uninstall)"

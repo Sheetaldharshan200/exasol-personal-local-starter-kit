@@ -593,7 +593,22 @@ function Invoke-McpOperationCli {
     return $result.Output
 }
 
-$script:McpClientLabels = @{ claude_desktop = "Claude"; cursor = "Cursor"; codex = "Codex" }
+# Get-McpPendingClients - ids of supported MCP clients that are installed on
+# this machine but have no managed config yet (detected && !configured, from
+# the adapters' own detection). Returns $null when discovery is unavailable so
+# the caller can fall back to the static list.
+function Get-McpPendingClients {
+    $result = Invoke-McpModule -ModuleArgs @("discover-clients", "--runtime-root", $script:ExakitHome)
+    if (-not $result -or $result.ExitCode -ne 0) { return $null }
+    try {
+        $doc = $result.Output | ConvertFrom-Json
+        return @($doc.clients | Where-Object { $_.detected -and -not $_.configured } | ForEach-Object { $_.id })
+    } catch {
+        return $null
+    }
+}
+
+$script:McpClientLabels = @{ claude_desktop = "Claude"; claude_code = "Claude Code (CLI)"; cursor = "Cursor"; codex = "Codex" }
 
 function Show-McpSetupSummary {
     param([Parameter(Mandatory)][string]$ResultJson)
@@ -692,17 +707,24 @@ function ConvertTo-McpClientSelection {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Raw)
     $tokens = @(($Raw -replace '[,/]', ' ') -split '\s+' | Where-Object { $_ })
     if ($tokens.Count -eq 0) { return $null }
-    if ($tokens.Count -eq 1 -and $tokens[0] -match '^(all|ALL|All)$') { return @("claude_desktop", "cursor", "codex") }
+    if ($tokens.Count -eq 1 -and $tokens[0] -match '^(all|ALL|All)$') { return @("claude_desktop", "claude_code", "cursor", "codex") }
     $result = @()
     foreach ($token in $tokens) {
-        $client = switch ($token) {
-            { $_ -in @("1", "claude", "claude_desktop") } { "claude_desktop" }
-            { $_ -in @("2", "cursor") } { "cursor" }
-            { $_ -in @("3", "codex") } { "codex" }
+        # "claude" (or 1) covers both Claude surfaces - the desktop app and the
+        # Claude Code CLI - one user choice, two configs. The explicit ids
+        # (claude_desktop / claude_code) still address a single surface.
+        $clients = switch ($token) {
+            { $_ -in @("1", "claude") } { @("claude_desktop", "claude_code") }
+            "claude_desktop" { @("claude_desktop") }
+            "claude_code" { @("claude_code") }
+            { $_ -in @("2", "codex") } { @("codex") }
+            { $_ -in @("3", "cursor") } { @("cursor") }
             default { $null }
         }
-        if (-not $client) { return $null }
-        if ($result -notcontains $client) { $result += $client }
+        if (-not $clients) { return $null }
+        foreach ($client in $clients) {
+            if ($result -notcontains $client) { $result += $client }
+        }
     }
     if ($result.Count -eq 0) { return $null }
     return $result
@@ -710,7 +732,7 @@ function ConvertTo-McpClientSelection {
 
 function Get-McpClientsFromArgs {
     param([string[]]$InputArgs = @())
-    if ($InputArgs.Count -eq 0) { return @("claude_desktop", "cursor", "codex") }
+    if ($InputArgs.Count -eq 0) { return @("claude_desktop", "claude_code", "cursor", "codex") }
     return ConvertTo-McpClientSelection ($InputArgs -join " ")
 }
 
@@ -718,9 +740,37 @@ function Invoke-McpSetup {
     Info "MCP setup will edit the selected AI client config files."
 
     Write-Host ""
-    $selection = Read-ExakitCheckboxMenu -Title "Select the AI clients to connect (MCP)" -Options @("Claude", "Cursor", "Codex") -Defaults @(1, 3)
-    $clientIds = @{ 1 = "claude_desktop"; 2 = "cursor"; 3 = "codex" }
-    $clients = @($selection | ForEach-Object { $clientIds[$_] })
+    # Build the menu dynamically: offer only clients that are installed on
+    # this machine AND not already connected. One "Claude" choice covers both
+    # Claude surfaces (desktop app + Claude Code CLI); when only one surface
+    # still needs setup, the label names that surface. Falls back to the full
+    # static list when discovery is unavailable.
+    $pending = Get-McpPendingClients
+    if ($null -eq $pending) { $pending = @("claude_desktop", "claude_code", "codex", "cursor") }
+    $menuLabels = New-Object 'System.Collections.Generic.List[string]'
+    $menuIds = New-Object 'System.Collections.Generic.List[object]'
+    $cdPending = $pending -contains "claude_desktop"
+    $ccPending = $pending -contains "claude_code"
+    if ($cdPending -and $ccPending) { [void]$menuLabels.Add("Claude"); [void]$menuIds.Add(@("claude_desktop", "claude_code")) }
+    elseif ($cdPending) { [void]$menuLabels.Add("Claude (desktop app)"); [void]$menuIds.Add(@("claude_desktop")) }
+    elseif ($ccPending) { [void]$menuLabels.Add("Claude Code (CLI)"); [void]$menuIds.Add(@("claude_code")) }
+    if ($pending -contains "codex") { [void]$menuLabels.Add("Codex"); [void]$menuIds.Add(@("codex")) }
+    if ($pending -contains "cursor") { [void]$menuLabels.Add("Cursor"); [void]$menuIds.Add(@("cursor")) }
+    if ($menuIds.Count -eq 0) {
+        Ok "All AI clients found on this machine are already connected over MCP."
+        Info "Check them with 'exakit mcp-status'; new clients appear here once installed."
+        return $true
+    }
+    [void]$menuLabels.Add("Skip for now (no MCP client changes)")
+    $skipIdx = $menuLabels.Count
+    $defaults = @(1..($skipIdx - 1))
+    $selection = Read-ExakitCheckboxMenu -Title "Select the AI clients to connect (MCP)" `
+        -Options $menuLabels.ToArray() -Defaults $defaults -ExclusiveIndex $skipIdx
+    if ($selection -contains $skipIdx) {
+        Info "Skipping MCP client setup - run 'exakit mcp-setup' any time to connect a client."
+        return $true
+    }
+    $clients = @($selection | Where-Object { $_ -lt $skipIdx } | ForEach-Object { $menuIds[$_ - 1] } | ForEach-Object { $_ })
 
     Info "Applying MCP setup"
     $resultJson = Invoke-McpSetupCli -Clients $clients
@@ -748,13 +798,13 @@ function Invoke-McpOperation {
 function Invoke-McpRestore {
     param([string]$SnapshotId = "")
     Info "Running MCP restore"
-    $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "cursor", "codex") -SnapshotId $SnapshotId
+    $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "claude_code", "cursor", "codex") -SnapshotId $SnapshotId
     if ($resultJson) { Show-McpOperationSummary $resultJson }
     return [bool]$resultJson
 }
 
 function New-McpUpdateSnapshot {
-    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "cursor", "codex")
+    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "claude_code", "cursor", "codex")
     if (-not $resultJson) { Warn2 "MCP pre-update snapshot was not created; generated configs will still be refreshed."; return "" }
     Show-McpOperationSummary $resultJson
     try {

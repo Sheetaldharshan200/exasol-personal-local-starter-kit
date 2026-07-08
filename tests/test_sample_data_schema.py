@@ -17,10 +17,10 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "data"
-SCHEMA_SQL = ROOT / "sql" / "01_create_schema.sql"
-LOAD_SQL = ROOT / "sql" / "02_load_data.sql"
-VERIFY_SQL = ROOT / "sql" / "03_verify_setup.sql"
+DATA_DIR = ROOT / "data" / "datasets" / "tpch" / "data"
+SCHEMA_SQL = ROOT / "data" / "datasets" / "tpch" / "01_create_schema.sql"
+LOAD_SQL = ROOT / "data" / "datasets" / "tpch" / "02_load_data.sql"
+VERIFY_SQL = ROOT / "data" / "datasets" / "tpch" / "03_verify_setup.sql"
 EXAPUMP_LIB = ROOT / "setup" / "lib" / "exapump.sh"
 EXAPUMP_PS1 = ROOT / "setup" / "lib" / "exapump.ps1"
 COMMON_LIB = ROOT / "setup" / "lib" / "common.sh"
@@ -221,63 +221,72 @@ class LoadWiringTests(unittest.TestCase):
         self.assertIn("cmd_data_load", cli)
 
     def test_guided_data_load_menu_is_focused(self) -> None:
-        menu_blocks = (
-            (
-                EXAPUMP_LIB.name,
-                _function_block(
-                    EXAPUMP_LIB.read_text(encoding="utf-8"),
-                    "exakit_data_load_menu()",
-                    "\n# exakit_load_sample_data",
-                ),
-            ),
-            (EXAPUMP_PS1.name, _function_block(EXAPUMP_PS1.read_text(encoding="utf-8"), "function Show-ExakitDataLoadMenu")),
-        )
-        for menu_name, menu in menu_blocks:
-            with self.subTest(menu=menu_name):
-                self.assertIn("Bundled sample dataset (TPC-H)", menu)
-                self.assertIn("Local CSV/text/Parquet file", menu)
-                # One clear exit (commit 0e06e2e collapsed the old redundant
-                # "Back" + "Terminate" pair): "Skip for now" in install mode,
-                # "Cancel" in manual mode.
-                self.assertIn("Skip for now", menu)
-                self.assertIn("Cancel", menu)
+        """Both data menus route through ONE dynamic selector: bundled datasets
+        that are not loaded yet (discovered from data/datasets/*/dataset.conf),
+        a local-file option, and a mutually exclusive opt-out."""
+        bash = EXAPUMP_LIB.read_text(encoding="utf-8")
+        ps1 = EXAPUMP_PS1.read_text(encoding="utf-8")
+        # Standalone menus delegate to the shared selector with a plain Cancel.
+        self.assertIn('exakit_data_load_select "Cancel (load nothing)"', bash)
+        self.assertIn('Select-ExakitDataLoad -FinalLabel "Cancel (load nothing)"', ps1)
+        # The selector offers the local-file source on both platforms.
+        for text, name in ((bash, "exapump.sh"), (ps1, "exapump.ps1")):
+            with self.subTest(menu=name):
+                self.assertIn("A local CSV/text/Parquet file", text)
                 for removed_option in (
                     "Remote CSV/Text File",
                     "Import from Another Database",
                     "Import from Another Exasol",
-                    "Exapump",
                     "SQL Script",
                 ):
                     self.assertNotIn(
                         removed_option,
-                        menu,
+                        text,
                         f"Guided data-load menu should not show advanced option: {removed_option}",
                     )
 
-    def test_install_data_load_menu_does_not_show_top_level_back(self) -> None:
-        menu_blocks = (
-            (
-                EXAPUMP_LIB.name,
-                _function_block(
-                    EXAPUMP_LIB.read_text(encoding="utf-8"),
-                    'if [ "$_mode" = "install" ]; then',
-                    'else\n            printf \'    3. Back',
-                ),
-            ),
-            (
-                EXAPUMP_PS1.name,
-                _function_block(
-                    EXAPUMP_PS1.read_text(encoding="utf-8"),
-                    "if ($InstallMode) {",
-                    "} else {\n            Write-Host \"    3. Back",
-                ),
-            ),
+    def test_bundled_datasets_are_discovered_from_conf_files(self) -> None:
+        """Dataset labels live in data/datasets/<id>/dataset.conf — nothing is
+        hardcoded in the menus, so adding a dataset is dropping in a folder."""
+        datasets_dir = ROOT / "data" / "datasets"
+        confs = sorted(datasets_dir.glob("*/dataset.conf"))
+        ids = set()
+        for conf in confs:
+            kv = dict(
+                line.split("=", 1)
+                for line in conf.read_text(encoding="utf-8").splitlines()
+                if "=" in line
+            )
+            self.assertIn("id", kv, f"{conf} is missing id=")
+            self.assertIn("label", kv, f"{conf} is missing label=")
+            self.assertIn("markers", kv, f"{conf} is missing markers=")
+            ids.add(kv["id"])
+        self.assertIn("tpch", ids, "TPC-H must be a folder dataset like the others.")
+        self.assertGreaterEqual(len(ids), 3, "The kit ships at least three bundled datasets.")
+        # TPC-H keeps its historical manifest flag so existing installs stay recognized.
+        tpch_conf = (datasets_dir / "tpch" / "dataset.conf").read_text(encoding="utf-8")
+        self.assertIn("flag=data.loaded", tpch_conf)
+
+    def test_tpch_dataset_folder_is_complete(self) -> None:
+        tpch = ROOT / "data" / "datasets" / "tpch"
+        for required in ("dataset.conf", "01_create_schema.sql", "02_load_data.sql", "03_verify_setup.sql"):
+            self.assertTrue((tpch / required).is_file(), f"missing {required} in data/datasets/tpch/")
+        csvs = {p.name for p in (tpch / "data").glob("*.csv")}
+        self.assertEqual(
+            csvs,
+            {
+                "customer.csv", "lineitem.csv", "nation.csv", "orders.csv",
+                "part.csv", "partsupp.csv", "region.csv", "supplier.csv",
+            },
         )
-        for menu_name, install_menu in menu_blocks:
-            with self.subTest(menu=menu_name):
-                self.assertIn("3. Skip for now", install_menu)
-                self.assertNotIn("3. Back", install_menu)
-                self.assertNotIn("4. Skip for now", install_menu)
+
+    def test_install_offer_uses_skip_wording(self) -> None:
+        """The installer's data step uses the same dynamic selector, but its
+        opt-out reads 'Skip for now' (install mode) rather than 'Cancel'."""
+        common = COMMON_LIB.read_text(encoding="utf-8")
+        exapump_ps1 = EXAPUMP_PS1.read_text(encoding="utf-8")
+        self.assertIn('exakit_data_load_select "Skip for now (no data loading)"', common)
+        self.assertIn('Select-ExakitDataLoad -FinalLabel "Skip for now (no data loading)"', exapump_ps1)
 
     def test_local_file_data_load_can_return_to_menu(self) -> None:
         local_file_blocks = (
@@ -297,20 +306,6 @@ class LoadWiringTests(unittest.TestCase):
                 self.assertIn("Please enter a local CSV/text/Parquet file path", local_file_flow)
                 self.assertIn("back to return", local_file_flow)
                 self.assertIn("Returning to data loading options.", local_file_flow)
-
-    def test_install_invokes_install_mode_menu(self) -> None:
-        common = COMMON_LIB.read_text(encoding="utf-8")
-        exapump_ps1 = EXAPUMP_PS1.read_text(encoding="utf-8")
-        self.assertIn(
-            "exakit_data_load_menu install",
-            common,
-            "Installer data-load offer must show 'Skip for now' instead of manual terminate wording.",
-        )
-        self.assertIn(
-            "Show-ExakitDataLoadMenu -InstallMode",
-            exapump_ps1,
-            "Windows installer data-load offer must show 'Skip for now' instead of manual terminate wording.",
-        )
 
 
 class DatabaseReadinessTests(unittest.TestCase):

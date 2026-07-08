@@ -86,7 +86,7 @@ Run:
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected supported client config files for Claude, Cursor, or Codex. The flow is a checkbox multi-select (Claude and Codex pre-selected), validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant — copied to your clipboard when a clipboard tool is available. The installer runs this step for you; `exakit mcp-setup` re-runs it any time.
+The setup backs up and edits the selected supported client config files. The flow is a checkbox multi-select — ↑/↓ to move, **Space** to select, **Enter** to continue — over **Claude**, **Codex**, **Cursor**, and **Skip for now** (Skip cancels without touching any client config). The list is **dynamic**: clients that are already connected, or not installed on this machine, are simply not offered — when everything found is already connected, the command says so and exits. It validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant — copied to your clipboard when a clipboard tool is available. Selecting **Claude** configures both Claude surfaces at once: the desktop app (`claude_desktop_config.json`) and the **Claude Code CLI** (`~/.claude.json`, user scope — available in every project); if one Claude surface is already connected, only the remaining one is offered (labelled e.g. *Claude Code (CLI)*). The installer runs this step for you; `exakit mcp-setup` re-runs it any time.
 
 When the kit can detect the local MCP launcher path, it writes that exact path into the client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
 
@@ -116,7 +116,7 @@ So you're not staring at an empty database, the kit ships with a small sample da
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 - **[data/example-questions.md](data/example-questions.md)** — 14 ready-to-ask questions (revenue, customers, orders, suppliers), each with validated reference SQL to inspect before you run
 
-Prefer your own data? Run `exakit data-load` — a focused guided menu that loads the bundled sample or a **local CSV or Parquet file**. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
+The kit ships **three bundled datasets**, all loading into `STARTER_KIT` so your AI client sees them instantly: **TPC-H retail** (~175k rows), **smart-meter energy readings** (~108k-row time series, [data/datasets/energy](data/datasets/energy)), and **daily city weather history** (~11k rows, [data/datasets/weather](data/datasets/weather)). Run `exakit data-load` — the same checkbox menu as the installer (↑/↓, Space, Enter), listing every bundled dataset **not loaded yet** (checked against the actual database, not just a flag), a **local CSV, text, or Parquet file**, and Cancel. Once all bundled datasets are in the database, only the local-file and Cancel options remain (`exakit data-load --force` reloads the TPC-H sample). One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 ### Day-to-day
 

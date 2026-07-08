@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 
+from mcp.adapters import AdapterRegistry
 from mcp.core.errors import MCPSubsystemError
 from mcp.core.models import (
     OperationStatus,
@@ -22,6 +23,7 @@ from mcp.service import MCPAccessSubsystem
 
 SETUP_CLIENT_IDS = (
     "claude_desktop",
+    "claude_code",
     "cursor",
     "codex",
 )
@@ -73,14 +75,55 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional snapshot id for restore. Defaults to the latest snapshot when omitted.",
     )
+    discover_parser = subparsers.add_parser(
+        "discover-clients",
+        help="Report, per supported MCP client, whether it is installed on this machine and whether a managed config already exists.",
+    )
+    discover_parser.add_argument(
+        "--runtime-root",
+        default="~/.exasol-starter-kit",
+        help="Starter-kit runtime root. Defaults to ~/.exasol-starter-kit.",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "setup-runtime-clients":
         return _setup_runtime_clients(args)
     if args.command == "run-runtime-operation":
         return _run_runtime_operation(args)
+    if args.command == "discover-clients":
+        return _discover_clients(args)
     parser.error(f"Unsupported command: {args.command}")
     return 2
+
+
+def _discover_clients(args: argparse.Namespace) -> int:
+    """Emit machine-readable per-client state for dynamic setup menus."""
+    environment = ExecutionEnvironment.current()
+    filesystem = FileSystem()
+    runtime_root = _resolve_runtime_root(args.runtime_root, environment)
+    configured: set[str] = set()
+    try:
+        repository = ManifestRepository(RuntimePaths(runtime_root), filesystem)
+        for record in repository.list_active_artifacts():
+            client = record.get("client")
+            if client:
+                configured.add(str(client))
+    except Exception:  # no managed state yet → nothing is configured
+        configured = set()
+    clients = []
+    for adapter in AdapterRegistry().all():
+        detection = adapter.detect(environment)
+        clients.append(
+            {
+                "id": adapter.adapter_id(),
+                "display_name": adapter.display_name(),
+                "detected": bool(detection.detected),
+                "confidence": detection.confidence,
+                "configured": adapter.adapter_id() in configured,
+            }
+        )
+    print(json.dumps({"clients": clients}, indent=2, sort_keys=True))
+    return 0
 
 
 def _setup_runtime_clients(args: argparse.Namespace) -> int:

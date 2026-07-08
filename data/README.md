@@ -1,11 +1,31 @@
 # Sample data
 
-This folder holds the starter-kit sample dataset as CSV files. **Nothing to install —
-the CSVs are committed to the repo.** `setup/load-data.sh` loads every `*.csv` here into
-the `STARTER_KIT` schema (one table per file, named after the file, e.g. `lineitem.csv`
-→ `STARTER_KIT.LINEITEM`).
+This folder holds the kit's **bundled datasets** — nothing to install, everything is
+committed to the repo. Each dataset is a self-contained folder under
+[`datasets/`](datasets/):
 
-## What this is
+```
+datasets/<id>/
+  dataset.conf          # id, menu label, marker tables (loaded-detection)
+  01_create_schema.sql  # exact types + primary keys (optional — exapump can
+                        # infer and create tables from bare CSVs)
+  data/*.csv            # bulk files: one table per file, named after the file
+  02_load_data.sql      # optional transform / SQL-generated data
+  03_verify_setup.sql   # post-load checks — a FAIL row blocks "loaded"
+```
+
+All datasets load into the `STARTER_KIT` schema (unique table names per dataset), so
+the read-only MCP user sees them without extra grants. The `exakit data-load` menu
+discovers datasets from these folders and only offers ones **not already in the
+database** (verified against the marker tables, not just a manifest flag).
+
+| Dataset | Contents |
+|---|---|
+| [`datasets/tpch/`](datasets/tpch/) | TPC-H retail benchmark (below) — the original sample |
+| [`datasets/energy/`](datasets/energy/) | 50 smart meters + 108,000 hourly readings (SQL-generated time series) |
+| [`datasets/weather/`](datasets/weather/) | 10 European cities, ~11k days of daily weather (2023–2025) |
+
+## The TPC-H dataset (`datasets/tpch/`)
 
 Standard **TPC-H** data at **scale factor 0.02** (~21 MB total). TPC-H is a well-known
 wholesale/retail benchmark: customers place orders, each order has line items for parts
