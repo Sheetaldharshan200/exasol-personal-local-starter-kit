@@ -168,6 +168,24 @@ confirm() {
     esac
 }
 
+# Like confirm(), but an environment variable can pre-answer the question so an
+# agent-driven or scripted install (no tty) honours the user's choice instead of
+# silently taking the default. usage: confirm_env VAR "Question?" [y|n]
+#   VAR = 1|y|yes  -> yes, skip the prompt
+#   VAR = 0|n|no   -> no,  skip the prompt
+#   VAR unset/other-> fall back to confirm() (tty prompt, else the default)
+confirm_env() {
+    _ce_var="$1"
+    _ce_question="$2"
+    _ce_default="${3:-y}"
+    _ce_val="${!_ce_var:-}"
+    case "$_ce_val" in
+        1|y|Y|yes|YES|Yes) return 0 ;;
+        0|n|N|no|NO|No)    return 1 ;;
+        *) confirm "$_ce_question" "$_ce_default" ;;
+    esac
+}
+
 _exakit_prompt_tty() {
     if [ -t 0 ]; then
         printf 'stdin\n'
@@ -1696,17 +1714,27 @@ exakit_parse_mcp_client_selection() {
 exakit_mcp_setup() {
     info "MCP setup will edit the selected AI client config files."
 
-    printf '\n'
-    info "Choose one or more clients"
-    printf '    1. Claude\n'
-    printf '    2. Cursor\n'
-    printf '    3. Codex\n'
-    printf '    Enter numbers separated by commas, or type all.\n'
-    while :; do
-        _selection="$(prompt_text "Choose client numbers" "all")"
-        _clients_csv="$(exakit_parse_mcp_client_selection "$_selection")" && break
-        warn "Please choose valid client numbers, for example 1,2,3 or all."
-    done
+    # EXAKIT_MCP_CLIENTS lets an agent-driven or scripted install pick clients
+    # without a prompt (e.g. "claude", "claude,cursor", "all", or "1,2").
+    if [ -n "${EXAKIT_MCP_CLIENTS:-}" ]; then
+        _clients_csv="$(exakit_parse_mcp_client_selection "$EXAKIT_MCP_CLIENTS")" || {
+            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, cursor, codex, all, or numbers 1-3)."
+            return 1
+        }
+        info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $_clients_csv"
+    else
+        printf '\n'
+        info "Choose one or more clients"
+        printf '    1. Claude\n'
+        printf '    2. Cursor\n'
+        printf '    3. Codex\n'
+        printf '    Enter numbers separated by commas, or type all.\n'
+        while :; do
+            _selection="$(prompt_text "Choose client numbers" "all")"
+            _clients_csv="$(exakit_parse_mcp_client_selection "$_selection")" && break
+            warn "Please choose valid client numbers, for example 1,2,3 or all."
+        done
+    fi
 
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-setup.XXXXXX")"
     info "Applying MCP setup"
@@ -1777,6 +1805,10 @@ exakit_mcp_restore() {
 exakit_maybe_offer_mcp_setup() {
     _already_done="$(manifest_get components.mcp_server.client_setup.completed 2>/dev/null || true)"
     [ "$_already_done" = "true" ] && return 0
+    if [ "${EXAKIT_SKIP_MCP:-}" = "1" ]; then
+        info "Skipping MCP client setup (EXAKIT_SKIP_MCP=1). Run it any time with: exakit mcp-setup"
+        return 0
+    fi
     if [ -z "$(_exakit_prompt_tty)" ]; then
         info "Non-interactive install - setting up MCP in your AI client(s) by default."
         if ! exakit_mcp_setup; then
@@ -1804,6 +1836,20 @@ exakit_maybe_offer_data_load() {
     _kit_root="$1"
     : "$_kit_root"
     command -v exakit_data_load_menu >/dev/null 2>&1 || return 0
+
+    # EXAKIT_LOAD_SAMPLE lets an agent-driven or scripted install decide up front:
+    # =1 loads the bundled sample without asking, =0 skips data loading entirely.
+    if [ "${EXAKIT_LOAD_SAMPLE:-}" = "0" ]; then
+        info "Skipping data loading (EXAKIT_LOAD_SAMPLE=0). Run it any time with: exakit data-load"
+        return 0
+    fi
+    if [ "${EXAKIT_LOAD_SAMPLE:-}" = "1" ]; then
+        info "Loading the bundled sample data (EXAKIT_LOAD_SAMPLE=1)."
+        if ! ( exakit_load_sample_data "$_kit_root" ); then
+            warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+        fi
+        return 0
+    fi
 
     if [ -z "$(_exakit_prompt_tty)" ]; then
         info "Non-interactive install - loading the bundled sample data by default."

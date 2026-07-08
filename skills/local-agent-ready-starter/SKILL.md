@@ -64,6 +64,17 @@ options before piping a remote script into a shell:
 - `... | EXAKIT_DRY_RUN=1 sh` — downloads the kit to `~/.exasol-starter-kit/kit` so the scripts
   can be read first; installs nothing until the user runs the setup themselves.
 
+When **you** run the installer (no terminal is attached, so the install cannot prompt the
+user), it silently takes safe defaults — it would configure MCP for *all* detected clients
+and load the sample data without asking. Instead, ask the user these questions first, then
+pass the answers so their choices are honored (macOS/Linux/WSL):
+- which MCP client(s) to connect → `EXAKIT_MCP_CLIENTS=claude` (also `cursor`, `codex`, `all`,
+  comma-separated, or numbers `1-3`); or `EXAKIT_SKIP_MCP=1` to set MCP up later via `exakit mcp-setup`
+- load the bundled sample data? → `EXAKIT_LOAD_SAMPLE=1` (yes) or `EXAKIT_LOAD_SAMPLE=0` (no)
+- on macOS, if a database is already running → `EXAKIT_REUSE_DB=1` (reuse) or `0` (deploy fresh)
+
+Example: `curl -fsSL <install.sh URL> | EXAKIT_MCP_CLIENTS=claude EXAKIT_LOAD_SAMPLE=1 sh`.
+
 Tell the user what to expect: a detection summary, an install plan, then numbered steps
 ending in a connection panel. **On macOS the first database deployment takes 10–20 minutes**
 (one-time); container platforms come up in a few minutes. Do not treat a long-running macOS
