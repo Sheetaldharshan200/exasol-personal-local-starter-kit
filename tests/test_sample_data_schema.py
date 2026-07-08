@@ -341,7 +341,11 @@ class DatabaseReadinessTests(unittest.TestCase):
         self.assertIn("function Test-ExapumpDdlRoundtrip", text)
         self.assertIn("function Confirm-ExapumpDatabaseReady", text)
         self.assertIn("EXAKIT_READY_PROBE", text)
-        self.assertIn("EXAKIT_DDL\\[42\\]", text)
+        # The PowerShell probe no longer scrapes a rendered-grid token (exapump
+        # omits the grid when stdout is a pipe — see Test-ExapumpDdlRoundtrip);
+        # it must still write a value and read it back from a fresh connection.
+        self.assertIn("INSERT INTO $probe.READY_PROBE VALUES (42)", text)
+        self.assertIn("WHERE n = 42", text)
         self.assertGreaterEqual(text.count("Confirm-ExapumpDatabaseReady"), 2)
 
     def test_sample_data_pipeline_verifies_schema_after_creation(self) -> None:
