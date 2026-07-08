@@ -58,8 +58,7 @@ main() {
             EXAKIT_UI_HOME="$EXAKIT_HOME" \
             bash "$_ui" __render_install_plan && return 0
         fi
-        printf '\n  Exasol Personal Local Starter Kit\n'
-        printf '  Local database + exapump + MCP server + pyexasol\n\n'
+        printf '\n  Exasol Personal Local Starter Kit\n\n'
         printf '  Installation plan\n'
         printf '  -----------------\n'
         printf '   Platform:   %s (%s)\n' "$platform" "$arch"

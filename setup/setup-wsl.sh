@@ -37,7 +37,7 @@ exakit_init_logging
 manifest_init
 exakit_enable_failure_handling
 
-[ "${EXAKIT_BANNER_SHOWN:-0}" = 1 ] || ui_banner "Personal Local Starter Kit" "Local database + exapump + MCP server + pyexasol"
+[ "${EXAKIT_BANNER_SHOWN:-0}" = 1 ] || ui_banner "Personal Local Starter Kit"
 detect_summary
 printf '\n'
 

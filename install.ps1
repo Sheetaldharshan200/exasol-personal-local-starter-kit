@@ -109,7 +109,6 @@ if ($uiLoaded) {
 } else {
     Write-Host ""
     Write-Host "  Personal Local Starter Kit"
-    Write-Host "  Local database + exapump + MCP server + pyexasol"
     Write-Host ""
     Write-Host "  Installation plan"
     Write-Host "  -----------------"
