@@ -102,10 +102,27 @@ _exakit_log_file() {
 
 # Glyphs/colours come from the shared palette (ui.sh): bold + Unicode on an
 # interactive UTF-8 terminal, plain ASCII with no escapes when piped/CI/log.
-info() { printf '%s==>%s %s\n'   "${UI_INFO:-}" "${UI_RESET:-}" "$*";            _exakit_log_file "INFO  $*"; }
-ok()   { printf '  %s%s%s %s\n'  "${UI_OK:-}"   "${UI_TICK:-[ok]}"  "${UI_RESET:-}" "$*"; _exakit_log_file "OK    $*"; }
-warn() { printf '  %s!%s %s\n'   "${UI_WARN:-}" "${UI_RESET:-}" "$*" >&2;        _exakit_log_file "WARN  $*"; }
-error(){ printf '  %s%s%s %s\n'  "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:-}" "$*" >&2; _exakit_log_file "ERROR $*"; }
+# One gutter for everything under a step header: actions/results all indent to
+# the same column so a step's children read as one group. Dim bullet = an action
+# of ours; ✓/!/✗ = its outcome. (Step headers themselves sit one level out.)
+info() { printf '    %s%s%s %s\n' "${UI_DIM:-}" "${UI_BULLET:--}" "${UI_RESET:-}" "$*";      _exakit_log_file "INFO  $*"; }
+ok()   { printf '    %s%s%s %s\n' "${UI_OK:-}"   "${UI_TICK:-[ok]}"  "${UI_RESET:-}" "$*"; _exakit_log_file "OK    $*"; }
+warn() { printf '    %s!%s %s\n'  "${UI_WARN:-}" "${UI_RESET:-}" "$*" >&2;        _exakit_log_file "WARN  $*"; }
+error(){ printf '    %s%s%s %s\n' "${UI_ERR:-}"  "${UI_CROSS:-[x]}" "${UI_RESET:-}" "$*" >&2; _exakit_log_file "ERROR $*"; }
+
+# --- containing third-party output ------------------------------------------
+# We can style only our own lines; a tool we invoke (e.g. the Exasol launcher)
+# prints whatever it likes. Rather than let that blend into our output, frame it:
+# foreign_note prints a dim marker line, and exakit_stream_foreign pipes a
+# command's output through a dim, indented gutter so it reads as "not ours" —
+# while the full, unmodified text still goes to the log.
+foreign_note() { printf '    %s%s %s%s\n' "${UI_DIM:-}" "${UI_HR:--}" "$*" "${UI_RESET:-}"; }
+exakit_stream_foreign() {
+    while IFS= read -r _sf_line || [ -n "$_sf_line" ]; do
+        [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_sf_line" >> "$EXAKIT_LOG_FILE"
+        printf '    %s%s %s%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "$_sf_line" "${UI_RESET:-}"
+    done
+}
 
 # Sensitive temp files (they hold plaintext credentials) are tracked here so
 # they are ALWAYS removed — including on die/exit/interrupt, not only on the
@@ -119,12 +136,15 @@ exakit_sweep_sensitive_tmp() {
     EXAKIT_SENSITIVE_TMP=""
 }
 
+# Fatal error, rendered as a small "card": a prominent ✗ header, then a dim
+# gutter line pointing at the log — consistent shape for every failure.
 die() {
     exakit_sweep_sensitive_tmp
-    error "$*"
+    printf '\n  %s%s %s%s%s\n' "${UI_ERR:-}" "${UI_CROSS:-[x]}" "${UI_BOLD:-}" "$*" "${UI_RESET:-}" >&2
     if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
-        printf 'Full log: %s\n' "$EXAKIT_LOG_FILE" >&2
+        printf '    %s%s Log: %s%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "$EXAKIT_LOG_FILE" "${UI_RESET:-}" >&2
     fi
+    _exakit_log_file "FATAL $*"
     exit 1
 }
 

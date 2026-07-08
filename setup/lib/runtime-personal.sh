@@ -229,14 +229,14 @@ personal_deploy_local() {
     fi
 
     info "Deploying Exasol Personal locally — this takes 10-20 minutes on first install"
-    info "Deployment output follows (also logged):"
     push_rollback "$(personal_cli) destroy --remove || true"
-    if [ -n "${EXAKIT_LOG_FILE:-}" ]; then
-        "$(personal_cli)" install local 2>&1 | tee -a "$EXAKIT_LOG_FILE" || \
-            die "Local deployment failed. Rerunning the installer retries it safely."
-    else
-        "$(personal_cli)" install local || die "Local deployment failed."
-    fi
+    # The launcher prints its own (verbose) output; contain it in a dim gutter so
+    # it reads as "not ours", while the full text still lands in the log.
+    foreign_note "exasol launcher output — not part of the kit"
+    "$(personal_cli)" install local 2>&1 | exakit_stream_foreign
+    _deploy_rc=${PIPESTATUS[0]}
+    foreign_note "launcher finished"
+    [ "$_deploy_rc" -eq 0 ] || die "Local deployment failed. Re-running the installer retries it safely."
 
     personal_wait_ready
     personal_record_manifest
