@@ -72,11 +72,25 @@ function Invoke-Exapump {
     param([Parameter(Mandatory)][string[]]$Arguments)
     $out = ""
     $code = 1
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
+        # exapump writes its progress/summary lines to stderr on Windows. Under
+        # the module-global $ErrorActionPreference = 'Stop', 2>&1 turns that very
+        # first stderr write into a terminating error, so the catch below would
+        # capture ONLY that first line and discard the actual result grid and the
+        # "N statements executed" summary. That silently broke every caller that
+        # reads query results back (the DDL-readiness probe, Test-ExapumpSchemaPresent,
+        # row counts) - they saw a truncated output and concluded the schema was
+        # missing / the database was not ready, spinning or failing on a database
+        # that was in fact fine. Switch to 'Continue' for the native call so the
+        # whole output is captured, exactly as Invoke-ExapumpAdminSql already does.
+        $ErrorActionPreference = "Continue"
         $out = & (Get-ExapumpCli) @Arguments 2>&1 | Out-String
         $code = $LASTEXITCODE
     } catch {
         $out = "$_"
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
     }
     if ($script:LogFile) { "exapump $($Arguments -join ' ')" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
     return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
@@ -292,8 +306,20 @@ function Test-ExapumpDdlRoundtrip {
         -and (Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "INSERT INTO $probe.READY_PROBE VALUES (42)")).Success
     $readBack = $false
     if ($tableOk) {
-        $read = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT 'EXAKIT_DDL[' || CAST(n AS VARCHAR(10)) || ']' AS R FROM $probe.READY_PROBE")
-        $readBack = ($read.Success -and "$($read.Output)" -match 'EXAKIT_DDL\[42\]')
+        # Confirm from yet another fresh connection that the row is durably
+        # visible. Judge this on exapump's OWN signals - statement success plus
+        # its "<n> rows" progress line - NOT by scraping the rendered result grid
+        # for a data token. When exapump's stdout is a pipe (as it is here, and
+        # as every install runs it) it omits the result grid and the "N
+        # statements executed" summary entirely, so a token like EXAKIT_DDL[42]
+        # never appears in the captured output. Keying the probe on that token
+        # made it spin until EXAKIT_DDL_READY_TIMEOUT and fail the install even
+        # though every statement had succeeded and the database was fully ready.
+        # A missing schema/table instead makes the SELECT error (Success=false)
+        # and a lost row makes it return "0 rows", so both real failures are
+        # still caught.
+        $read = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT n FROM $probe.READY_PROBE WHERE n = 42")
+        $readBack = ($read.Success -and "$($read.Output)" -match '(?im)\b1\s+rows?\b')
     }
     Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "DROP SCHEMA IF EXISTS $probe CASCADE") | Out-Null
     return $readBack
@@ -366,20 +392,75 @@ function Test-ExapumpConnection {
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.
 # Returns $true/$false instead of dying so callers (Invoke-ExakitSampleDataLoad)
 # can decide whether a missing/empty file is fatal.
-# Invoke-ExapumpSqlFileCapture <file> - pipe a SQL file to exapump and return a
-# structured result ({ Output; ExitCode; Success }) matching Invoke-Exapump's
-# shape, logging the invocation. Shared by Invoke-ExapumpSqlFile (needs only
-# pass/fail) and the sample-data verification step (also scans output for FAIL
-# rows), so the stdin-pipe + quirk-aware success detection lives in one place.
+# Invoke-ExapumpSqlFileCapture <file> - feed a SQL file to exapump's stdin and
+# return a structured result ({ Output; ExitCode; Success }) matching
+# Invoke-Exapump's shape, logging the invocation. Shared by
+# Invoke-ExapumpSqlFile (needs only pass/fail) and the sample-data verification
+# step (also scans output for FAIL rows), so the stdin feed + quirk-aware
+# success detection lives in one place.
+#
+# The file's RAW BYTES are handed to exapump via System.Diagnostics.Process,
+# NOT a PowerShell pipeline (Get-Content -Raw | exapump 2>&1). Two independent
+# Windows PowerShell 5.1 behaviors made the pipeline form silently destroy the
+# sample-data load:
+#   1. Under the module-global $ErrorActionPreference = 'Stop', 2>&1 turned
+#      exapump's first stderr progress line into a terminating error that tore
+#      the pipeline down - killing exapump at statement 1 of the batch - while
+#      the lone captured "[1/10] ..." line satisfied Test-ExapumpSucceeded's
+#      [n/m] marker, so schema creation reported "done" without CREATE SCHEMA
+#      ever running.
+#   2. Under the system-wide UTF-8 codepage (65001), a UTF-8 BOM gets
+#      prepended to whatever reaches exapump's stdin, and Exasol rejects the
+#      batch's first statement: "'<U+FEFF>' character is not allowed within
+#      unquoted identifier". PowerShell's own pipe writer adds one (even with
+#      $OutputEncoding set to ASCII or BOM-less UTF-8), and on .NET Framework
+#      Process.StandardInput adds another: merely accessing that property
+#      builds a StreamWriter over Console.InputEncoding (BOM-emitting UTF-8
+#      under CP 65001) with AutoFlush = $true, whose setter flushes the
+#      encoder preamble into the pipe before any payload byte. Verified: with
+#      Console.InputEncoding left alone the probe payload arrives as
+#      EF BB BF + bytes on 5.1; with a BOM-less UTF-8 InputEncoding it
+#      arrives byte-exact (and PowerShell 7 is byte-exact either way).
+# Raw-byte stdin bypasses every re-encoding layer, and keeping exapump's
+# stderr out of PowerShell's error stream sidesteps the 'Stop' teardown too.
+# stdout/stderr reads start BEFORE stdin is written to avoid the classic
+# full-pipe deadlock.
 function Invoke-ExapumpSqlFileCapture {
     param([Parameter(Mandatory)][string]$Path)
     $out = ""
     $code = 1
+    $previousInputEncoding = $null
     try {
-        $out = Get-Content $Path -Raw | & (Get-ExapumpCli) sql -p $script:ExapumpProfile 2>&1 | Out-String
-        $code = $LASTEXITCODE
+        # Best-effort (throws when the process has no console): see BOM note
+        # above. Restored in finally.
+        try {
+            $previousInputEncoding = [Console]::InputEncoding
+            [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
+        } catch { $previousInputEncoding = $null }
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = Get-ExapumpCli
+        $psi.Arguments = "sql -p `"$($script:ExapumpProfile)`""
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $proc.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $proc.StandardInput.Close()
+        $proc.WaitForExit()
+        $out = $stdoutTask.Result + $stderrTask.Result
+        $code = $proc.ExitCode
     } catch {
         $out = "$_"
+    } finally {
+        if ($previousInputEncoding) {
+            try { [Console]::InputEncoding = $previousInputEncoding } catch { }
+        }
     }
     if ($script:LogFile) { "exapump sql -p $($script:ExapumpProfile) < $Path" | Add-Content -Path $script:LogFile; $out | Add-Content -Path $script:LogFile }
     return @{ Output = $out; ExitCode = $code; Success = (Test-ExapumpSucceeded -ExitCode $code -Output $out) }
@@ -499,9 +580,17 @@ function Test-ExapumpSchemaPresent {
     param([Parameter(Mandatory)][string]$Schema)
     $schemaUc = ConvertTo-UpperInvariantString $Schema
     if (-not $schemaUc) { return $false }
-    $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS"
+    # Decide presence from the ROW COUNT of a row-returning query, not by
+    # scraping a sentinel token out of the rendered result grid. When exapump's
+    # stdout is a pipe (every install runs it that way) it omits the result grid
+    # entirely, so a sentinel like EXAKIT_SCHEMA_PRESENT never reaches the
+    # captured output and this check always reported the schema missing - which
+    # aborted the sample-data load even though the schema existed. The "<n> rows"
+    # count on exapump's progress line IS reliably captured: a present schema
+    # yields "1 rows", an absent one "0 rows".
+    $sql = "SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc'"
     $check = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
-    return ("$($check.Output)" -match "EXAKIT_SCHEMA_PRESENT")
+    return ($check.Success -and "$($check.Output)" -match '(?im)\b[1-9]\d*\s+rows?\b')
 }
 
 function Confirm-ExakitSchemaExists {
