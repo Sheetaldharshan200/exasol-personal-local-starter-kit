@@ -131,10 +131,18 @@ function Install-Exapump {
         # a broken binary's stderr write must mean "reinstall", not an
         # uncaught exception under $ErrorActionPreference = 'Stop'.
         $existingWorks = $false
+        $previousEAP = $ErrorActionPreference
         try {
+            # Continue (not the global Stop) so a working binary that writes an
+            # incidental line to stderr isn't turned into a terminating error on
+            # Windows PowerShell 5.1 and needlessly reinstalled - the exit code
+            # is the real signal. Same fix as Get-NanoEngine / Invoke-ExakitLogged.
+            $ErrorActionPreference = "Continue"
             & $existing --version *> $null
             $existingWorks = ($LASTEXITCODE -eq 0)
-        } catch { }
+        } catch { } finally {
+            $ErrorActionPreference = $previousEAP
+        }
         if ($existingWorks) {
             Ok "exapump already installed: $existing"
             Set-ExapumpManifest
