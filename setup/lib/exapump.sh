@@ -679,7 +679,9 @@ exakit_load_sample_data() {
         "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" < "$_kit_root/sql/03_verify_setup.sql" \
             > "$_verify_output" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"
         _verify_status=$?
-        tee -a "${EXAKIT_LOG_FILE:-/dev/null}" < "$_verify_output"
+        # exapump's raw CSV is tool output — contain it in the dim gutter
+        # (exakit_stream_foreign also copies each line to the log).
+        exakit_stream_foreign < "$_verify_output"
         if [ "$_verify_status" -ne 0 ] || grep -qi 'FAIL' "$_verify_output"; then
             rm -f "$_verify_output"
             die "Verification failed (query error or a FAIL row) — see ${EXAKIT_LOG_FILE:-the log}. Data is loaded but not marked ready; fix the underlying issue and re-run with --force."
@@ -693,7 +695,7 @@ exakit_load_sample_data() {
         [ -s "$_csv" ] || continue
         _table="$(basename "$_csv" .csv | tr '[:lower:]' '[:upper:]')"
         _rows="$(exapump_count "$_schema.$_table")"
-        printf '   %-30s %s rows\n' "$_schema.$_table" "${_rows:-?}" | tee -a "${EXAKIT_LOG_FILE:-/dev/null}"
+        printf '    %-30s %s rows\n' "$_schema.$_table" "${_rows:-?}" | tee -a "${EXAKIT_LOG_FILE:-/dev/null}"
     done
     manifest_set data.loaded true
     manifest_set data.schema "$_schema"

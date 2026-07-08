@@ -52,7 +52,7 @@ if ($env:OS -notlike "*Windows*") {
 }
 
 # --- 2. fetch the kit ----------------------------------------------------------
-Write-Host "==> Downloading the starter kit ($Repo@$Ref)" -ForegroundColor Blue
+Write-Host "  * Downloading the starter kit ($Repo@$Ref)" -ForegroundColor Blue
 $tmpZip = Join-Path ([System.IO.Path]::GetTempPath()) "exakit-src-$([System.Guid]::NewGuid().ToString('N')).zip"
 $urls = @(
     "https://github.com/$Repo/archive/refs/heads/$Ref.zip",
@@ -121,7 +121,7 @@ if ($uiLoaded) {
 }
 
 if ($env:EXAKIT_DRY_RUN -eq "1") {
-    Write-Host "==> Dry run requested (EXAKIT_DRY_RUN=1) - nothing was installed." -ForegroundColor Blue
+    Write-Host "  * Dry run requested (EXAKIT_DRY_RUN=1) - nothing was installed." -ForegroundColor Blue
     Write-Host "    Inspect the scripts under $KitDir, then run:"
     Write-Host "      powershell -File `"$KitDir\setup\setup-windows-docker.ps1`""
     Write-Host ""
@@ -129,7 +129,7 @@ if ($env:EXAKIT_DRY_RUN -eq "1") {
 }
 
 # --- 4. hand off -----------------------------------------------------------------
-Write-Host "==> Starting setup: setup\setup-windows-docker.ps1" -ForegroundColor Blue
+Write-Host "  * Starting setup: setup\setup-windows-docker.ps1" -ForegroundColor Blue
 Write-Host ""
 # We already showed the banner above; tell the setup script to skip its own so
 # the wordmark appears exactly once through the installer. A direct

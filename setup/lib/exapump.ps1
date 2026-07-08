@@ -861,7 +861,12 @@ function Invoke-ExakitSampleDataLoad {
     if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
         Info "Verification (03_verify_setup.sql):"
         $verify = Invoke-ExapumpSqlFileCapture $verifySql
-        "$($verify.Output)".Trim() -split "`n" | ForEach-Object { Write-Host $_ }
+        # exapump's raw CSV is tool output - contain it in the dim gutter
+        # (mirrors ui.sh's exakit_stream_foreign).
+        "$($verify.Output)".Trim() -split "`n" | ForEach-Object {
+            if ($script:UiFancy) { Write-Host ("    {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
+            else { Write-Host ("    | {0}" -f $_) }
+        }
         # Two independent conditions: the query itself must have run (exapump
         # success, exit-code-quirk-aware), AND no verification check may have
         # emitted a STATUS = 'FAIL' row.
@@ -875,7 +880,7 @@ function Invoke-ExakitSampleDataLoad {
     foreach ($csv in $csvFiles) {
         $table = ConvertTo-UpperInvariantString ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name))
         $rows = Get-ExapumpRowCount "$schema.$table"
-        $line = "   {0,-30} {1} rows" -f "$schema.$table", $(if ($rows) { $rows } else { "?" })
+        $line = "    {0,-30} {1} rows" -f "$schema.$table", $(if ($rows) { $rows } else { "?" })
         Write-Host $line
         if ($script:LogFile) { $line | Add-Content -Path $script:LogFile }
     }

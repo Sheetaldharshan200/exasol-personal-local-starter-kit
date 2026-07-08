@@ -235,10 +235,23 @@ detect_summary() {
     _disk="$(detect_free_disk_gb "$HOME")"
     _runtime="$(detect_container_runtime_detail)"
 
-    printf 'Detected environment:\n'
-    printf '  OS:                %s\n' "$_os"
-    printf '  Architecture:      %s\n' "$_arch"
-    printf '  Memory:            %s GB\n' "$_ram"
-    printf '  Free disk (home):  %s GB\n' "$_disk"
-    printf '  Container runtime: %s\n' "$_runtime"
+    # Render as the shared rounded panel when the UI lib is loaded (the setup
+    # scripts source ui.sh before this); plain text when sourced standalone
+    # (e.g. the preflight-only path loads detect.sh without ui.sh).
+    if command -v ui_panel_begin >/dev/null 2>&1; then
+        ui_panel_begin "Detected environment"
+        ui_panel_line "OS:                $_os"
+        ui_panel_line "Architecture:      $_arch"
+        ui_panel_line "Memory:            $_ram GB"
+        ui_panel_line "Free disk (home):  $_disk GB"
+        ui_panel_line "Container runtime: $_runtime"
+        ui_panel_end
+    else
+        printf 'Detected environment:\n'
+        printf '  OS:                %s\n' "$_os"
+        printf '  Architecture:      %s\n' "$_arch"
+        printf '  Memory:            %s GB\n' "$_ram"
+        printf '  Free disk (home):  %s GB\n' "$_disk"
+        printf '  Container runtime: %s\n' "$_runtime"
+    fi
 }
