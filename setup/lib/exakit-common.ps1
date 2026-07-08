@@ -109,19 +109,21 @@ function Write-ExakitLog([string]$Level, [string]$Msg) {
 # Glyphs/colours come from the shared palette (ui.ps1) when a fancy terminal
 # is available; otherwise fall back to Write-Host -ForegroundColor so basic
 # colour still works even if ANSI/VT could not be enabled.
+# One gutter under a step header: actions/results indent to the same column, so
+# a step's children read as one group (mirrors ui.sh's info/ok/warn/error).
 function Info([string]$Msg) {
-    if ($script:UiFancy) { Write-Host ("{0}==>{1} {2}" -f $script:UiInfo, $script:UiReset, $Msg) }
-    else { Write-Host "==> $Msg" -ForegroundColor Blue }
+    if ($script:UiFancy) { Write-Host ("    {0}{1}{2} {3}" -f $script:UiDim, $script:UiBullet, $script:UiReset, $Msg) }
+    else { Write-Host ("    {0} {1}" -f $script:UiBullet, $Msg) }
     Write-ExakitLog "INFO" $Msg
 }
 function Ok([string]$Msg) {
-    if ($script:UiFancy) { Write-Host ("  {0}{1}{2} {3}" -f $script:UiOk, $script:UiTick, $script:UiReset, $Msg) }
-    else { Write-Host ("  {0} {1}" -f $script:UiTick, $Msg) -ForegroundColor Green }
+    if ($script:UiFancy) { Write-Host ("    {0}{1}{2} {3}" -f $script:UiOk, $script:UiTick, $script:UiReset, $Msg) }
+    else { Write-Host ("    {0} {1}" -f $script:UiTick, $Msg) -ForegroundColor Green }
     Write-ExakitLog "OK" $Msg
 }
 function Warn2([string]$Msg) {
-    if ($script:UiFancy) { Write-Host ("  {0}!{1} {2}" -f $script:UiWarn, $script:UiReset, $Msg) }
-    else { Write-Host "  ! $Msg" -ForegroundColor Yellow }
+    if ($script:UiFancy) { Write-Host ("    {0}!{1} {2}" -f $script:UiWarn, $script:UiReset, $Msg) }
+    else { Write-Host "    ! $Msg" -ForegroundColor Yellow }
     Write-ExakitLog "WARN" $Msg
 }
 # ExakitFailException - a distinct exception type so callers can tell a
@@ -139,10 +141,17 @@ class ExakitFailException : System.Exception {
 function Fail([string]$Msg) {
     Stop-ExakitSpinner
     Restore-ExakitCursor
-    if ($script:UiFancy) { Write-Host ("  {0}{1}{2} {3}" -f $script:UiErr, $script:UiCross, $script:UiReset, $Msg) }
-    else { Write-Host ("  {0} {1}" -f $script:UiCross, $Msg) -ForegroundColor Red }
-    Write-ExakitLog "ERROR" $Msg
-    if ($script:LogFile) { Write-Host "Full log: $script:LogFile" }
+    # Rendered as a small "card": prominent ✗ header, then a dim gutter line to
+    # the log — the same shape as ui.sh's die().
+    Write-Host ""
+    if ($script:UiFancy) {
+        Write-Host ("  {0}{1} {2}{3}{4}" -f $script:UiErr, $script:UiCross, $script:UiBold, $Msg, $script:UiReset)
+        if ($script:LogFile) { Write-Host ("    {0}{1} Log: {2}{3}" -f $script:UiDim, $script:UiVB, $script:LogFile, $script:UiReset) }
+    } else {
+        Write-Host ("  {0} {1}" -f $script:UiCross, $Msg) -ForegroundColor Red
+        if ($script:LogFile) { Write-Host ("    | Log: {0}" -f $script:LogFile) }
+    }
+    Write-ExakitLog "FATAL" $Msg
     throw [ExakitFailException]::new($Msg)
 }
 
