@@ -27,11 +27,21 @@ $script:NanoReadyTimeout = if ($env:EXAKIT_NANO_READY_TIMEOUT) { [int]$env:EXAKI
 function Get-NanoEngine {
     if ($script:NanoEngineCache) { return $script:NanoEngineCache }
     if (Get-Command docker -ErrorAction SilentlyContinue) {
+        $previousEAP = $ErrorActionPreference
         try {
+            # Docker Desktop writes harmless warnings to stderr on 'docker info'.
+            # Under the global ErrorActionPreference='Stop', Windows PowerShell
+            # 5.1 turns that stderr write into a TERMINATING error before we can
+            # read the exit code - so a perfectly healthy Docker was reported as
+            # "not running". Switch to Continue (exactly what Invoke-ExakitLogged
+            # does) so the exit code, not incidental stderr, decides.
+            $ErrorActionPreference = "Continue"
             & docker info *> $null
             if ($LASTEXITCODE -eq 0) { $script:NanoEngineCache = "docker"; return "docker" }
         } catch {
             Write-ExakitLog "WARN" "docker info failed: $_"
+        } finally {
+            $ErrorActionPreference = $previousEAP
         }
     }
     return $null
@@ -126,7 +136,12 @@ function Test-NanoReadyInLogs {
 # 'init sys_password_file=...' arguments. Nano refuses to boot with them
 # once /exa is initialized, so such a container cannot simply be restarted.
 function Test-NanoFirstDeployArgs {
-    $cmd = & (Get-NanoEngine) container inspect -f '{{join .Config.Cmd " "}}' $script:NanoContainer 2>$null
+    # Use '{{.Config.Cmd}}' (Go renders the []string as "[a b c]") rather than
+    # '{{join .Config.Cmd " "}}': the embedded double-quotes in the join
+    # template get mangled when PowerShell builds the native command line for
+    # docker.exe on Windows, breaking the template. We only test for a token's
+    # presence, so the bracketed form works and needs no embedded quotes.
+    $cmd = & (Get-NanoEngine) container inspect -f '{{.Config.Cmd}}' $script:NanoContainer 2>$null
     return ("$cmd" -match "sys_password_file")
 }
 
