@@ -292,8 +292,20 @@ function Test-ExapumpDdlRoundtrip {
         -and (Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "INSERT INTO $probe.READY_PROBE VALUES (42)")).Success
     $readBack = $false
     if ($tableOk) {
-        $read = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT 'EXAKIT_DDL[' || CAST(n AS VARCHAR(10)) || ']' AS R FROM $probe.READY_PROBE")
-        $readBack = ($read.Success -and "$($read.Output)" -match 'EXAKIT_DDL\[42\]')
+        # Confirm from yet another fresh connection that the row is durably
+        # visible. Judge this on exapump's OWN signals - statement success plus
+        # its "<n> rows" progress line - NOT by scraping the rendered result grid
+        # for a data token. When exapump's stdout is a pipe (as it is here, and
+        # as every install runs it) it omits the result grid and the "N
+        # statements executed" summary entirely, so a token like EXAKIT_DDL[42]
+        # never appears in the captured output. Keying the probe on that token
+        # made it spin until EXAKIT_DDL_READY_TIMEOUT and fail the install even
+        # though every statement had succeeded and the database was fully ready.
+        # A missing schema/table instead makes the SELECT error (Success=false)
+        # and a lost row makes it return "0 rows", so both real failures are
+        # still caught.
+        $read = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT n FROM $probe.READY_PROBE WHERE n = 42")
+        $readBack = ($read.Success -and "$($read.Output)" -match '(?im)\b1\s+rows?\b')
     }
     Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "DROP SCHEMA IF EXISTS $probe CASCADE") | Out-Null
     return $readBack
