@@ -37,6 +37,8 @@ ui_detect
 if [ "$UI_FANCY" = 1 ]; then
     UI_RESET=$'\033[0m';  UI_BOLD=$'\033[1m';  UI_DIM=$'\033[2m'
     UI_ACCENT=$'\033[38;5;35m'                 # Exasol green accent
+    UI_GREEN=$'\033[38;5;77m'                  # brand green for the wordmark X
+    UI_FG=$'\033[39m'                          # default fg (adapts to light/dark)
     UI_OK=$'\033[1;32m';  UI_WARN=$'\033[1;33m';  UI_ERR=$'\033[1;31m'
     UI_INFO=$'\033[1;34m';  UI_ASK=$'\033[1;36m'
     UI_TICK='✓';  UI_CROSS='✗';  UI_BULLET='•';  UI_ARROW='▸'
@@ -44,6 +46,7 @@ if [ "$UI_FANCY" = 1 ]; then
     UI_BAR_FULL='█';  UI_BAR_EMPTY='░'
 else
     UI_RESET='';  UI_BOLD='';  UI_DIM='';  UI_ACCENT=''
+    UI_GREEN='';  UI_FG=''
     UI_OK='';  UI_WARN='';  UI_ERR='';  UI_INFO='';  UI_ASK=''
     UI_TICK='[ok]';  UI_CROSS='[x]';  UI_BULLET='-';  UI_ARROW='>'
     UI_HR='-';  UI_TL='+';  UI_TR='+';  UI_BL='+';  UI_BR='+';  UI_VB='|'
@@ -54,15 +57,21 @@ fi
 UI_SPIN_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 
 # EXASOL wordmark (ANSI Shadow style). Shown only in fancy mode; the plain
-# fallback prints a plain-text title instead. These exact lines are mirrored
-# byte-for-byte in setup/lib/ui.ps1 so the banner is identical on every OS.
-UI_WORDMARK=(
-'███████╗██╗  ██╗ █████╗ ███████╗ ██████╗ ██╗'
-'██╔════╝╚██╗██╔╝██╔══██╗██╔════╝██╔═══██╗██║'
-'█████╗   ╚███╔╝ ███████║███████╗██║   ██║██║'
-'██╔══╝   ██╔██╗ ██╔══██║╚════██║██║   ██║██║'
-'███████╗██╔╝ ██╗██║  ██║███████║╚██████╔╝███████╗'
-'╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝'
+# fallback prints a plain-text title instead. Split into segments so the "X"
+# carries the logo's two-tone look: the left strokes and the crossing peak are
+# Exasol green (UI_GREEN); the rest of the wordmark and the X's right strokes
+# stay the terminal's default colour (UI_FG) so it reads on light or dark.
+# The segments are mirrored byte-for-byte in setup/lib/ui.ps1.
+UI_WM_E=('███████╗' '██╔════╝' '█████╗  ' '██╔══╝  ' '███████╗' '╚══════╝')
+UI_WM_XL=('██╗ ' '╚██╗' ' ╚███' ' ██╔' '██╔╝' '╚═╝ ')
+UI_WM_XR=(' ██╗' '██╔╝' '╔╝ ' '██╗ ' ' ██╗' ' ╚═╝')
+UI_WM_R=(
+' █████╗ ███████╗ ██████╗ ██╗'
+'██╔══██╗██╔════╝██╔═══██╗██║'
+'███████║███████╗██║   ██║██║'
+'██╔══██║╚════██║██║   ██║██║'
+'██║  ██║███████║╚██████╔╝███████╗'
+'╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝'
 )
 
 # Inner width of boxes (plan / panel), in visible columns.
@@ -94,8 +103,14 @@ ui_repeat() {
 ui_banner() {
     printf '\n'
     if [ "$UI_FANCY" = 1 ]; then
-        for _uib_line in "${UI_WORDMARK[@]}"; do
-            printf '  %s%s%s\n' "$UI_ACCENT" "$_uib_line" "$UI_RESET"
+        _uib_i=0
+        while [ "$_uib_i" -lt 6 ]; do
+            printf '  %s%s%s%s%s%s%s\n' \
+                "$UI_BOLD$UI_FG" "${UI_WM_E[$_uib_i]}" \
+                "$UI_GREEN" "${UI_WM_XL[$_uib_i]}" \
+                "$UI_FG" "${UI_WM_XR[$_uib_i]}${UI_WM_R[$_uib_i]}" \
+                "$UI_RESET"
+            _uib_i=$((_uib_i + 1))
         done
         printf '\n'
     fi
