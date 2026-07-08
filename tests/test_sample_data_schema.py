@@ -236,9 +236,11 @@ class LoadWiringTests(unittest.TestCase):
             with self.subTest(menu=menu_name):
                 self.assertIn("Bundled sample dataset (TPC-H)", menu)
                 self.assertIn("Local CSV/text/Parquet file", menu)
-                self.assertIn("Back", menu)
+                # One clear exit (commit 0e06e2e collapsed the old redundant
+                # "Back" + "Terminate" pair): "Skip for now" in install mode,
+                # "Cancel" in manual mode.
                 self.assertIn("Skip for now", menu)
-                self.assertIn("Terminate", menu)
+                self.assertIn("Cancel", menu)
                 for removed_option in (
                     "Remote CSV/Text File",
                     "Import from Another Database",
@@ -309,6 +311,49 @@ class LoadWiringTests(unittest.TestCase):
             exapump_ps1,
             "Windows installer data-load offer must show 'Skip for now' instead of manual terminate wording.",
         )
+
+
+class DatabaseReadinessTests(unittest.TestCase):
+    """Lock in the first-boot readiness fix so it cannot silently regress.
+
+    Right after first boot the Nano database answers SELECT 1 while still
+    stabilizing, and in that window it can ACK a DDL batch ("0 failed") without
+    durably persisting it — the schema-creation step "succeeds" but the next
+    upload fails with "schema not found". Two guards must stay in place and in
+    sync across the bash and PowerShell paths: (1) a DDL write-readback probe
+    gating connection validation, and (2) a verify-after-create step in the
+    sample-data pipeline."""
+
+    def test_bash_gates_connection_on_ddl_roundtrip(self) -> None:
+        text = EXAPUMP_LIB.read_text(encoding="utf-8")
+        self.assertIn("exapump_ddl_roundtrip()", text)
+        self.assertIn("exapump_confirm_database_ready()", text)
+        # The probe must round-trip a written value through a fresh connection,
+        # not merely run a statement (a bare CREATE would not catch the bug).
+        self.assertIn("EXAKIT_READY_PROBE", text)
+        self.assertIn("EXAKIT_DDL[42]", text)
+        # confirm_database_ready must be defined AND called (>= 2 occurrences);
+        # its only caller is exapump_validate_connection.
+        self.assertGreaterEqual(text.count("exapump_confirm_database_ready"), 2)
+
+    def test_powershell_gates_connection_on_ddl_roundtrip(self) -> None:
+        text = EXAPUMP_PS1.read_text(encoding="utf-8")
+        self.assertIn("function Test-ExapumpDdlRoundtrip", text)
+        self.assertIn("function Confirm-ExapumpDatabaseReady", text)
+        self.assertIn("EXAKIT_READY_PROBE", text)
+        self.assertIn("EXAKIT_DDL\\[42\\]", text)
+        self.assertGreaterEqual(text.count("Confirm-ExapumpDatabaseReady"), 2)
+
+    def test_sample_data_pipeline_verifies_schema_after_creation(self) -> None:
+        # Both pipelines must confirm the schema really landed (from a fresh
+        # connection) after running 01_create_schema.sql, rather than trusting
+        # exapump's "0 failed" and marching into doomed uploads.
+        bash = EXAPUMP_LIB.read_text(encoding="utf-8")
+        self.assertIn("exakit_schema_present()", bash)
+        self.assertIn("is not present after creation", bash)
+        ps1 = EXAPUMP_PS1.read_text(encoding="utf-8")
+        self.assertIn("function Test-ExapumpSchemaPresent", ps1)
+        self.assertIn("is not present after creation", ps1)
 
 
 if __name__ == "__main__":
