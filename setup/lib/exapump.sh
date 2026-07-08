@@ -492,8 +492,7 @@ exakit_data_load_menu() {
         if [ "$_mode" = "install" ]; then
             printf '    3. Skip for now\n'
         else
-            printf '    3. Back\n'
-            printf '    4. Terminate\n'
+            printf '    3. Cancel (skip data loading)\n'
         fi
         _default_choice="1"
         _choice="$(prompt_text "Choose data option" "$_default_choice")"
@@ -515,14 +514,6 @@ exakit_data_load_menu() {
                 else
                     info "Data loading cancelled."
                 fi
-                return 0
-                ;;
-            4)
-                if [ "$_mode" = "install" ]; then
-                    warn "Unknown data loading option: $_choice"
-                    continue
-                fi
-                info "Data loading cancelled."
                 return 0
                 ;;
             "")

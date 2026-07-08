@@ -602,8 +602,7 @@ function Show-ExakitDataLoadMenu {
         if ($InstallMode) {
             Write-Host "    3. Skip for now"
         } else {
-            Write-Host "    3. Back"
-            Write-Host "    4. Terminate"
+            Write-Host "    3. Cancel (skip data loading)"
         }
         $defaultChoice = "1"
         $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
@@ -623,23 +622,15 @@ function Show-ExakitDataLoadMenu {
                 if ($InstallMode) {
                     Info "Skipping data load. Run it any time with: exakit data-load"
                 } else {
-                    Info "Data loading terminated."
+                    Info "Data loading cancelled."
                 }
-                return
-            }
-            "4" {
-                if ($InstallMode) {
-                    Warn2 "Unknown data loading option: $choice"
-                    continue
-                }
-                Info "Data loading terminated."
                 return
             }
             "" {
                 if ($InstallMode) {
                     Info "Skipping data load. Run it any time with: exakit data-load"
                 } else {
-                    Info "Data loading terminated."
+                    Info "Data loading cancelled."
                 }
                 return
             }
