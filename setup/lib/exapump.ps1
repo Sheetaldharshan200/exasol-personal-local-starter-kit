@@ -269,37 +269,98 @@ function Set-ExapumpTomlSection {
     Move-Item -Force $tmp $ConfigPath
 }
 
-# Test-ExapumpConnection - SELECT 1 through the new profile.
+# Test-ExapumpDdlRoundtrip - one DDL write-readback round through the profile.
+# Returns $true ONLY if a freshly created schema+table is durably persisted and
+# visible from SUBSEQUENT connections (each exapump invocation reconnects).
+#
+# This is the real readiness signal. Right after first boot the Nano database
+# accepts a connection and answers SELECT 1 while still stabilizing, and in that
+# window it can ACKNOWLEDGE a DDL batch ("N statements executed, 0 failed")
+# without durably persisting it - so the schema-creation step "succeeds" but the
+# very next `exapump upload` fails with "schema STARTER_KIT not found". The probe
+# reproduces exactly that sequence (create schema in one connection, reference it
+# from the next) so we only proceed once the database really is ready.
+function Test-ExapumpDdlRoundtrip {
+    $probe = "EXAKIT_READY_PROBE"
+    # Best-effort clean slate - a probe schema left by an interrupted earlier
+    # attempt must not make this one look like a success. Result ignored.
+    Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "DROP SCHEMA IF EXISTS $probe CASCADE") | Out-Null
+    if (-not (Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "CREATE SCHEMA $probe")).Success) { return $false }
+    # A NEW connection must see the just-created schema (this is the exact
+    # cross-connection visibility that failed during install) and persist a table.
+    $tableOk = (Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "CREATE TABLE $probe.READY_PROBE (n DECIMAL(9,0))")).Success `
+        -and (Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "INSERT INTO $probe.READY_PROBE VALUES (42)")).Success
+    $readBack = $false
+    if ($tableOk) {
+        $read = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT 'EXAKIT_DDL[' || CAST(n AS VARCHAR(10)) || ']' AS R FROM $probe.READY_PROBE")
+        $readBack = ($read.Success -and "$($read.Output)" -match 'EXAKIT_DDL\[42\]')
+    }
+    Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "DROP SCHEMA IF EXISTS $probe CASCADE") | Out-Null
+    return $readBack
+}
+
+# Confirm-ExapumpDatabaseReady - block until the database can durably persist a
+# schema, not merely answer SELECT 1. Polls Test-ExapumpDdlRoundtrip with a
+# bounded budget (EXAKIT_DDL_READY_TIMEOUT, default 180s) so the sample-data and
+# MCP steps that follow can trust that CREATE SCHEMA/TABLE will stick.
+function Confirm-ExapumpDatabaseReady {
+    $timeout = if ($env:EXAKIT_DDL_READY_TIMEOUT) { [int]$env:EXAKIT_DDL_READY_TIMEOUT } else { 180 }
+    Info "Confirming the database can persist schema changes"
+    $waited = 0
+    while ($true) {
+        if (Test-ExapumpDdlRoundtrip) {
+            if ($waited -eq 0) { Ok "Database is ready for schema changes" }
+            else { Ok "Database is ready for schema changes (after ~${waited}s)" }
+            return
+        }
+        if ($waited -ge $timeout) { break }
+        Start-Sleep -Seconds 5
+        $waited += 5
+        if ($waited % 30 -eq 0) { Info "Database still stabilizing... (${waited}s)" }
+    }
+    Fail "The database accepts connections but could not durably persist a schema within ${timeout}s (first-boot stabilization window). Wait a moment, then retry: exakit data-load"
+}
+
+# Test-ExapumpConnection - validate the profile with SELECT 1, then confirm the
+# database can durably persist DDL (Confirm-ExapumpDatabaseReady) before any
+# caller relies on CREATE SCHEMA sticking.
 function Test-ExapumpConnection {
     if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
         Fail "No connection profile exists (no database password was available to write one). Create it manually with 'exapump profile init $($script:ExapumpProfile)', then re-run this script."
     }
     Info "Validating the database connection (SELECT 1)"
+    $connected = $false
     $lastOutput = ""
     for ($tries = 0; $tries -lt 6; $tries++) {
         $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT 1")
         $lastOutput = $result.Output
-        if ($result.Success) {
-            Ok "Connection works"
-            Set-ExakitManifestValue "components.exapump.validated" $true
-            # Now that the password is proven to work, persist it as the runtime
-            # password if the runtime step could not (adopted deployment with
-            # unreadable secrets) - the MCP step needs runtime.password_file.
-            if ($script:PendingRuntimePassword) {
-                Set-ExakitCredential "runtime_sys_password" $script:PendingRuntimePassword
-                Set-ExakitManifestValue "runtime.password_file" (Join-Path $script:CredsDir "runtime_sys_password")
-                $script:PendingRuntimePassword = $null
-            }
-            return
-        }
+        if ($result.Success) { $connected = $true; break }
         Start-Sleep -Seconds 5
     }
-    # Surface the actual error inline instead of only in the log file - the
-    # exapump/database error text (auth failure vs. connection refused vs.
-    # TLS handshake error) is exactly what's needed to diagnose this, and
-    # making someone go dig through a log file for it is not production-grade.
-    Write-ExapumpOutput -Output $lastOutput -Header "Last attempt's output:"
-    Fail "SELECT 1 failed via profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
+    if (-not $connected) {
+        # Surface the actual error inline instead of only in the log file - the
+        # exapump/database error text (auth failure vs. connection refused vs.
+        # TLS handshake error) is exactly what's needed to diagnose this, and
+        # making someone go dig through a log file for it is not production-grade.
+        Write-ExapumpOutput -Output $lastOutput -Header "Last attempt's output:"
+        Fail "SELECT 1 failed via profile '$($script:ExapumpProfile)' after 6 attempts. Try: exapump sql -p $($script:ExapumpProfile) 'SELECT 1'"
+    }
+    Ok "Connection works"
+
+    # A working connection is NOT proof the database can persist schema changes
+    # yet - see Test-ExapumpDdlRoundtrip. Gate here so both the data-load and MCP
+    # steps that follow run against a database that is genuinely ready.
+    Confirm-ExapumpDatabaseReady
+
+    Set-ExakitManifestValue "components.exapump.validated" $true
+    # Now that the password is proven to work, persist it as the runtime
+    # password if the runtime step could not (adopted deployment with
+    # unreadable secrets) - the MCP step needs runtime.password_file.
+    if ($script:PendingRuntimePassword) {
+        Set-ExakitCredential "runtime_sys_password" $script:PendingRuntimePassword
+        Set-ExakitManifestValue "runtime.password_file" (Join-Path $script:CredsDir "runtime_sys_password")
+        $script:PendingRuntimePassword = $null
+    }
 }
 
 # Invoke-ExapumpSqlFile <file> [description] - execute a SQL file, logged.
@@ -432,13 +493,22 @@ function Get-ExakitUpperTableTarget {
     return "$(ConvertTo-UpperInvariantString $parts[0]).$(ConvertTo-UpperInvariantString $parts[1])"
 }
 
-function Confirm-ExakitSchemaExists {
+# Test-ExapumpSchemaPresent - read-only check that a schema exists, from a fresh
+# connection. Distinct from Confirm-ExakitSchemaExists, which also creates it.
+function Test-ExapumpSchemaPresent {
     param([Parameter(Mandatory)][string]$Schema)
     $schemaUc = ConvertTo-UpperInvariantString $Schema
     if (-not $schemaUc) { return $false }
     $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaUc') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS"
     $check = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
-    if ("$($check.Output)" -match "EXAKIT_SCHEMA_PRESENT") { return $true }
+    return ("$($check.Output)" -match "EXAKIT_SCHEMA_PRESENT")
+}
+
+function Confirm-ExakitSchemaExists {
+    param([Parameter(Mandatory)][string]$Schema)
+    $schemaUc = ConvertTo-UpperInvariantString $Schema
+    if (-not $schemaUc) { return $false }
+    if (Test-ExapumpSchemaPresent $schemaUc) { return $true }
     Info "Creating schema $schemaUc"
     $create = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "CREATE SCHEMA $schemaUc")
     if (-not $create.Success) { Fail "Could not create schema $schemaUc" }
@@ -659,10 +729,22 @@ function Invoke-ExakitSampleDataLoad {
 
     Info "Loading the sample dataset into schema $schema"
 
-    # 1. schema
+    # 1. schema. exapump can report a whole DDL batch as "0 failed" while the
+    # database (still stabilizing after first boot) persists none of it - which
+    # then surfaces as a misleading "schema not found" on the first upload. Do
+    # not trust the report: verify the schema is really there from a fresh
+    # connection, re-run the idempotent script once if it isn't, and fail loudly
+    # rather than marching into a guaranteed run of "schema not found" uploads.
     $schemaSql = Join-Path $KitRoot "sql\01_create_schema.sql"
     if ((Test-Path $schemaSql) -and (Get-Item $schemaSql).Length -gt 0) {
         Invoke-ExapumpSqlFile $schemaSql "schema creation (01_create_schema.sql)" | Out-Null
+        if (-not (Test-ExapumpSchemaPresent $schema)) {
+            Warn2 "Schema $schema is not present after creation - re-running the schema script"
+            Invoke-ExapumpSqlFile $schemaSql "schema creation (re-run)" | Out-Null
+            if (-not (Test-ExapumpSchemaPresent $schema)) {
+                Fail "Schema $schema was reported created but does not exist. The database may still be stabilizing after first boot; wait a moment and retry: exakit data-load"
+            }
+        }
     } else {
         Info "Pending: sql\01_create_schema.sql not present - skipping schema step"
     }
