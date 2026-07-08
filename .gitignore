@@ -5,3 +5,6 @@ __pycache__/
 # setup run logs
 *.log
 setup-test-*.log
+
+# Claude Code local state (worktrees, settings, session data)
+.claude/
