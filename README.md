@@ -157,7 +157,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.
 - **Version-aware updates** — installs resolve the latest component versions by default on Unix and Windows, record what was installed, and expose `exakit update-check` plus targeted updates such as `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, and `exakit update all`. Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan`, `exakit update personal --backup`, then `exakit update personal --apply`. Nano runtime updates keep the data volume, create pre-update runtime snapshot metadata, and try to restore the previous container image if the new one fails to start.
-- **Reversible lifecycle** — `exakit` supports status, configure, validate, repair, backup/restore, remove, doctor, and teardown flows.
+- **Reversible lifecycle** — `exakit` supports status, configure, validate, repair, backup/restore, remove, doctor, and uninstall flows.
 
 ## Repository layout
 
@@ -182,7 +182,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 | Behind a corporate proxy? | `export HTTPS_PROXY=...` and re-run |
 | Where's the deep-dive for my OS? | [macOS](quickstarts/macos.md) · [Windows + WSL](quickstarts/windows-wsl.md) · [Windows + Docker](quickstarts/windows-docker.md) |
 | Step-by-step to the first AI query? | [QUICKSTART](QUICKSTART.md) → [First workflow](demo/first-revenue-analysis.md) |
-| How do I remove everything? | `exakit teardown --data`, then `rm -rf ~/.exasol-starter-kit` |
+| How do I remove everything? | `exakit uninstall` (removes the database, kit home, and CLI binaries) |
 
 ---
 

@@ -98,7 +98,7 @@ exakit info                # connection details
 exakit stop                # stop the database (keeps all state)
 exakit start               # bring it back
 exakit logs                # latest setup log path
-exakit teardown --data     # remove everything database-related
+exakit uninstall           # remove everything the kit installed
 ```
 
 Re-running the installer is always safe — it skips what's done and repairs what isn't.

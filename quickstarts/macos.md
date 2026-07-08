@@ -72,4 +72,4 @@ Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 | Company-managed Mac blocks virtualization | Exasol Personal runs a local VM; if MDM policy blocks it, use a machine you control |
 | Where did everything go? | Binaries: `~/.local/bin` · state/logs/credentials: `~/.exasol-starter-kit` · database: `~/.exasol/personal` |
 
-Remove everything: `exakit teardown --data`, then `rm -rf ~/.exasol-starter-kit`.
+Remove everything: `exakit uninstall` (removes the database, kit home, and CLI binaries).

@@ -17,7 +17,6 @@ exakit	mcp-doctor	[clients]	Run MCP diagnostics and report problems.
 exakit	mcp-remove	[clients]	Remove the managed MCP config from the supported clients.
 exakit	mcp-restore	[snapshot]	Restore the latest (or a chosen) MCP config snapshot.
 exakit	skills-install		Install the kit's AI skills into ~/.claude/skills and ~/.agents/skills for CLI agents (Claude Code, Codex).
-exakit	teardown	[--data | -Data]	Remove the local runtime; --data also deletes the database volume.
 exakit	uninstall	[--yes | --dry-run]	Remove EVERYTHING the kit installed (database + data, MCP client configs, skills, exapump, kit home, CLI binaries). --dry-run previews; --yes skips the typed confirmation.
 exakit	logs		Print the path of the latest setup log.
 exakit	catalog	[search]	Browse or search every exakit, exapump, and exasol command (this screen).

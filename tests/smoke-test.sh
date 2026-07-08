@@ -83,4 +83,4 @@ say "forced reload finished in $(( $(date +%s) - start ))s"
 "$EXAKIT" status || true
 
 say "PASS (full: ${full_time}s, re-run: ${rerun_time}s, data load: ${load_time}s)"
-say "Teardown when you are done testing: exakit teardown --data"
+say "Teardown when you are done testing: exakit uninstall"

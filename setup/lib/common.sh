@@ -748,7 +748,7 @@ PY
 # Steps register undo commands as they make changes. On failure the handler
 # reports what failed and (interactively) offers to undo this run's changes.
 # Completed runs discard their rollback stack — the manifest is then the
-# source of truth for teardown.
+# source of truth for uninstall.
 # ---------------------------------------------------------------------------
 EXAKIT_ROLLBACK_FILE=""
 EXAKIT_CURRENT_STEP=""
@@ -2013,16 +2013,16 @@ exakit_uninstall_run() {
         [ "$_dry" = "1" ] || rm -rf "$1"
     }
 
-    # 1) Database + all data. Uses the runtime teardown (always --data), which
-    #    for Personal also reaps any orphaned runner daemon on the DB port.
+    # 1) Database + all data. Uses the runtime removal helper (always --data),
+    #    which for Personal also reaps any orphaned runner daemon on the DB port.
     _type="$(manifest_get runtime.type 2>/dev/null || true)"
     if [ -n "$_type" ]; then
         _step "local Exasol $_type deployment and ALL its data"
         if [ "$_dry" != "1" ]; then
             case "$_type" in
-                nano)     nano_teardown --data     || warn "Database teardown reported errors (continuing uninstall)" ;;
-                personal) personal_teardown --data || warn "Database teardown reported errors (continuing uninstall)" ;;
-                *)        warn "Unknown runtime type '$_type'; skipping database teardown" ;;
+                nano)     nano_teardown --data     || warn "Database removal reported errors (continuing uninstall)" ;;
+                personal) personal_teardown --data || warn "Database removal reported errors (continuing uninstall)" ;;
+                *)        warn "Unknown runtime type '$_type'; skipping database removal" ;;
             esac
         fi
     fi

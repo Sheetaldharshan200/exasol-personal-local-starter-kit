@@ -19,8 +19,6 @@
 #   mcp-restore [snapshot] restore the latest (or a chosen) MCP snapshot
 #   skills-install        install the kit's AI skills for CLI agents
 #                         (~\.claude\skills, ~\.agents\skills)
-#   teardown [-Data]      remove the runtime; -Data also deletes database
-#                         content (Nano volume)
 #   uninstall [-Yes] [-DryRun]
 #                         remove EVERYTHING the kit installed: database + all
 #                         data, MCP client configs, skills, exapump, the kit
@@ -92,18 +90,6 @@ function Invoke-CmdStop {
     switch (Get-RuntimeType) { "nano" { Stop-Nano } }
 }
 
-function Invoke-CmdTeardown {
-    param([switch]$Data)
-    Assert-ExakitInstalled
-    $type = Get-RuntimeType
-    Warn2 "This removes the local Exasol runtime ($type)."
-    if ($Data) { Warn2 "It will ALSO delete all database content." }
-    if (-not (Confirm-ExakitPrompt "Continue with teardown?" $false)) { Info "Teardown cancelled"; return }
-    switch ($type) { "nano" { Remove-Nano -Data:$Data } }
-    Ok "Teardown finished. Credentials, logs and the manifest remain in $script:ExakitHome"
-    Info "Remove them with: Remove-Item -Recurse -Force $script:ExakitHome"
-}
-
 # Invoke-ExakitUninstallRun -DryRun - remove every artifact the kit installs, in
 # dependency order: the local database and ALL its data, the managed MCP client
 # configs, the installed AI skills, the exapump profile, the kit home, and the
@@ -121,8 +107,8 @@ function Invoke-ExakitUninstallRun {
         } else {
             Info "Removing the local Exasol $type deployment and all data"
             switch ($type) {
-                "nano" { try { Remove-Nano -Data } catch { Warn2 "Database teardown reported errors (continuing uninstall)" } }
-                default { Warn2 "Unknown runtime type '$type'; skipping database teardown" }
+                "nano" { try { Remove-Nano -Data } catch { Warn2 "Database removal reported errors (continuing uninstall)" } }
+                default { Warn2 "Unknown runtime type '$type'; skipping database removal" }
             }
         }
     }
@@ -591,7 +577,7 @@ function Show-ExakitUsage {
         "  data-load            load the sample data or your own CSV / Parquet"
         "  mcp-doctor           check the AI (MCP) connection"
         ""
-        "Run 'exakit help --all' for every command (update, backup, repair, teardown, ...)."
+        "Run 'exakit help --all' for every command (update, backup, repair, uninstall, ...)."
     ) | ForEach-Object { Write-Host $_ }
 }
 
@@ -612,7 +598,6 @@ try {
         "mcp-remove"   { Invoke-CmdMcpOperation -Operation "uninstall" -OpArgs $RestArgs }
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
         "skills-install" { Invoke-CmdSkillsInstall }
-        "teardown"     { Invoke-CmdTeardown -Data:($RestArgs -contains "-Data" -or $RestArgs -contains "--data") }
         "uninstall"    { Invoke-CmdUninstall -AssumeYes:($RestArgs -contains "-Yes" -or $RestArgs -contains "--yes" -or $RestArgs -contains "-y") -DryRun:($RestArgs -contains "-DryRun" -or $RestArgs -contains "--dry-run" -or $RestArgs -contains "-n") }
         "logs"         { Invoke-CmdLogs }
         "catalog"      { Invoke-CmdCatalog -Search ($RestArgs | Select-Object -First 1) }

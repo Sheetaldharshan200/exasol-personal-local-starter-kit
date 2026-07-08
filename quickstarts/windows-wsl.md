@@ -74,4 +74,4 @@ Then continue with the [first workflow](../demo/first-revenue-analysis.md).
 | Database state after `wsl --shutdown` | Safe — data lives in the named Docker volume; `exakit start` brings it back |
 | WSL clock drift after laptop sleep | If TLS/downloads act strange: `sudo hwclock -s` |
 
-Remove everything: `exakit teardown --data` inside WSL, then `rm -rf ~/.exasol-starter-kit`.
+Remove everything: `exakit uninstall` inside WSL (removes the database, kit home, and CLI binaries).

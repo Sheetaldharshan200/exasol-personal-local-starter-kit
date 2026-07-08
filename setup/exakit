@@ -20,8 +20,6 @@
 #   mcp-restore         restore the latest (or a chosen) MCP snapshot
 #   skills-install      install the kit's AI skills for CLI agents
 #                       (~/.claude/skills, ~/.agents/skills)
-#   teardown [--data]   remove the runtime; --data also deletes database
-#                       content (Nano volume / Personal deployment)
 #   uninstall [--yes] [--dry-run]
 #                       remove EVERYTHING the kit installed: database + all
 #                       data, MCP client configs, skills, exapump, the kit home
@@ -95,22 +93,6 @@ cmd_stop() {
         nano)     nano_stop ;;
         personal) personal_stop ;;
     esac
-}
-
-cmd_teardown() {
-    _require_install
-    _type="$(_runtime_type)"
-    warn "This removes the local Exasol runtime ($_type)."
-    if [ "${1:-}" = "--data" ]; then
-        warn "It will ALSO delete all database content."
-    fi
-    confirm "Continue with teardown?" n || { info "Teardown cancelled"; exit 0; }
-    case "$_type" in
-        nano)     nano_teardown "${1:-}" || exit 1 ;;
-        personal) personal_teardown "${1:-}" || exit 1 ;;
-    esac
-    ok "Teardown finished. Credentials, logs and the manifest remain in $EXAKIT_HOME"
-    info "Remove them with: rm -rf $EXAKIT_HOME"
 }
 
 cmd_uninstall() {
@@ -279,7 +261,7 @@ Everyday commands:
   data-load            load the sample data or your own CSV / Parquet
   mcp-doctor           check the AI (MCP) connection
 
-Run 'exakit help --all' for every command (update, backup, repair, teardown, …).
+Run 'exakit help --all' for every command (update, backup, repair, uninstall, …).
 EOF
 }
 
@@ -360,7 +342,6 @@ case "${1:-help}" in
     mcp-remove) shift; cmd_mcp_remove "$@" ;;
     mcp-restore) shift; cmd_mcp_restore "$@" ;;
     skills-install) cmd_skills_install ;;
-    teardown) shift; cmd_teardown "${1:-}" ;;
     uninstall) shift; cmd_uninstall "$@" ;;
     logs)     cmd_logs ;;
     catalog)  shift; cmd_catalog "${1:-}" ;;
