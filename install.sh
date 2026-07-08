@@ -18,6 +18,14 @@
 #   EXAKIT_REF=...          override the git ref to install from
 #   EXAKIT_LOCAL_KIT=path   use a local checkout instead of downloading
 #                           (development / private-repo testing)
+#
+#   Non-interactive answers (for agent-driven or scripted installs, so the
+#   install honours a choice instead of silently taking the default):
+#   EXAKIT_REUSE_DB=0|1     reuse a running database (macOS): 0 deploy fresh, 1 reuse
+#   EXAKIT_MCP_CLIENTS=...  which MCP clients to configure: claude, cursor, codex,
+#                           all, or numbers (e.g. "claude,cursor" or "1,2")
+#   EXAKIT_SKIP_MCP=1       skip MCP client setup (run `exakit mcp-setup` later)
+#   EXAKIT_LOAD_SAMPLE=0|1  0 skip sample data, 1 load the bundled sample
 #   GITHUB_TOKEN=...        auth for downloading from a private repo
 #
 # Windows (PowerShell): use install.ps1 instead.

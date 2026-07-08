@@ -206,10 +206,11 @@ personal_deploy_local() {
     # Checked BEFORE the port test below so a healthy database that legitimately
     # owns port 8563 is offered for reuse rather than reported as a conflict.
     # Ask before adopting it — a piped/non-interactive install defaults to yes
-    # (reuse), which is the safe, idempotent choice for automation.
+    # (reuse), which is the safe, idempotent choice for automation. Set
+    # EXAKIT_REUSE_DB=0 to force a fresh deployment, =1 to reuse without asking.
     if personal_deployment_running; then
         info "An Exasol database is already running and reachable on port $EXAKIT_PERSONAL_PORT."
-        if confirm "Use the running database instead of deploying a new one?" y; then
+        if confirm_env EXAKIT_REUSE_DB "Use the running database instead of deploying a new one?" y; then
             ok "Reusing the existing Exasol deployment"
             personal_record_manifest
             return 0
