@@ -295,8 +295,18 @@ function Assert-ExakitPython {
 function Invoke-ExakitPython {
     param([Parameter(Mandatory)][string]$Script, [Parameter(ValueFromRemainingArguments)]$PyArgs)
     $tmp = [System.IO.Path]::GetTempFileName() + ".py"
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
         Set-Content -Path $tmp -Value $Script -Encoding UTF8
+        # Under the module-global $ErrorActionPreference = 'Stop', 2>&1 turns
+        # the interpreter's FIRST stderr write into a terminating error that
+        # tears the pipeline down - killing Python mid-run and surfacing only
+        # that first line instead of the intended "Python exited with code N"
+        # diagnostic. A script that merely warns on stderr while succeeding
+        # would abort the caller outright. 'Continue' captures the full
+        # output; the exit-code check below stays the real failure signal.
+        # Same fix as Invoke-Exapump / Invoke-ExakitLogged.
+        $ErrorActionPreference = "Continue"
         if (Test-ExakitSystemPython) {
             $out = & python $tmp @PyArgs 2>&1
         } else {
@@ -304,9 +314,11 @@ function Invoke-ExakitPython {
             $out = & $uv run --python $script:ManagedPythonVersion --no-project python $tmp @PyArgs 2>&1
         }
         $code = $LASTEXITCODE
+        $ErrorActionPreference = $previousErrorActionPreference
         if ($code -ne 0) { throw "Python exited with code ${code}: $out" }
         return ($out -join "`n")
     } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
     }
 }
