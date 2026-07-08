@@ -251,7 +251,7 @@ function Write-ExakitProgress([int]$Current, [int]$Total, [string]$Label = "") {
 # Render the install banner + plan (used by install.ps1 after download).
 function Write-ExakitInstallPlan {
     param([string]$Platform, [string]$Database, [string]$KitDir, [string]$StateDir)
-    Write-ExakitBanner "Personal Local Starter Kit" "Local database + exapump + MCP server + pyexasol"
+    Write-ExakitBanner "Personal Local Starter Kit"
     Start-ExakitPanel "Installation plan"
     Write-ExakitPanelLine "Platform:    $Platform"
     Write-ExakitPanelLine "Database:    $Database"

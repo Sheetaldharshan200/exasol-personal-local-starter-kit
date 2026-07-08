@@ -318,8 +318,7 @@ ui_progress() {
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     case "${1:-}" in
         __render_install_plan)
-            ui_banner "Personal Local Starter Kit" \
-                "Local database + exapump + MCP server + pyexasol"
+            ui_banner "Personal Local Starter Kit"
             ui_panel_begin "Installation plan"
             ui_panel_line "Platform:    ${EXAKIT_UI_PLATFORM:-unknown}"
             ui_panel_line "Database:    ${EXAKIT_UI_TARGET:-unknown}"
