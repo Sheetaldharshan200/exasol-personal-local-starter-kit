@@ -775,7 +775,7 @@ function Invoke-McpSetup {
         if (-not (Confirm-ExakitPrompt "Are you sure you want to continue without an AI client?" $true)) {
             return (Invoke-McpSetup)   # back to the menu
         }
-        Info "Okay — you can connect one any time with: exakit mcp-setup, Now you can connect database with sql-clients or using py-exasol"
+        Info "Okay - skipping AI client setup. Connect one any time with: exakit mcp-setup."
         Show-ExakitNoAiPanel
         return $true
     }
