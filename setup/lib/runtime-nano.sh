@@ -16,6 +16,9 @@ EXAKIT_NANO_CONTAINER="${EXAKIT_NANO_CONTAINER:-exasol-nano}"
 EXAKIT_NANO_VOLUME="${EXAKIT_NANO_VOLUME:-exasol-nano-data}"
 EXAKIT_NANO_MIN_RAM_GB="${EXAKIT_NANO_MIN_RAM_GB:-4}"
 EXAKIT_NANO_READY_TIMEOUT="${EXAKIT_NANO_READY_TIMEOUT:-600}"
+# Minimal image used only for the self-repair of root-owned state leftovers
+# (see nano_repair_creds); pulled on demand, never on the happy path.
+EXAKIT_NANO_REPAIR_IMAGE="${EXAKIT_NANO_REPAIR_IMAGE:-docker.io/library/busybox:stable}"
 
 # nano_engine — the usable container engine, cached after first call.
 nano_engine() {
@@ -49,16 +52,39 @@ nano_check_requirements() {
             ok "Container runtime: $_engine"
             ;;
         docker-stopped)
-            if wsl_docker_desktop_on_windows; then
-                error "Docker Desktop is running on Windows, but it is not connected to this WSL distro."
-                printf '    Enable it: Docker Desktop > Settings > Resources > WSL integration >\n' >&2
-                printf '    turn on this distro, click Apply & restart, then re-run this installer.\n' >&2
-                die "Enable Docker Desktop's WSL integration for this distro and re-run."
+            # Docker's CLI is present but its daemon did not respond. Podman was
+            # already tried as the fallback (detect_container_runtime checks it
+            # second), so tell the user the whole picture: what failed, what was
+            # tried, and how to fix either one.
+            if command -v podman >/dev/null 2>&1; then
+                _podman_hint="Podman was tried as a fallback, but its machine/service is not running either."
+                _podman_fix="start it: podman machine start (or: sudo systemctl start podman)"
+            else
+                _podman_hint="Podman was tried as a fallback, but it is not installed."
+                _podman_fix="install it (https://podman.io/docs/installation), then re-run"
             fi
-            die "Docker is installed but not running. Start Docker (e.g. open Docker Desktop) and re-run."
+            if wsl_docker_desktop_on_windows; then
+                error "Docker is installed but unreachable: Docker Desktop is running on Windows, but it is not connected to this WSL distro."
+                printf '    %s\n' "$_podman_hint" >&2
+                printf '    Fix either runtime and re-run this installer:\n' >&2
+                printf '      Docker:  Docker Desktop > Settings > Resources > WSL integration >\n' >&2
+                printf '               turn on this distro, then click Apply & restart\n' >&2
+                printf '      Podman:  %s\n' "$_podman_fix" >&2
+                die "No usable container runtime — connect Docker Desktop to this distro or provide Podman, then re-run."
+            fi
+            error "Docker is installed but unreachable (its daemon did not respond)."
+            printf '    %s\n' "$_podman_hint" >&2
+            printf '    Fix either runtime and re-run this installer:\n' >&2
+            printf '      Docker:  start it (e.g. open Docker Desktop, or: sudo systemctl start docker)\n' >&2
+            printf '      Podman:  %s\n' "$_podman_fix" >&2
+            die "No usable container runtime — start Docker or provide Podman, then re-run."
             ;;
         podman-stopped)
-            die "Podman is installed but its machine/service is not running. Try 'podman machine start' and re-run."
+            error "Podman is installed but its machine/service is not running (Docker was not found)."
+            printf '    Fix either runtime and re-run this installer:\n' >&2
+            printf '      Podman:  podman machine start (or: sudo systemctl start podman)\n' >&2
+            printf '      Docker:  install it (https://docs.docker.com/get-docker/)\n' >&2
+            die "No usable container runtime — start Podman or install Docker, then re-run."
             ;;
         none)
             error "No container runtime found. Exasol Nano needs Docker or Podman."
@@ -180,6 +206,42 @@ nano_start_existing() {
     nano_wait_ready
 }
 
+# nano_creds_poisoned — detect the debris a root Docker daemon leaves behind
+# when a container was ever started while the secret file was missing: Docker
+# creates the whole missing mount path as root-owned DIRECTORIES on the host.
+# The result is a credentials dir this user cannot write into and a
+# nano_sys_password that is a directory — every later install then dies with
+# a bare "Permission denied" (seen in the wild on WSL).
+nano_creds_poisoned() {
+    [ -d "${EXAKIT_CREDS_DIR}/nano_sys_password" ] && return 0
+    [ -d "$EXAKIT_CREDS_DIR" ] && [ ! -w "$EXAKIT_CREDS_DIR" ] && return 0
+    return 1
+}
+
+# nano_repair_creds — fix that state WITHOUT sudo: the user cannot delete
+# root-owned files, but the container engine's daemon (already a hard
+# requirement, already verified usable) runs as root — so let it remove the
+# bogus mount-path directory and hand the credentials dir back to this user.
+# Falls back to a precise manual remedy if the engine repair does not stick.
+nano_repair_creds() {
+    nano_creds_poisoned || return 0
+    _engine="$(nano_engine)"
+    warn "Found root-owned leftovers from an interrupted install in $(ui_tilde "$EXAKIT_CREDS_DIR")"
+    info "Repairing them via $_engine (no sudo needed)"
+    run_logged "$_engine" run --rm \
+        -v "${EXAKIT_CREDS_DIR}:/repair" \
+        "$EXAKIT_NANO_REPAIR_IMAGE" \
+        sh -c "[ -d /repair/nano_sys_password ] && rm -rf /repair/nano_sys_password; chown -R $(id -u):$(id -g) /repair" || true
+    if nano_creds_poisoned; then
+        error "Could not repair the credentials directory automatically."
+        printf '    An earlier interrupted install left root-owned files in it, and this\n' >&2
+        printf '    user (%s) cannot remove them. Remove them once, then re-run:\n' "$(id -un)" >&2
+        printf '      sudo rm -rf %s\n' "$EXAKIT_CREDS_DIR" >&2
+        die "Credentials directory $EXAKIT_CREDS_DIR is not writable."
+    fi
+    ok "Credentials directory repaired"
+}
+
 # nano_install — pull the resolved image and start the container (first run
 # deploys the database with a generated SYS password). Idempotent.
 nano_install() {
@@ -218,6 +280,7 @@ nano_install() {
         # First deployment: generate the SYS password up front and hand it to
         # the container as a read-only secret file. It is only applied when
         # /exa is empty; on an existing volume the previous password stays.
+        nano_repair_creds
         _password="$(read_credential nano_sys_password)"
         if [ -z "$_password" ]; then
             _password="$(generate_password)"
@@ -228,6 +291,13 @@ nano_install() {
         # harmless elsewhere, so apply it for podman across the board.
         _secret_mount="${EXAKIT_CREDS_DIR}/nano_sys_password:/run/secrets/sys_password:ro"
         [ "$_engine" = "podman" ] && _secret_mount="${_secret_mount},z"
+
+        # The secret must exist as a regular FILE before the engine sees the
+        # bind mount: if the path were missing, a root Docker daemon would
+        # create it as a root-owned directory on the host — the exact debris
+        # nano_repair_creds exists to clean up. Never hand it that chance.
+        [ -f "${EXAKIT_CREDS_DIR}/nano_sys_password" ] || \
+            die "Credential file ${EXAKIT_CREDS_DIR}/nano_sys_password is missing or not a regular file — re-run the installer."
 
         info "Starting Nano container ($EXAKIT_NANO_CONTAINER)"
         run_logged "$_engine" run -d \

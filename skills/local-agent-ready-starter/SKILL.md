@@ -65,15 +65,20 @@ options before piping a remote script into a shell:
   can be read first; installs nothing until the user runs the setup themselves.
 
 When **you** run the installer (no terminal is attached, so the install cannot prompt the
-user), it silently takes safe defaults — it would connect **Claude and Codex** over MCP and
-load the **bundled sample data** without asking. Instead, ask the user these questions first,
-then pass the answers so their choices are honored (macOS/Linux/WSL):
-- which MCP client(s) to connect → `EXAKIT_MCP_CLIENTS=claude` (also `cursor`, `codex`, `all`,
-  comma-separated, or numbers `1-3`); or `EXAKIT_SKIP_MCP=1` to set MCP up later via `exakit mcp-setup`
-- load the bundled sample data? → `EXAKIT_LOAD_SAMPLE=1` (yes) or `EXAKIT_LOAD_SAMPLE=0` (no)
+user), it silently takes safe defaults — it would load **every bundled dataset** and connect
+**every AI client found on the machine that isn't connected yet** over MCP, without asking.
+Instead, ask the user these questions first, then pass the answers so their choices are
+honored (macOS/Linux/WSL). Always use **names, not menu numbers** — numbers change between
+releases:
+- which MCP client(s) to connect → `EXAKIT_MCP_CLIENTS=claude` (`claude` = desktop app +
+  Claude Code CLI; also `claude_desktop`, `claude_code`, `codex`, `cursor`, `copilot`,
+  `gemini`, `all`, comma-separated); or `EXAKIT_SKIP_MCP=1` to set MCP up later via
+  `exakit mcp-setup`
+- which data to load → `EXAKIT_DATASETS=tpch,weather` (bundled dataset ids; wins over
+  `EXAKIT_LOAD_SAMPLE`), or `EXAKIT_LOAD_SAMPLE=1` (bundled sample) / `0` (skip data)
 - on macOS, if a database is already running → `EXAKIT_REUSE_DB=1` (reuse) or `0` (deploy fresh)
 
-Example: `curl -fsSL <install.sh URL> | EXAKIT_MCP_CLIENTS=claude EXAKIT_LOAD_SAMPLE=1 sh`.
+Example: `curl -fsSL <install.sh URL> | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh`.
 
 Tell the user what to expect: a detection summary, an install plan, then numbered steps
 ending in a connection panel — and the suggested first AI prompt is copied to the user's

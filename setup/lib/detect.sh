@@ -175,14 +175,27 @@ preflight_report() {
             docker)         _pf_ok "Container runtime: docker (running)" ;;
             podman)         _pf_ok "Container runtime: podman (running)" ;;
             docker-stopped)
-                if wsl_docker_desktop_on_windows; then
-                    _pf_bad "Docker Desktop is running on Windows but not connected to this WSL distro — Docker Desktop > Settings > Resources > WSL integration > enable this distro, Apply & restart"
+                if command -v podman >/dev/null 2>&1; then
+                    _pf_podman="Podman (the fallback) is installed but not running either"
                 else
-                    _pf_bad "Docker is installed but not running — start Docker (e.g. Docker Desktop), then re-run"
+                    _pf_podman="Podman (the fallback) is not installed"
+                fi
+                if wsl_docker_desktop_on_windows; then
+                    _pf_bad "Docker is unreachable: Docker Desktop runs on Windows but is not connected to this WSL distro (Docker Desktop > Settings > Resources > WSL integration > enable this distro, Apply & restart); $_pf_podman"
+                else
+                    _pf_bad "Docker is installed but unreachable (daemon not responding) — start Docker (e.g. Docker Desktop); $_pf_podman"
                 fi ;;
-            podman-stopped) _pf_bad "Podman is installed but not running — try: podman machine start" ;;
+            podman-stopped) _pf_bad "Podman is installed but not running (Docker not found) — try: podman machine start, or install Docker" ;;
             none)           _pf_bad "No container runtime — install Docker (docs.docker.com/get-docker) or Podman (podman.io)" ;;
         esac
+    fi
+
+    # leftover root-owned credentials (a root Docker daemon creates missing
+    # bind-mount paths as root-owned directories; an interrupted install can
+    # leave them behind — the installer repairs this automatically)
+    _pf_creds="${EXAKIT_CREDS_DIR:-$HOME/.exasol-starter-kit/credentials}"
+    if [ -d "$_pf_creds/nano_sys_password" ] || { [ -d "$_pf_creds" ] && [ ! -w "$_pf_creds" ]; }; then
+        _pf_note "Root-owned leftovers from an interrupted install in $_pf_creds — the installer repairs this automatically via the container engine"
     fi
 
     # port
@@ -224,34 +237,4 @@ preflight_report() {
         printf '%s requirement(s) missing — fix the items marked ✗ above and re-run.\n' "$_failures"
     fi
     return "$_failures"
-}
-
-# detect_summary — prints a human-readable report of everything above.
-# usage: detect_summary  (safe to call before any install decision)
-detect_summary() {
-    _os="$(detect_os)"
-    _arch="$(detect_arch)"
-    _ram="$(detect_ram_gb)"
-    _disk="$(detect_free_disk_gb "$HOME")"
-    _runtime="$(detect_container_runtime_detail)"
-
-    # Render as the shared rounded panel when the UI lib is loaded (the setup
-    # scripts source ui.sh before this); plain text when sourced standalone
-    # (e.g. the preflight-only path loads detect.sh without ui.sh).
-    if command -v ui_panel_begin >/dev/null 2>&1; then
-        ui_panel_begin "Detected environment"
-        ui_panel_line "OS:                $_os"
-        ui_panel_line "Architecture:      $_arch"
-        ui_panel_line "Memory:            $_ram GB"
-        ui_panel_line "Free disk (home):  $_disk GB"
-        ui_panel_line "Container runtime: $_runtime"
-        ui_panel_end
-    else
-        printf 'Detected environment:\n'
-        printf '  OS:                %s\n' "$_os"
-        printf '  Architecture:      %s\n' "$_arch"
-        printf '  Memory:            %s GB\n' "$_ram"
-        printf '  Free disk (home):  %s GB\n' "$_disk"
-        printf '  Container runtime: %s\n' "$_runtime"
-    fi
 }
