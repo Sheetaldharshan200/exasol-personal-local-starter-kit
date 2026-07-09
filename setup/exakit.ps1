@@ -590,6 +590,8 @@ try {
         "preflight"    { Test-NanoRequirements }
         "status"       { Invoke-CmdStatus }
         "version"      { Invoke-CmdVersion }
+        "--version"    { Invoke-CmdVersion }
+        "-v"           { Invoke-CmdVersion }
         "update-check"  { Invoke-CmdUpdateCheck -Target ($RestArgs | Select-Object -First 1) }
         "update"        { Invoke-CmdUpdate -Target ($RestArgs | Select-Object -First 1) }
         "info"         { Show-ExakitConnectionPanel }

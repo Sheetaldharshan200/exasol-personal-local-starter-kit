@@ -101,14 +101,14 @@ class MCPAccessSubsystem:
                 findings.append(
                     Finding(
                         code="client_not_detected",
-                        severity=Severity.WARNING,
-                        message=f"{adapter.display_name()} was not discovered on this machine.",
+                        severity=Severity.INFO,
+                        message=f"{adapter.display_name()} is not installed on this machine (skipped).",
                         scope={"client": adapter.adapter_id()},
                         evidence=detection.evidence,
-                        recommended_action="Use an explicit config-path override or open the client once before discovery.",
+                        recommended_action="Install the client (or pass an explicit config-path override) if you want it configured.",
                     )
                 )
-        status = OperationStatus.SUCCESS_WITH_WARNINGS if findings else OperationStatus.SUCCESS
+        status = self._status_from_findings(findings)
         summary = (
             f"Discovered {sum(client.detected for client in discovered_clients)} supported client(s)."
         )
@@ -601,7 +601,7 @@ class MCPAccessSubsystem:
         return OperationResult(
             request_id=request.request_id,
             operation=request.operation,
-            status=OperationStatus.SUCCESS_WITH_WARNINGS if findings else OperationStatus.SUCCESS,
+            status=self._status_from_findings(findings),
             summary=f"Tracked {len(active_artifacts)} managed artifact(s).",
             findings=findings,
             artifacts=active_artifacts,
@@ -677,17 +677,24 @@ class MCPAccessSubsystem:
         return OperationStatus.SUCCESS
 
     @staticmethod
-    def _combine_status(
-        existing_findings: list[Finding], validation_findings: list[Finding]
-    ) -> OperationStatus:
-        findings = existing_findings + validation_findings
+    def _status_from_findings(findings: list[Finding]) -> OperationStatus:
+        # Severity-aware: only WARNING or worse changes the outcome. INFO
+        # findings (a client that simply isn't installed, "no managed config
+        # recorded", etc.) are expected state, not problems, so they leave the
+        # status at SUCCESS instead of the misleading success_with_warnings.
         if any(finding.blocking or finding.severity == Severity.CRITICAL for finding in findings):
             return OperationStatus.BLOCKED
         if any(finding.severity == Severity.ERROR for finding in findings):
             return OperationStatus.FAILED_RECOVERABLE
-        if findings:
+        if any(finding.severity == Severity.WARNING for finding in findings):
             return OperationStatus.SUCCESS_WITH_WARNINGS
         return OperationStatus.SUCCESS
+
+    @staticmethod
+    def _combine_status(
+        existing_findings: list[Finding], validation_findings: list[Finding]
+    ) -> OperationStatus:
+        return MCPAccessSubsystem._status_from_findings(existing_findings + validation_findings)
 
     @staticmethod
     def _capabilities_dict(adapter: ClientAdapter) -> dict[str, object]:
