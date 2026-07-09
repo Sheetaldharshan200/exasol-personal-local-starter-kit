@@ -905,9 +905,12 @@ function Select-ExakitDataLoad {
         # The group row is itself a checkbox: pre-selected with every dataset;
         # unchecking it clears all datasets, after which the user can pick
         # them individually. Each dataset hangs off it with a tree connector
-        # ("├─"/"└─" on fancy terminals, "|-"/"`-" in plain mode) so the
+        # (UiTee/UiCorner from the ui palette; ASCII in plain mode) so the
         # parent-child relationship is visible, not just implied by indent.
-        if ($script:UiFancy) { $tee = "├─"; $corner = "└─" } else { $tee = "|-"; $corner = "``-" }
+        # The connectors must come from the palette, never as literals here:
+        # this file has no BOM, so Windows PowerShell 5.1 reads it as ANSI and
+        # raw glyph bytes break the parse of the whole script.
+        $tee = $script:UiTee; $corner = $script:UiCorner
         [void]$labels.Add("Sample datasets"); [void]$ids.Add("__group__")
         for ($i = 0; $i -lt $pending.Count; $i++) {
             if ($i -eq $pending.Count - 1) { $conn = $corner } else { $conn = $tee }

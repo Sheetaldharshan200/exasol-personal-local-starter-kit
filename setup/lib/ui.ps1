@@ -82,10 +82,12 @@ function Set-ExakitPalette {
     if ($script:UiFancy) {
         $script:UiTick="✓"; $script:UiCross="✗"; $script:UiBullet="•"; $script:UiArrow="▸"
         $script:UiHr="─"; $script:UiTL="╭"; $script:UiTR="╮"; $script:UiBL="╰"; $script:UiBR="╯"; $script:UiVB="│"
+        $script:UiTee="├─"; $script:UiCorner="└─"
         $script:UiBarFull="█"; $script:UiBarEmpty="░"
     } else {
         $script:UiTick="+"; $script:UiCross="x"; $script:UiBullet="-"; $script:UiArrow=">"
         $script:UiHr="-"; $script:UiTL="+"; $script:UiTR="+"; $script:UiBL="+"; $script:UiBR="+"; $script:UiVB="|"
+        $script:UiTee="|-"; $script:UiCorner='`-'
         $script:UiBarFull="#"; $script:UiBarEmpty="."
     }
 }
