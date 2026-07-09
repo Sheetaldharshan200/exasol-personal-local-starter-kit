@@ -6,6 +6,7 @@ exakit	update-check	[all|runtime|exakit|exapump|mcp|nano|personal]	Check latest 
 exakit	update	[all|runtime|exakit|exapump|mcp|nano|personal]	Update all or one component while preserving database data by default.
 exakit	update personal	[--plan|--backup|--apply]	Handle Exasol Personal major-version updates with an explicit non-destructive plan, deployment backup, and launcher apply step.
 exakit	info		Print the connection details panel (DSN, users, schema).
+exakit	guide		Friendly walkthrough: connect AI clients (MCP), SQL clients (DBeaver recommended), and Python (pyexasol).
 exakit	start		Start the local Exasol database container.
 exakit	stop		Stop the local Exasol database container.
 exakit	data-load	[--force | -Force]	Open the focused data-loading menu: bundled sample data or a local CSV/Parquet file. --force reloads the bundled sample.

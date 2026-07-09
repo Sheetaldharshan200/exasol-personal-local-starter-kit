@@ -10,6 +10,8 @@
 #   update [what]       update all or one component without deleting database data
 #                       Personal major upgrades support --plan, --backup, --apply
 #   info                print the connection details panel
+#   guide               friendly walkthrough: connect AI clients (MCP), SQL
+#                       clients (DBeaver), and Python (pyexasol)
 #   start               start the local database
 #   stop                stop the local database
 #   data-load [--force] open focused data loading options; --force reloads bundled sample data
@@ -333,6 +335,7 @@ case "${1:-help}" in
     update-check) shift; cmd_update_check "${1:-all}" ;;
     update) shift; cmd_update "$@" ;;
     info)     connection_panel ;;
+    guide)    exakit_guide ;;
     start)    cmd_start ;;
     stop)     cmd_stop ;;
     data-load) shift; cmd_data_load "${1:-}" ;;

@@ -771,7 +771,12 @@ function Invoke-McpSetup {
     $selection = Read-ExakitCheckboxMenu -Title "Select the AI clients to connect (MCP)" `
         -Options $menuLabels.ToArray() -Defaults $defaults -ExclusiveIndex $skipIdx
     if ($selection -contains $skipIdx) {
-        Info "Skipping MCP client setup - run 'exakit mcp-setup' any time to connect a client."
+        Warn2 "No AI client will be connected to your database."
+        if (-not (Confirm-ExakitPrompt "Are you sure you want to continue without an AI client?" $true)) {
+            return (Invoke-McpSetup)   # back to the menu
+        }
+        Info "Okay — you can connect one any time with: exakit mcp-setup, Now you can connect database with sql-clients or using py-exasol"
+        Show-ExakitNoAiPanel
         return $true
     }
     $clients = @($selection | Where-Object { $_ -lt $skipIdx } | ForEach-Object { $menuIds[$_ - 1] } | ForEach-Object { $_ })

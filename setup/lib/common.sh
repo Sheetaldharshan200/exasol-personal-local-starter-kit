@@ -2153,14 +2153,24 @@ exakit_mcp_setup() {
             _defaults="${_defaults:+$_defaults,}$_menu_i"
             _menu_i=$((_menu_i + 1))
         done
-        EXAKIT_CHECKBOX_EXCLUSIVE="$_skip_idx"
-        ui_checkbox_menu "Select the AI clients to connect (MCP)" "$_defaults" "${_menu_labels[@]}"
-        case ",$EXAKIT_CHECKBOX_SELECTION," in
-            *",$_skip_idx,"*)
-                info "Skipping MCP client setup — run 'exakit mcp-setup' any time to connect a client."
-                return 0
-                ;;
-        esac
+        # Loop so a not-confirmed skip returns the user to the menu.
+        while :; do
+            EXAKIT_CHECKBOX_EXCLUSIVE="$_skip_idx"
+            ui_checkbox_menu "Select the AI clients to connect (MCP)" "$_defaults" "${_menu_labels[@]}"
+            case ",$EXAKIT_CHECKBOX_SELECTION," in
+                *",$_skip_idx,"*)
+                    warn "No AI client will be connected to your database."
+                    if confirm "Are you sure you want to continue without an AI client?" y; then
+                        info "Okay — you can connect one any time with: exakit mcp-setup"
+                        exakit_print_no_ai_panel
+                        return 0
+                    fi
+                    printf '\n'
+                    continue                              # back to the menu
+                    ;;
+            esac
+            break
+        done
         _clients_csv=""
         for _client_idx in $(printf '%s' "$EXAKIT_CHECKBOX_SELECTION" | tr ',' ' '); do
             [ "$_client_idx" -ge 1 ] && [ "$_client_idx" -lt "$_skip_idx" ] || continue
@@ -2440,6 +2450,95 @@ connection_panel() {
 
     ui_panel_line "Manifest:     $(ui_tilde "$EXAKIT_MANIFEST")"
     ui_panel_line "Logs:         $(ui_tilde "$EXAKIT_LOG_DIR")"
+    ui_panel_line "SQL client:   DBeaver (recommended) — https://dbeaver.io/download/"
+    ui_panel_line "How to connect: exakit guide"
+    ui_panel_end
+    printf '\n'
+}
+
+# exakit_print_no_ai_panel — shown when the user skips MCP client setup: the
+# database is still fully usable without an AI assistant, and this says how.
+exakit_print_no_ai_panel() {
+    _nap_dsn="$(manifest_get runtime.dsn 2>/dev/null)"
+    _nap_host="${_nap_dsn%%:*}"; _nap_port="${_nap_dsn##*:}"
+    printf '\n'
+    ui_panel_begin "Using your database without an AI client"
+    ui_panel_line "Your database works great on its own — three easy ways in:"
+    ui_panel_line ""
+    ui_panel_line "GUI client:  DBeaver (recommended) — https://dbeaver.io/download/"
+    ui_panel_line "             New Connection > Exasol > Host ${_nap_host:-127.0.0.1} Port ${_nap_port:-8563}"
+    ui_panel_line "Python:      pyexasol is preinstalled in its own environment:"
+    ui_panel_line "             $(ui_tilde "$EXAKIT_HOME/pyexasol-venv/bin/python")"
+    ui_panel_line "Terminal:    exapump interactive -p starter-kit   (SQL shell)"
+    ui_panel_line ""
+    ui_panel_line "Step-by-step (credentials, TLS setting, first query):"
+    ui_panel_line "  exakit guide"
+    ui_panel_line "Changed your mind about AI? Any time:"
+    ui_panel_line "  exakit mcp-setup"
+    ui_panel_end
+    printf '\n'
+}
+
+# exakit_guide — friendly how-to-connect walkthrough: AI clients over MCP,
+# GUI SQL clients (DBeaver), and terminal/Python access. Everything below is
+# rendered from the live manifest so the values are the user's own.
+exakit_guide() {
+    [ -f "$EXAKIT_MANIFEST" ] || { warn "No installation found. Run the installer first."; return 1; }
+    _g_dsn="$(manifest_get runtime.dsn 2>/dev/null)"
+    _g_host="${_g_dsn%%:*}"; _g_port="${_g_dsn##*:}"
+    _g_host="${_g_host:-127.0.0.1}"; _g_port="${_g_port:-8563}"
+    _g_user="$(manifest_get runtime.user 2>/dev/null)"; _g_user="${_g_user:-sys}"
+    _g_pwfile="$(manifest_get runtime.password_file 2>/dev/null)"
+    _g_mcp_user="$(manifest_get components.mcp_server.connection.user 2>/dev/null || true)"
+
+    ui_banner "How to connect" "AI clients, SQL clients, Python — pick your door"
+
+    ui_panel_begin "1 · Ask questions with an AI client (MCP)"
+    ui_panel_line "Connect one or more AI clients in a single guided step:"
+    ui_panel_line "  exakit mcp-setup"
+    ui_panel_line "Supported: Claude, Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI"
+    ui_panel_line "Then restart/reload the client and look for the MCP server 'exasol'."
+    ui_panel_line ""
+    ui_panel_line "First thing to ask it:"
+    ui_panel_line "  \"List the schemas and tables in my Exasol database, then answer my"
+    ui_panel_line "   questions with read-only SQL — show me the SQL before you run it.\""
+    ui_panel_line "14 ready-made questions: data/example-questions.md (in the kit)"
+    ui_panel_end
+
+    ui_panel_begin "2 · Browse and query with a SQL client (GUI)"
+    ui_panel_line "DBeaver (recommended, free): https://dbeaver.io/download/"
+    ui_panel_line ""
+    ui_panel_line "In DBeaver: Database > New Database Connection > search 'Exasol'"
+    ui_panel_line "  Host:      $_g_host"
+    ui_panel_line "  Port:      $_g_port"
+    ui_panel_line "  User:      $_g_user"
+    [ -n "$_g_pwfile" ] && \
+    ui_panel_line "  Password:  cat $(ui_tilde "$_g_pwfile")"
+    [ -n "$_g_mcp_user" ] && \
+    ui_panel_line "  (read-only alternative: user $_g_mcp_user)"
+    ui_panel_line "  TLS:       local self-signed certificate — in Driver properties set"
+    ui_panel_line "             validateservercertificate = 0 (or add ;validateservercertificate=0"
+    ui_panel_line "             to the JDBC URL), then Test Connection > Finish."
+    ui_panel_line "Your data lives in schema STARTER_KIT."
+    ui_panel_end
+
+    ui_panel_begin "3 · Terminal and Python"
+    ui_panel_line "Interactive SQL shell:   exapump interactive -p starter-kit"
+    ui_panel_line "One-off query:           exapump sql -p starter-kit \"SELECT 42\""
+    ui_panel_line ""
+    ui_panel_line "Python (pyexasol preinstalled in its own environment):"
+    ui_panel_line "  $(ui_tilde "$EXAKIT_HOME/pyexasol-venv/bin/python")"
+    ui_panel_line "  import pyexasol"
+    ui_panel_line "  c = pyexasol.connect(dsn='$_g_host:$_g_port', user='$_g_user',"
+    ui_panel_line "                       password=open('<password file above>').read(),"
+    ui_panel_line "                       websocket_sslopt={'cert_reqs': 0})"
+    ui_panel_line "  c.export_to_pandas('SELECT * FROM STARTER_KIT.CUSTOMER LIMIT 5')"
+    ui_panel_end
+
+    ui_panel_begin "Everything else"
+    ui_panel_line "Connection summary:   exakit info"
+    ui_panel_line "Load more data:       exakit data-load"
+    ui_panel_line "Health check:         exakit status · exakit mcp-doctor"
     ui_panel_end
     printf '\n'
 }
