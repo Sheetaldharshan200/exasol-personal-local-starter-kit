@@ -116,7 +116,7 @@ function Invoke-ExakitUninstallRun {
     # 2) Managed MCP configuration in the AI clients. Best-effort.
     if (Get-Command Invoke-McpOperation -ErrorAction SilentlyContinue) {
         if ($DryRun) {
-            Info "  will remove: managed MCP configuration in Claude, Cursor, and Codex"
+            Info "  will remove: managed MCP configuration in Claude (desktop + Claude Code CLI), Cursor, and Codex"
         } else {
             Info "Removing managed MCP configuration from AI clients"
             try { [void](Invoke-McpOperation -Operation "uninstall" -InputArgs @()) }

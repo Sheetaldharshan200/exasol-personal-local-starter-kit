@@ -138,60 +138,78 @@ function Write-ExakitMenuHint([string]$Text) {
     else { Write-Host ("      {0}" -f $Text) }
 }
 # Read-ExakitCheckboxMenu (mirrors ui.sh's ui_checkbox_menu): multi-select
-# rendered as checkboxes - type numbers to toggle, Enter confirms. At least
-# one option must stay selected (Enter on an empty selection re-asks). In
-# fancy mode the block redraws in place so toggling feels live. Non-
-# interactive runs keep the defaults and say so. Returns the selected
-# 1-based indices, ascending.
+# rendered as checkboxes with a movable cursor - Up/Down (or j/k) move, Space
+# toggles the highlighted option, Enter confirms and moves to the next step
+# ("a" selects all). At least one option must stay selected (Enter on an
+# empty selection re-asks). In fancy mode the block redraws in place so
+# toggling feels live. Non-interactive runs keep the defaults and say so.
+# Returns the selected 1-based indices, ascending.
 function Read-ExakitCheckboxMenu {
-    param([string]$Title, [string[]]$Options, [int[]]$Defaults = @())
+    param([string]$Title, [string[]]$Options, [int[]]$Defaults = @(), [int]$ExclusiveIndex = 0)
+    # $ExclusiveIndex (1-based, 0 = none): an option that cannot be combined
+    # with the others - think "Skip for now". Selecting it clears every other
+    # choice; selecting any other choice clears it.
     Info $Title
     $sel = New-Object 'System.Collections.Generic.List[int]'
     foreach ($d in $Defaults) {
         if ($d -ge 1 -and $d -le $Options.Count -and -not $sel.Contains($d)) { [void]$sel.Add($d) }
     }
+    $applyExclusive = {
+        param($toggled)
+        if ($ExclusiveIndex -lt 1) { return }
+        if ($toggled -eq $ExclusiveIndex) {
+            if ($sel.Contains($ExclusiveIndex)) { $sel.Clear(); [void]$sel.Add($ExclusiveIndex) }
+        } elseif ($sel.Contains($ExclusiveIndex)) {
+            [void]$sel.Remove($ExclusiveIndex)
+        }
+    }
     if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
         foreach ($i in @($sel | Sort-Object)) { Ok ("{0} (selected by default)" -f $Options[$i - 1]) }
         return @($sel | Sort-Object)
     }
+    $cur = 1
     $firstDraw = $true
     while ($true) {
         if (-not $firstDraw -and $script:UiFancy) {
-            # redraw the block in place: options + hint + the answered prompt line
-            Write-Host ("{0}[{1}A{0}[0J" -f $script:UiEsc, ($Options.Count + 2)) -NoNewline
+            # redraw the block in place: options + hint line
+            Write-Host ("{0}[{1}A{0}[0J" -f $script:UiEsc, ($Options.Count + 1)) -NoNewline
         }
         $firstDraw = $false
         for ($i = 1; $i -le $Options.Count; $i++) {
+            $ptr = if ($i -eq $cur) { ">" } else { " " }
             if ($sel.Contains($i)) {
-                if ($script:UiFancy) { Write-Host ("      {0}[{1}]{2} {3}{4}.{5} {6}" -f $script:UiOk, $script:UiTick, $script:UiReset, $script:UiAccent, $i, $script:UiReset, $Options[$i - 1]) }
-                else { Write-Host ("      [x] {0}. {1}" -f $i, $Options[$i - 1]) }
+                if ($script:UiFancy) { Write-Host ("    {0} {1}[{2}]{3} {4}" -f $ptr, $script:UiOk, $script:UiTick, $script:UiReset, $Options[$i - 1]) }
+                else { Write-Host ("    {0} [x] {1}" -f $ptr, $Options[$i - 1]) }
             } else {
-                if ($script:UiFancy) { Write-Host ("      [ ] {0}{1}.{2} {3}" -f $script:UiAccent, $i, $script:UiReset, $Options[$i - 1]) }
-                else { Write-Host ("      [ ] {0}. {1}" -f $i, $Options[$i - 1]) }
+                Write-Host ("    {0} [ ] {1}" -f $ptr, $Options[$i - 1])
             }
         }
-        Write-ExakitMenuHint "type numbers to toggle - Enter to confirm"
-        if ($script:UiFancy) { Write-Host ("    {0}?{1} Selection: " -f $script:UiAsk, $script:UiReset) -NoNewline }
-        else { Write-Host "    ? Selection: " -ForegroundColor Cyan -NoNewline }
-        $answer = Read-Host
-        if ([string]::IsNullOrWhiteSpace($answer)) {
-            if ($sel.Count -gt 0) { break }
-            continue
+        Write-ExakitMenuHint "Up/Down move - Space select - Enter continue"
+        $key = [Console]::ReadKey($true)
+        $handled = $true
+        switch ($key.Key) {
+            "Enter"     { if ($sel.Count -gt 0) { return @($sel | Sort-Object) } }
+            "Spacebar"  {
+                if ($sel.Contains($cur)) { [void]$sel.Remove($cur) } else { [void]$sel.Add($cur) }
+                & $applyExclusive $cur
+            }
+            "UpArrow"   { $cur = if ($cur -gt 1) { $cur - 1 } else { $Options.Count } }
+            "DownArrow" { $cur = if ($cur -lt $Options.Count) { $cur + 1 } else { 1 } }
+            default     { $handled = $false }
         }
-        $tokens = @(($answer -replace ',', ' ') -split '\s+' | Where-Object { $_ })
-        if (@($tokens | Where-Object { $_ -match '^(?i)all$' }).Count -gt 0) {
-            $sel.Clear()
-            for ($i = 1; $i -le $Options.Count; $i++) { [void]$sel.Add($i) }
-            continue
-        }
-        foreach ($t in $tokens) {
-            if ($t -notmatch '^[0-9]+$') { continue }
-            $n = [int]$t
-            if ($n -lt 1 -or $n -gt $Options.Count) { continue }
-            if ($sel.Contains($n)) { [void]$sel.Remove($n) } else { [void]$sel.Add($n) }
+        if ($handled) { continue }
+        switch -Regex ([string]$key.KeyChar) {
+            '^[kK]$' { $cur = if ($cur -gt 1) { $cur - 1 } else { $Options.Count } }
+            '^[jJ]$' { $cur = if ($cur -lt $Options.Count) { $cur + 1 } else { 1 } }
+            '^[aA]$' {
+                # "all" means all real choices, never the exclusive option.
+                $sel.Clear()
+                for ($i = 1; $i -le $Options.Count; $i++) {
+                    if ($i -ne $ExclusiveIndex) { [void]$sel.Add($i) }
+                }
+            }
         }
     }
-    return @($sel | Sort-Object)
 }
 # ExakitFailException - a distinct exception type so callers can tell a
 # deliberate Fail() apart from an unexpected error. Bash's die() only halts

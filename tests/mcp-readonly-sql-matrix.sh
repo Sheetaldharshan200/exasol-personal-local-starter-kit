@@ -23,8 +23,18 @@ skip() { echo "SKIP: $1"; exit 0; }
 EXAPUMP="$(command -v exapump || echo "$HOME/.local/bin/exapump")"
 [ -x "$EXAPUMP" ] || skip "exapump not found (kit not installed)"
 [ -f "$CREDS/mcp_readonly_password" ] || skip "no mcp_readonly credential (kit not installed)"
-[ -f "$CREDS/runtime_sys_password" ]  || skip "no admin credential to run the grant-coverage check"
 [ -f "$MANIFEST" ] || skip "no manifest"
+
+# Admin credential: prefer the manifest's runtime.password_file (the stored
+# filename varies by runtime: runtime_sys_password / personal_sys_password).
+ADMIN_PW_FILE="$(grep -oE '"password_file"[[:space:]]*:[[:space:]]*"[^"]+"' "$MANIFEST" \
+    | sed -E 's/.*"([^"]+)"$/\1/' | grep -v 'mcp_readonly' | head -1)"
+if [ -z "$ADMIN_PW_FILE" ] || [ ! -f "$ADMIN_PW_FILE" ]; then
+    for _cand in "$CREDS/runtime_sys_password" "$CREDS/personal_sys_password"; do
+        [ -f "$_cand" ] && ADMIN_PW_FILE="$_cand" && break
+    done
+fi
+[ -n "$ADMIN_PW_FILE" ] && [ -f "$ADMIN_PW_FILE" ] || skip "no admin credential to run the grant-coverage check"
 
 # DSN host/port from the manifest (default to the local Personal endpoint).
 DSN="$(grep -oE '"dsn"[[:space:]]*:[[:space:]]*"[^"]+"' "$MANIFEST" | head -1 | sed -E 's/.*"([^"]+)"$/\1/')"
@@ -40,7 +50,7 @@ mkdir -p "$TMP/.exapump"
   printf '[mcpro]\nhost = "%s"\nport = %s\nuser = "mcp_readonly"\npassword = "%s"\ntls = true\nvalidate_certificate = false\n\n' \
         "$HOSTP" "$PORTP" "$(cat "$CREDS/mcp_readonly_password")"
   printf '[sysadm]\nhost = "%s"\nport = %s\nuser = "sys"\npassword = "%s"\ntls = true\nvalidate_certificate = false\n' \
-        "$HOSTP" "$PORTP" "$(cat "$CREDS/runtime_sys_password")"
+        "$HOSTP" "$PORTP" "$(cat "$ADMIN_PW_FILE")"
 } > "$TMP/.exapump/config.toml"
 chmod 600 "$TMP/.exapump/config.toml"
 

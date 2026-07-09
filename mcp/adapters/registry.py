@@ -5,6 +5,7 @@ from __future__ import annotations
 from mcp.core.errors import MCPSubsystemError
 
 from .base import ClientAdapter
+from .claude_code import ClaudeCodeAdapter
 from .claude_desktop import ClaudeDesktopAdapter
 from .codex import CodexAdapter
 from .cursor import CursorAdapter
@@ -20,6 +21,7 @@ class AdapterRegistry:
                 adapters
                 or [
                     ClaudeDesktopAdapter(),
+                    ClaudeCodeAdapter(),
                     CursorAdapter(),
                     CodexAdapter(),
                 ]

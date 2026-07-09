@@ -11,8 +11,8 @@
 # sample pipeline (exakit_load_sample_data in setup/lib/exapump.sh).
 #
 # Consumes files delivered with the kit, referenced by path:
-#   sql/01_create_schema.sql   sql/02_load_data.sql   sql/03_verify_setup.sql
-#   data/*.csv
+#   data/datasets/tpch/01_create_schema.sql .. 03_verify_setup.sql
+#   data/datasets/tpch/data/*.csv
 # Missing files are reported as pending, not errors.
 
 set -u

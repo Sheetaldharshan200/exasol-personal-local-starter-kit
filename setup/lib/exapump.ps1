@@ -634,13 +634,13 @@ function Request-ExakitOptionalVerification {
 
 function Import-ExakitLocalFile {
     while ($true) {
-        $rawPath = Read-ExakitPrompt "Local CSV/Parquet file path (type back to return)" ""
+        $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path (type back to return)" ""
         if ($rawPath -match '^(b|back)$') {
             Info "Returning to data loading options."
             return "back"
         }
         if (-not $rawPath) {
-            Warn2 "Please enter a local CSV/Parquet file path, or type back to return."
+            Warn2 "Please enter a local CSV/text/Parquet file path, or type back to return."
             continue
         }
         $path = Get-ExakitNormalizedPath $rawPath
@@ -707,135 +707,246 @@ function Invoke-ExakitSqlScript {
     Ok "SQL script completed"
 }
 
+# --- bundled dataset registry (mirrors exapump.sh) --------------------------
+# TPC-H is the original flat-layout dataset; every additional dataset is a
+# self-contained directory data/datasets/<id>/ with a dataset.conf (id=,
+# label=, markers=), a schema script, optional bulk CSVs, an optional
+# transform, and an optional verify script. All bundled datasets load into
+# STARTER_KIT so the read-only MCP user sees them without extra grants.
+function Get-ExakitBundledDatasets {
+    # Every dataset (TPC-H included) is discovered from its dataset.conf;
+    # nothing is hardcoded. A conf may set flag= to override the default
+    # manifest key (TPC-H keeps the historical data.loaded).
+    $datasets = @()
+    $kitRoot = Get-ExakitRepoRoot
+    if ($kitRoot) {
+        foreach ($conf in (Get-ChildItem -Path (Join-Path $kitRoot "data\datasets\*\dataset.conf") -ErrorAction SilentlyContinue)) {
+            $kv = @{}
+            foreach ($line in (Get-Content $conf)) {
+                if ($line -match '^([a-z_]+)=(.*)$') { $kv[$Matches[1]] = $Matches[2] }
+            }
+            if (-not $kv.id -or -not $kv.label) { continue }
+            $markers = @(($kv.markers -split ',') | Where-Object { $_ })
+            $flag = if ($kv.flag) { $kv.flag } else { "data.datasets.$($kv.id).loaded" }
+            $datasets += @{ Id = $kv.id; Label = $kv.label; Flag = $flag; Markers = $markers }
+        }
+    }
+    return $datasets
+}
+
+# Test-ExakitDbReachable - one cached probe per run: can we run SQL right now?
+$script:ExakitDbReachable = $null
+function Test-ExakitDbReachable {
+    if ($null -eq $script:ExakitDbReachable) {
+        $script:ExakitDbReachable = $false
+        if (Get-ExakitManifestValue "components.exapump.profile") {
+            $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "SELECT 1")
+            $script:ExakitDbReachable = [bool]$result.Success
+        }
+    }
+    return $script:ExakitDbReachable
+}
+
+# Test-ExakitTablePresent <table> - does the table exist in the kit schema?
+function Test-ExakitTablePresent {
+    param([Parameter(Mandatory)][string]$Table)
+    $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA.ToUpper() } else { "STARTER_KIT" }
+    $tableUc = $Table.ToUpper()
+    $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_TABLES WHERE TABLE_SCHEMA = '$schema' AND TABLE_NAME = '$tableUc') THEN 'EXAKIT_TABLE_PRESENT' ELSE 'EXAKIT_TABLE_MISSING' END AS STATUS"
+    $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
+    return ($result.Success -and $result.Output -match "EXAKIT_TABLE_PRESENT")
+}
+
+# Test-ExakitDatasetLoaded - the DATABASE is the source of truth: when it is
+# reachable, every marker table must exist (and the manifest flag is synced to
+# what was observed, so a destroy+redeploy that left a stale "loaded" flag
+# self-heals). Only when the database is unreachable do we fall back to the
+# manifest flag alone.
+function Test-ExakitDatasetLoaded {
+    param([Parameter(Mandatory)][hashtable]$Dataset)
+    if ((Test-ExakitDbReachable) -and $Dataset.Markers.Count -gt 0) {
+        foreach ($table in $Dataset.Markers) {
+            if (-not (Test-ExakitTablePresent $table)) {
+                if ((Get-ExakitManifestValue $Dataset.Flag) -eq $true) { Set-ExakitManifestValue $Dataset.Flag $false }
+                return $false
+            }
+        }
+        if ((Get-ExakitManifestValue $Dataset.Flag) -ne $true) { Set-ExakitManifestValue $Dataset.Flag $true }
+        return $true
+    }
+    return ((Get-ExakitManifestValue $Dataset.Flag) -eq $true)
+}
+
+# Datasets that are NOT loaded yet - drives the dynamic data menus.
+function Get-ExakitPendingDatasets {
+    return @(Get-ExakitBundledDatasets | Where-Object { -not (Test-ExakitDatasetLoaded $_) })
+}
+
+function Invoke-ExakitDatasetLoad {
+    param([Parameter(Mandatory)][string]$KitRoot, [Parameter(Mandatory)][string]$Id, [switch]$Force)
+    switch ($Id) {
+        "tpch" { Invoke-ExakitSampleDataLoad -KitRoot $KitRoot -Force:$Force }
+        default { Invoke-ExakitDatasetDirLoad -KitRoot $KitRoot -Id $Id -Force:$Force }
+    }
+}
+
+# Invoke-ExakitDatasetDirLoad - generic pipeline for a directory-based bundled
+# dataset: schema script, bulk files, optional transform, optional verify,
+# then record the manifest flag. Mirrors exakit_load_dataset_dir in exapump.sh.
+function Invoke-ExakitDatasetDirLoad {
+    param([Parameter(Mandatory)][string]$KitRoot, [Parameter(Mandatory)][string]$Id, [switch]$Force)
+    $dir = Join-Path $KitRoot "data\datasets\$Id"
+    $flag = "data.datasets.$Id.loaded"
+    $confPath = Join-Path $dir "dataset.conf"
+    if (Test-Path $confPath) {
+        foreach ($line in (Get-Content $confPath)) {
+            if ($line -match '^flag=(.+)$') { $flag = $Matches[1]; break }
+        }
+    }
+    $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA } else { "STARTER_KIT" }
+    if (-not (Test-Path $dir)) { Fail "Unknown bundled dataset: $Id (no $dir)" }
+    if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
+        Fail "No exapump connection profile is recorded - the exapump setup step has not completed. Re-run the installer, then retry."
+    }
+    if ((Get-ExakitManifestValue $flag) -eq $true -and -not $Force) {
+        Ok "Dataset '$Id' already loaded"
+        return
+    }
+    Info "Loading the '$Id' dataset into schema $schema"
+
+    # Schema script is OPTIONAL: exapump infers column types and creates the
+    # table itself when none exists; the script exists to pin exact types and
+    # primary keys. Verify the DDL really landed and re-run once if not.
+    $schemaSql = Join-Path $dir "01_create_schema.sql"
+    if ((Test-Path $schemaSql) -and (Get-Item $schemaSql).Length -gt 0) {
+        Invoke-ExapumpSqlFile $schemaSql "$Id schema (01_create_schema.sql)" | Out-Null
+        if (-not (Test-ExapumpSchemaPresent $schema.ToUpper())) {
+            Warn2 "Schema $schema is not present after creation - re-running the schema script"
+            Invoke-ExapumpSqlFile $schemaSql "$Id schema (re-run)" | Out-Null
+            if (-not (Test-ExapumpSchemaPresent $schema.ToUpper())) {
+                Fail "Schema $schema was reported created but does not exist. The database may still be stabilizing; wait a moment and retry: exakit data-load"
+            }
+        }
+    } else {
+        $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, "CREATE SCHEMA IF NOT EXISTS $($schema.ToUpper())")
+        if (-not $result.Success) { Fail "Could not create schema $schema." }
+    }
+
+    foreach ($csv in (Get-ChildItem -Path (Join-Path $dir "data\*.csv") -ErrorAction SilentlyContinue)) {
+        if ($csv.Length -eq 0) { continue }
+        $table = [System.IO.Path]::GetFileNameWithoutExtension($csv.Name).ToUpper()
+        Invoke-ExapumpUpload $csv.FullName "$schema.$table" | Out-Null
+    }
+
+    $loadSql = Join-Path $dir "02_load_data.sql"
+    if ((Test-Path $loadSql) -and (Get-Item $loadSql).Length -gt 0) {
+        Invoke-ExapumpSqlFile $loadSql "$Id load statements (02_load_data.sql)" | Out-Null
+    }
+
+    $verifySql = Join-Path $dir "03_verify_setup.sql"
+    if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
+        Info "Verification ($Id 03_verify_setup.sql):"
+        $result = Invoke-ExapumpSqlFileCapture $verifySql
+        Write-ExapumpOutput -Output $result.Output
+        if (-not $result.Success -or $result.Output -match "FAIL") {
+            Fail "Verification failed for dataset '$Id' - see the log. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
+        }
+    }
+
+    # Row-count summary over the dataset's tables (uploaded CSVs + markers).
+    $tables = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($csv in (Get-ChildItem -Path (Join-Path $dir "data\*.csv") -ErrorAction SilentlyContinue)) {
+        $t = [System.IO.Path]::GetFileNameWithoutExtension($csv.Name).ToUpper()
+        if (-not $tables.Contains($t)) { [void]$tables.Add($t) }
+    }
+    if (Test-Path $confPath) {
+        foreach ($line in (Get-Content $confPath)) {
+            if ($line -match '^markers=(.+)$') {
+                foreach ($t in ($Matches[1] -split ',')) {
+                    $tu = $t.Trim().ToUpper()
+                    if ($tu -and -not $tables.Contains($tu)) { [void]$tables.Add($tu) }
+                }
+            }
+        }
+    }
+    if ($tables.Count -gt 0) {
+        Start-ExakitPanel "Row counts"
+        foreach ($t in $tables) {
+            $rows = Get-ExapumpRowCount "$schema.$t"
+            $line = "{0,-30} {1} rows" -f "$schema.$t", $(if ($rows) { $rows } else { "?" })
+            Write-ExakitPanelLine $line
+            if ($script:LogFile) { "DATA  $line" | Add-Content -Path $script:LogFile }
+        }
+        Complete-ExakitPanel
+    }
+
+    Set-ExakitManifestValue $flag $true
+    Set-ExakitManifestValue "data.schema" $schema
+    Set-ExakitManifestValue "data.last_load.source" "dataset:$Id"
+    Ok "Dataset '$Id' loaded and verified"
+}
+
+# Select-ExakitDataLoad <final_label> - dynamic checkbox over the data
+# sources: every bundled dataset that is not loaded yet, then the local-file
+# option, then <final_label> as the mutually exclusive opt-out (Cancel/Skip).
+# When every bundled dataset is already loaded, only the local-file and
+# opt-out choices are shown, with the opt-out as the safe default. Returns a
+# string array of ids ("tpch", "local") or @("none").
+function Select-ExakitDataLoad {
+    param([Parameter(Mandatory)][string]$FinalLabel)
+    $labels = New-Object 'System.Collections.Generic.List[string]'
+    $ids = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($dataset in (Get-ExakitPendingDatasets)) {
+        [void]$labels.Add($dataset.Label)
+        [void]$ids.Add($dataset.Id)
+    }
+    $pendingCount = $ids.Count
+    [void]$labels.Add("A local CSV/text/Parquet file"); [void]$ids.Add("local")
+    [void]$labels.Add($FinalLabel);                     [void]$ids.Add("none")
+    $finalIdx = $labels.Count
+    if ($pendingCount -gt 0) {
+        $defaults = @(1..$pendingCount)
+    } else {
+        Info "Every bundled dataset is already loaded (reload with: exakit data-load -Force)."
+        $defaults = @($finalIdx)
+    }
+    $selection = Read-ExakitCheckboxMenu -Title "Select data to load" -Options $labels.ToArray() `
+        -Defaults $defaults -ExclusiveIndex $finalIdx
+    if ($selection -contains $finalIdx) { return @("none") }
+    $chosen = @($selection | Where-Object { $_ -lt $finalIdx } | ForEach-Object { $ids[$_ - 1] })
+    if ($chosen.Count -eq 0) { return @("none") }
+    return $chosen
+}
+
 function Show-ExakitDataLoadMenu {
     if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
         Fail "No exapump connection profile is recorded - re-run the installer, then retry."
     }
-
-    while ($true) {
-        Info "Choose a data loading option"
-        Write-ExakitMenuOption 1 "Bundled sample dataset (TPC-H)"
-        Write-ExakitMenuOption 2 "Local CSV/Parquet file"
-        Write-ExakitMenuOption 3 "Cancel (skip data loading)"
-        $defaultChoice = "1"
-        $choice = Read-ExakitPrompt "Choose data option" $defaultChoice
-        switch ($choice) {
-            "1" {
-                $kitRoot = Get-ExakitRepoRoot
-                if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
-                Invoke-ExakitSampleDataLoad -KitRoot $kitRoot
-                return
-            }
-            "2" {
-                $result = Import-ExakitLocalFile
-                if ($result -eq "back") { continue }
-                return
-            }
-            { $_ -match '^(3|b|back)$' } {
-                Info "Data loading cancelled."
-                return
-            }
-            "" {
-                Info "Data loading cancelled."
-                return
-            }
-            default { Warn2 "Unknown data loading option: $choice" }
+    $chosen = Select-ExakitDataLoad -FinalLabel "Cancel (load nothing)"
+    if ($chosen -contains "none") {
+        Info "Data loading cancelled."
+        return
+    }
+    foreach ($id in $chosen) {
+        if ($id -eq "local") {
+            $result = Import-ExakitLocalFile
+            if ($result -eq "back") { Info "Local file load skipped. Run it any time with: exakit data-load" }
+        } else {
+            $kitRoot = Get-ExakitRepoRoot
+            if (-not $kitRoot) { Fail "Could not find the kit's sql/ and data/ files to load." }
+            Invoke-ExakitDatasetLoad -KitRoot $kitRoot -Id $id
         }
     }
 }
 
-# Invoke-ExakitSampleDataLoad <kit_root> [-Force] - the full sample-data
-# pipeline: create the schema, bulk-load every data/*.csv, run any transform,
-# verify, then record the result in the manifest. One implementation, shared
-# by the installer's interactive offer, `exakit data-load --force`, and the guided
-# data-load menu's option 1, so the entry points cannot drift apart.
+# Invoke-ExakitSampleDataLoad <kit_root> [-Force] - the TPC-H sample-data
+# entry point, kept for its long-standing callers (the installer offer,
+# `exakit data-load -Force`, and setup-windows-docker.ps1). TPC-H now lives in
+# data\datasets\tpch like every other bundled dataset, so this simply
+# delegates to the generic directory pipeline.
 function Invoke-ExakitSampleDataLoad {
     param([Parameter(Mandatory)][string]$KitRoot, [switch]$Force)
-    $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA } else { "STARTER_KIT" }
-
-    if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
-        Fail "No exapump connection profile is recorded - the exapump setup step has not completed. Re-run the installer, then retry."
-    }
-
-    if ((Get-ExakitManifestValue "data.loaded") -eq $true -and -not $Force) {
-        Ok "Sample data already loaded (pass -Force to re-run)"
-        return
-    }
-
-    Info "Loading the sample dataset into schema $schema"
-
-    # 1. schema. exapump can report a whole DDL batch as "0 failed" while the
-    # database (still stabilizing after first boot) persists none of it - which
-    # then surfaces as a misleading "schema not found" on the first upload. Do
-    # not trust the report: verify the schema is really there from a fresh
-    # connection, re-run the idempotent script once if it isn't, and fail loudly
-    # rather than marching into a guaranteed run of "schema not found" uploads.
-    $schemaSql = Join-Path $KitRoot "sql\01_create_schema.sql"
-    if ((Test-Path $schemaSql) -and (Get-Item $schemaSql).Length -gt 0) {
-        Invoke-ExapumpSqlFile $schemaSql "schema creation (01_create_schema.sql)" | Out-Null
-        if (-not (Test-ExapumpSchemaPresent $schema)) {
-            Warn2 "Schema $schema is not present after creation - re-running the schema script"
-            Invoke-ExapumpSqlFile $schemaSql "schema creation (re-run)" | Out-Null
-            if (-not (Test-ExapumpSchemaPresent $schema)) {
-                Fail "Schema $schema was reported created but does not exist. The database may still be stabilizing after first boot; wait a moment and retry: exakit data-load"
-            }
-        }
-    } else {
-        Info "Pending: sql\01_create_schema.sql not present - skipping schema step"
-    }
-
-    # 2. data files
-    $dataDir = Join-Path $KitRoot "data"
-    $csvFiles = @(Get-ChildItem -Path $dataDir -Filter "*.csv" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 })
-    foreach ($csv in $csvFiles) {
-        $table = ConvertTo-UpperInvariantString ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name))
-        Invoke-ExapumpUpload $csv.FullName "$schema.$table" | Out-Null
-    }
-    if ($csvFiles.Count -eq 0) {
-        Info "Pending: no data files in data\ - nothing to load"
-        return
-    }
-
-    # 3. optional post-load transformations
-    $loadSql = Join-Path $KitRoot "sql\02_load_data.sql"
-    if ((Test-Path $loadSql) -and (Get-Item $loadSql).Length -gt 0) {
-        Invoke-ExapumpSqlFile $loadSql "load statements (02_load_data.sql)" | Out-Null
-    }
-
-    # 4. verify - a FAIL row or a query error blocks marking the data ready.
-    $verifySql = Join-Path $KitRoot "sql\03_verify_setup.sql"
-    if ((Test-Path $verifySql) -and (Get-Item $verifySql).Length -gt 0) {
-        Info "Verification (03_verify_setup.sql):"
-        $verify = Invoke-ExapumpSqlFileCapture $verifySql
-        # exapump's raw CSV is tool output - contain it in the dim gutter
-        # (mirrors ui.sh's exakit_stream_foreign).
-        "$($verify.Output)".Trim() -split "`n" | ForEach-Object {
-            if ($script:UiFancy) { Write-Host ("      {0}{1} {2}{3}" -f $script:UiDim, $script:UiVB, $_, $script:UiReset) }
-            else { Write-Host ("      | {0}" -f $_) }
-        }
-        # Two independent conditions: the query itself must have run (exapump
-        # success, exit-code-quirk-aware), AND no verification check may have
-        # emitted a STATUS = 'FAIL' row.
-        if ((-not $verify.Success) -or ("$($verify.Output)" -match "(?im)\bFAIL\b")) {
-            Fail "Verification failed (query error or a FAIL row) - see $script:LogFile. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
-        }
-    }
-
-    # 5. row-count summary + manifest flags
-    # Row-count summary as a panel, like the other summaries (mirrors ui.sh).
-    Start-ExakitPanel "Row counts"
-    foreach ($csv in $csvFiles) {
-        $table = ConvertTo-UpperInvariantString ([System.IO.Path]::GetFileNameWithoutExtension($csv.Name))
-        $rows = Get-ExapumpRowCount "$schema.$table"
-        $line = "{0,-30} {1} rows" -f "$schema.$table", $(if ($rows) { $rows } else { "?" })
-        Write-ExakitPanelLine $line
-        if ($script:LogFile) { "DATA  $line" | Add-Content -Path $script:LogFile }
-    }
-    Complete-ExakitPanel
-    Set-ExakitManifestValue "data.loaded" $true
-    Set-ExakitManifestValue "data.schema" $schema
-    Set-ExakitManifestValue "data.loaded_at" ((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
-    Ok "Sample data loaded and verified"
+    Invoke-ExakitDatasetDirLoad -KitRoot $KitRoot -Id "tpch" -Force:$Force
 }
 
 # Request-ExakitDataLoadOffer <kit_root> - interactively offer the guided
@@ -847,16 +958,22 @@ function Invoke-ExakitSampleDataLoad {
 # pwsh process instead (see setup-windows-docker.ps1).
 function Request-ExakitDataLoadOffer {
     param([Parameter(Mandatory)][string]$KitRoot)
-    # Data loading is a required install step: MCP validates against real
-    # tables, so the bundled sample is preselected; the checkbox menu keeps
-    # that default on non-interactive installs.
+    # Dynamic dataset checkbox (shared with `exakit data-load`): only bundled
+    # datasets that are not loaded yet are offered, pre-selected, plus the
+    # local-file option and an explicit skip. Non-interactive installs keep
+    # the pre-selected defaults.
     Info "The database is ready for data. Loading data now lets MCP validate against real tables."
-    $selection = Read-ExakitCheckboxMenu -Title "Select data to load" -Options @("Bundled sample dataset (TPC-H)", "A local CSV/text/Parquet file") -Defaults @(1)
-    if ($selection -contains 1) {
-        Invoke-ExakitSampleDataLoad -KitRoot $KitRoot
+    $chosen = Select-ExakitDataLoad -FinalLabel "Skip for now (no data loading)"
+    if ($chosen -contains "none") {
+        Info "Skipping data loading. Run it any time with: exakit data-load"
+        return
     }
-    if ($selection -contains 2) {
-        $result = Import-ExakitLocalFile
-        if ($result -eq "back") { Info "Local file load skipped. Run it any time with: exakit data-load" }
+    foreach ($id in $chosen) {
+        if ($id -eq "local") {
+            $result = Import-ExakitLocalFile
+            if ($result -eq "back") { Info "Local file load skipped. Run it any time with: exakit data-load" }
+        } else {
+            Invoke-ExakitDatasetLoad -KitRoot $KitRoot -Id $id
+        }
     }
 }

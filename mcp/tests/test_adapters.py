@@ -27,6 +27,7 @@ class AdditionalAdapterTests(unittest.TestCase):
                 "CLAUDE_DESKTOP_CONFIG_PATH": str(
                     self._temp_dir / "claude" / "claude_desktop_config.json"
                 ),
+                "CLAUDE_CODE_CONFIG_PATH": str(self._temp_dir / "claude-code" / ".claude.json"),
             },
             cwd=self._workspace,
         )
@@ -45,6 +46,7 @@ class AdditionalAdapterTests(unittest.TestCase):
     def test_json_backed_adapters_render_valid_documents(self) -> None:
         for adapter_id, top_level_key in (
             ("claude_desktop", "mcpServers"),
+            ("claude_code", "mcpServers"),
             ("cursor", "mcpServers"),
         ):
             with self.subTest(adapter=adapter_id):
@@ -115,9 +117,54 @@ class AdditionalAdapterTests(unittest.TestCase):
         self.assertIn('[projects."/Users/example/workspace"]', rendered.content or "")
         self.assertIn("[mcp_servers.exasol]", rendered.content or "")
 
+    def test_claude_code_adapter_preserves_cli_state(self) -> None:
+        # ~/.claude.json holds unrelated Claude Code CLI state; the adapter must
+        # edit only its mcpServers entry and never delete the file on removal.
+        adapter = self._registry.get("claude_code")
+        location = adapter.locate(self._environment)
+        assert location.path is not None
+        location.path.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "installMethod": "brew",
+            "projects": {"/Users/example/workspace": {"allowedTools": []}},
+            "mcpServers": {"other": {"command": "/tmp/other", "args": []}},
+        }
+        location.path.write_text(json.dumps(state), encoding="utf-8")
+
+        inspection = adapter.inspect(location.path, "exasol")
+        rendered = adapter.render(self._server, inspection)
+        self.assertEqual(adapter.validate_render(rendered), [])
+        payload = json.loads(rendered.content or "{}")
+        self.assertEqual(payload["installMethod"], "brew")            # state preserved
+        self.assertIn("/Users/example/workspace", payload["projects"])
+        self.assertIn("other", payload["mcpServers"])                 # foreign server kept
+        self.assertIn("exasol", payload["mcpServers"])                # ours added
+
+        location.path.write_text(rendered.content or "", encoding="utf-8")
+        inspection = adapter.inspect(location.path, "exasol")
+        removal = adapter.render_removal(inspection, "exasol")
+        self.assertFalse(removal.remove_file)                         # never delete the file
+        payload = json.loads(removal.content or "{}")
+        self.assertEqual(payload["installMethod"], "brew")
+        self.assertNotIn("exasol", payload.get("mcpServers", {}))
+        self.assertIn("other", payload.get("mcpServers", {}))
+
+    def test_claude_code_removal_keeps_file_even_when_empty(self) -> None:
+        adapter = self._registry.get("claude_code")
+        location = adapter.locate(self._environment)
+        assert location.path is not None
+        location.path.parent.mkdir(parents=True, exist_ok=True)
+        only_ours = {"mcpServers": {"exasol": {"command": "/tmp/uvx", "args": []}}}
+        location.path.write_text(json.dumps(only_ours), encoding="utf-8")
+        inspection = adapter.inspect(location.path, "exasol")
+        removal = adapter.render_removal(inspection, "exasol")
+        self.assertFalse(removal.remove_file)
+        self.assertEqual(json.loads(removal.content or "{}"), {})
+
     def test_discover_reports_supported_adapters(self) -> None:
         for adapter_id in (
             "claude_desktop",
+            "claude_code",
             "cursor",
             "codex",
         ):
