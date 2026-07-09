@@ -159,12 +159,35 @@ function Write-ExakitBoxBottom {
 
 # --- auto-width panel (sizes to the longest line) ---------------------------
 $script:UiPanelTitle = ""
+# Write-ExakitLink <url> [text] - a terminal hyperlink (OSC 8): clickable text
+# that opens <url>. Falls back to plain text when the session is not rendering
+# rich output. Windows Terminal, VS Code's terminal, and modern PowerShell
+# hosts render it; older consoles show the visible text.
+function Write-ExakitLink {
+    param([Parameter(Mandatory)][string]$Url, [string]$Text = "")
+    if (-not $Text) { $Text = $Url }
+    if ($script:UiFancy) {
+        return ([char]27 + "]8;;" + $Url + [char]27 + "\" + $Text + [char]27 + "]8;;" + [char]27 + "\")
+    }
+    return $Text
+}
+
+# Get-ExakitVisibleLength <string> - character length ignoring escape sequences
+# (CSI colour + OSC 8 hyperlink), so a panel line carrying either still lines up.
+function Get-ExakitVisibleLength {
+    param([AllowEmptyString()][string]$Text)
+    $esc = [char]27
+    $clean = [regex]::Replace($Text, [regex]::Escape($esc) + "\[[0-9;]*m", "")
+    $clean = [regex]::Replace($clean, [regex]::Escape($esc) + "\]8;;[^" + [regex]::Escape($esc) + [char]7 + "]*(" + [char]7 + "|" + [regex]::Escape($esc) + "\\)", "")
+    return $clean.Length
+}
+
 $script:UiPanelLines = @()
 function Start-ExakitPanel([string]$Title) { $script:UiPanelTitle = $Title; $script:UiPanelLines = @() }
 function Write-ExakitPanelLine([string]$Text) { $script:UiPanelLines += $Text }
 function Complete-ExakitPanel {
     $w = $script:UiPanelTitle.Length + 1
-    foreach ($l in $script:UiPanelLines) { if ($l.Length -gt $w) { $w = $l.Length } }
+    foreach ($l in $script:UiPanelLines) { $ll = Get-ExakitVisibleLength $l; if ($ll -gt $w) { $w = $ll } }
     $w = $w + 2
     $t = " $($script:UiPanelTitle) "
     $fill = $w - $t.Length - 1
@@ -173,7 +196,7 @@ function Complete-ExakitPanel {
         $script:UiAccent, ($script:UiTL + $script:UiHr), ($script:UiReset + $script:UiBold + $t + $script:UiReset), `
         $script:UiAccent, ($script:UiHr * $fill), $script:UiTR, $script:UiReset)
     foreach ($l in $script:UiPanelLines) {
-        $pad = $w - $l.Length - 2
+        $pad = $w - (Get-ExakitVisibleLength $l) - 2
         if ($pad -lt 0) { $pad = 0 }
         Write-Host ("  {0} {1}{2} {3}" -f `
             ($script:UiAccent + $script:UiVB + $script:UiReset), $l, (" " * $pad), `
