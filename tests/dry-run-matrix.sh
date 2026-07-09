@@ -72,8 +72,10 @@ printf '#!/bin/sh\nexit 0\n' > "$stub/docker" && chmod +x "$stub/docker"
 got="$(PATH="$stub:$PATH" bash -c ". '$ROOT/setup/lib/detect.sh'; detect_container_runtime")"
 check "runtime(docker up)" "docker" "$got"
 
-# podman only -> podman
-rm "$stub/docker"
+# podman only -> podman. The docker stub must FAIL rather than be removed:
+# the stub dir is prepended to the real PATH, so on a machine with a healthy
+# Docker the real binary would leak in and detection would return docker.
+printf '#!/bin/sh\nexit 1\n' > "$stub/docker" && chmod +x "$stub/docker"
 printf '#!/bin/sh\nexit 0\n' > "$stub/podman" && chmod +x "$stub/podman"
 got="$(PATH="$stub:$PATH" bash -c ". '$ROOT/setup/lib/detect.sh'; detect_container_runtime")"
 check "runtime(podman only)" "podman" "$got"

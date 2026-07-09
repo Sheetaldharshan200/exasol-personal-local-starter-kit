@@ -2350,14 +2350,24 @@ generate_password() {
 # Written atomically so an interrupted run can never leave a truncated secret.
 store_credential() {
     mkdir -p "$EXAKIT_CREDS_DIR" || die "Could not create the credentials directory $EXAKIT_CREDS_DIR."
-    chmod 700 "$EXAKIT_CREDS_DIR"
-    # Fail loudly on a write error (full disk / read-only home): a silently
-    # dropped secret makes a later step read an empty credential and either
-    # regenerate a mismatching password or die with a confusing message far
-    # from the real cause.
-    if ! printf '%s' "$2" > "$EXAKIT_CREDS_DIR/$1.tmp"; then
+    # chmod fails when the dir is owned by someone else (root-owned debris
+    # from an interrupted install) — the writability diagnosis below reports
+    # that case precisely, so don't let the raw chmod noise muddy the output.
+    chmod 700 "$EXAKIT_CREDS_DIR" 2>/dev/null || true
+    # Fail loudly on a write error: a silently dropped secret makes a later
+    # step read an empty credential and either regenerate a mismatching
+    # password or die with a confusing message far from the real cause.
+    # Diagnose the actual cause instead of guessing — an end user cannot
+    # act on "disk full or not writable?".
+    if ! printf '%s' "$2" > "$EXAKIT_CREDS_DIR/$1.tmp" 2>/dev/null; then
         rm -f "$EXAKIT_CREDS_DIR/$1.tmp" 2>/dev/null
-        die "Could not save credential '$1' to $EXAKIT_CREDS_DIR (disk full or not writable?)."
+        if [ -d "$EXAKIT_CREDS_DIR/$1" ]; then
+            die "Could not save credential '$1': $EXAKIT_CREDS_DIR/$1 exists as a directory (leftover from an interrupted install). Remove it with: sudo rm -rf $EXAKIT_CREDS_DIR — then re-run."
+        elif [ ! -w "$EXAKIT_CREDS_DIR" ]; then
+            _sc_owner="$(ls -ld "$EXAKIT_CREDS_DIR" 2>/dev/null | awk '{print $3}')"
+            die "Could not save credential '$1': $EXAKIT_CREDS_DIR is not writable by $(id -un) (owned by ${_sc_owner:-unknown} — leftover from an interrupted install). Remove it with: sudo rm -rf $EXAKIT_CREDS_DIR — then re-run."
+        fi
+        die "Could not save credential '$1' to $EXAKIT_CREDS_DIR (disk full or read-only filesystem?)."
     fi
     chmod 600 "$EXAKIT_CREDS_DIR/$1.tmp"
     mv "$EXAKIT_CREDS_DIR/$1.tmp" "$EXAKIT_CREDS_DIR/$1" || die "Could not save credential '$1'."
