@@ -19,6 +19,13 @@
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
 ```
 
+**Prefer to let your AI do it?** Paste this into Claude Code, Codex, or any coding agent:
+
+```text
+Install this and set it up completely so my AI tools can query the local
+database, then verify it works: https://github.com/ranjanm-chn/exasol-personal-local-starter-kit
+```
+
 </div>
 
 ---
