@@ -79,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the first database deployment takes 10–20 minutes. Container platforms are usually ready in a few minutes.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the database deploys natively, usually in a few minutes (the first run can take longer while it downloads the runtime on a slow connection). Container platforms are typically ready in a few minutes too.
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
@@ -87,7 +87,7 @@ The installer detects your OS and hardware, shows you the plan, then does the re
 
 ### 🤖 For AI agents
 
-Asked to install this repo? **Read [AGENTS.md](AGENTS.md)** — the agent runbook. The short version: the install command above runs **fully unattended** (no TTY → safe defaults, never hangs); answer its choices with the env vars in the blockquote above (**names, not numbers**); on macOS the first database deploy takes **10–20 minutes** — run it in the background and poll `exakit status` (a timed-out shell call is not a failure; re-running the installer resumes).
+Asked to install this repo? **Read [AGENTS.md](AGENTS.md)** — the agent runbook. The short version: the install command above runs **fully unattended** (no TTY → safe defaults, never hangs); answer its choices with the env vars in the blockquote above (**names, not numbers**); the macOS database deploy usually takes a few minutes (longer on a slow first download) — run it in the background and poll `exakit status` (a timed-out shell call is not a failure; re-running the installer resumes).
 
 ### Connect your AI assistant
 
@@ -121,7 +121,7 @@ Ask your assistant: *"Which product category generated the most revenue? Show me
 
 ### Sample data included
 
-So you're not staring at an empty database, the kit ships with a small sample dataset in [`data/`](data/) — standard **TPC-H** (a wholesale/retail model: customers, orders, line items, parts, suppliers) at ~21 MB. `setup/load-data.sh` loads it into the `STARTER_KIT` schema.
+So you're not staring at an empty database, the kit ships with **three bundled sample datasets** (detailed just below), led by standard **TPC-H** (a wholesale/retail model: customers, orders, line items, parts, suppliers). They load into the `STARTER_KIT` schema.
 
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
@@ -165,12 +165,12 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 ## Safety and operations
 
 - **Dedicated read-only MCP login** — the kit provisions and validates a least-privilege database user before managed MCP flows proceed.
-- **Local TLS handled for MCP clients** — generated Claude, Cursor, and Codex configs set `EXA_SSL_CERT_VALIDATION=no` only for the local self-signed `127.0.0.1` runtime; use trusted CA validation for real remote databases.
+- **Local TLS handled for MCP clients** — the generated MCP client configs set `EXA_SSL_CERT_VALIDATION=no` only for the local self-signed `127.0.0.1` runtime; use trusted CA validation for real remote databases.
 - **No preinstalled Python required** — the setup uses `python3` when present, otherwise it bootstraps a managed runtime through `uv`.
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.
 - **Version-aware updates** — installs resolve the latest component versions by default on Unix and Windows, record what was installed, and expose `exakit update-check` plus targeted updates such as `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, and `exakit update all`. Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan`, `exakit update personal --backup`, then `exakit update personal --apply`. Nano runtime updates keep the data volume, create pre-update runtime snapshot metadata, and try to restore the previous container image if the new one fails to start.
-- **Reversible lifecycle** — `exakit` supports status, configure, validate, repair, backup/restore, remove, doctor, and uninstall flows.
+- **Reversible lifecycle** — `exakit` manages the kit end to end: `status`, `start`/`stop`, `data-load`, MCP setup and maintenance (`mcp-setup`, `mcp-doctor`, `mcp-repair`, `mcp-remove`, `mcp-restore`), `logs`, and a guarded `uninstall`. Run `exakit help` (or `exakit catalog`) to see every command.
 
 ## Repository layout
 
@@ -187,7 +187,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 |---|---|
 | Do I need Rust / Python / Homebrew / git? | **No.** The installer brings everything it needs |
 | Does it cost anything? | No — Exasol Personal is free for personal use |
-| What sample data is included? | A ~21 MB TPC-H dataset in [`data/`](data/) — see the [data dictionary](data/data-dictionary.md) |
+| What sample data is included? | Three bundled datasets — TPC-H retail (~21 MB), smart-meter energy, and daily weather — all loaded into `STARTER_KIT`; see the [data dictionary](data/data-dictionary.md) |
 | "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
 | Docker Desktop runs on Windows but WSL can't see it? | Docker Desktop → Settings → Resources → **WSL integration** → enable your distro, Apply & restart (the installer detects and says this too) |
 | `exakit` not recognized after a Windows install? | Re-run the install command — it now adds `~\.local\bin` to your user PATH and repairs the command automatically |
