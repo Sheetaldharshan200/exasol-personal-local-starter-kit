@@ -345,7 +345,7 @@ cmd_catalog() {
 case "${1:-help}" in
     preflight) preflight_report ;;
     status)   cmd_status ;;
-    version)  cmd_version ;;
+    version|--version|-v)  cmd_version ;;
     update-check) shift; cmd_update_check "${1:-all}" ;;
     update) shift; cmd_update "$@" ;;
     info)     connection_panel ;;

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from mcp.core.models import OperationStatus
+from mcp.core.models import Finding, OperationStatus, Severity
 from mcp.runtime.environment import ExecutionEnvironment
 from mcp.service import MCPAccessSubsystem
 
@@ -198,3 +198,48 @@ class MCPSubsystemLifecycleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class StatusFromFindingsTests(unittest.TestCase):
+    """Run status must be severity-aware: INFO findings (a client that simply
+    isn't installed, or "no managed config recorded") are expected state and
+    must NOT downgrade a run to success_with_warnings."""
+
+    @staticmethod
+    def _f(severity: Severity, blocking: bool = False) -> Finding:
+        return Finding(code="x", severity=severity, message="m", blocking=blocking)
+
+    def test_no_findings_is_success(self) -> None:
+        self.assertEqual(MCPAccessSubsystem._status_from_findings([]), OperationStatus.SUCCESS)
+
+    def test_info_only_is_success(self) -> None:
+        # the fix: not-installed clients (INFO) no longer read as warnings
+        self.assertEqual(
+            MCPAccessSubsystem._status_from_findings([self._f(Severity.INFO), self._f(Severity.INFO)]),
+            OperationStatus.SUCCESS,
+        )
+
+    def test_warning_escalates(self) -> None:
+        self.assertEqual(
+            MCPAccessSubsystem._status_from_findings([self._f(Severity.INFO), self._f(Severity.WARNING)]),
+            OperationStatus.SUCCESS_WITH_WARNINGS,
+        )
+
+    def test_error_is_failed_recoverable(self) -> None:
+        self.assertEqual(
+            MCPAccessSubsystem._status_from_findings([self._f(Severity.ERROR)]),
+            OperationStatus.FAILED_RECOVERABLE,
+        )
+
+    def test_critical_or_blocking_is_blocked(self) -> None:
+        self.assertEqual(
+            MCPAccessSubsystem._status_from_findings([self._f(Severity.CRITICAL)]),
+            OperationStatus.BLOCKED,
+        )
+        self.assertEqual(
+            MCPAccessSubsystem._status_from_findings([self._f(Severity.WARNING, blocking=True)]),
+            OperationStatus.BLOCKED,
+        )
+
+
