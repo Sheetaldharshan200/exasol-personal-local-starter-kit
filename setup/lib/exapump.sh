@@ -728,21 +728,35 @@ exakit_data_load_select() {
     _dls_labels=()
     _dls_ids=()
     _dls_pending_n=0
+    # Collect the pending datasets first so we know which one is last and can
+    # give it the tree's corner connector.
+    _dls_pend_ids=()
+    _dls_pend_labels=()
     while IFS='|' read -r _dls_id _dls_label; do
         [ -n "$_dls_id" ] || continue
-        if [ "$_dls_pending_n" -eq 0 ]; then
-            # The group row is itself a checkbox: pre-selected with every
-            # dataset; unchecking it clears all datasets, after which the user
-            # can pick them individually.
-            _dls_labels+=("Sample datasets")
-            _dls_ids+=("__group__")
-        fi
-        _dls_labels+=("  $_dls_label")
-        _dls_ids+=("$_dls_id")
+        _dls_pend_ids+=("$_dls_id")
+        _dls_pend_labels+=("$_dls_label")
         _dls_pending_n=$((_dls_pending_n + 1))
     done <<EXAKIT_DLS_EOF
 $(exakit_pending_datasets)
 EXAKIT_DLS_EOF
+    if [ "$_dls_pending_n" -gt 0 ]; then
+        # The group row is itself a checkbox: pre-selected with every dataset;
+        # unchecking it clears all datasets, after which the user can pick
+        # them individually. Each dataset hangs off it with a tree connector
+        # ("├─"/"└─" on fancy terminals, "|-"/"`-" in plain mode) so the
+        # parent-child relationship is visible, not just implied by indent.
+        if [ "${UI_FANCY:-0}" = 1 ]; then _dls_tee="├─"; _dls_corner="└─"; else _dls_tee="|-"; _dls_corner="\`-"; fi
+        _dls_labels+=("Sample datasets")
+        _dls_ids+=("__group__")
+        _dls_i=0
+        while [ "$_dls_i" -lt "$_dls_pending_n" ]; do
+            if [ "$_dls_i" -eq $((_dls_pending_n - 1)) ]; then _dls_conn="$_dls_corner"; else _dls_conn="$_dls_tee"; fi
+            _dls_labels+=("$_dls_conn ${_dls_pend_labels[$_dls_i]}")
+            _dls_ids+=("${_dls_pend_ids[$_dls_i]}")
+            _dls_i=$((_dls_i + 1))
+        done
+    fi
     _dls_labels+=("A local CSV/Parquet file"); _dls_ids+=("local")
     _dls_labels+=("$_dls_final_label");        _dls_ids+=("none")
     _dls_final_idx="${#_dls_labels[@]}"
