@@ -190,6 +190,14 @@ preflight_report() {
         esac
     fi
 
+    # leftover root-owned credentials (a root Docker daemon creates missing
+    # bind-mount paths as root-owned directories; an interrupted install can
+    # leave them behind — the installer repairs this automatically)
+    _pf_creds="${EXAKIT_CREDS_DIR:-$HOME/.exasol-starter-kit/credentials}"
+    if [ -d "$_pf_creds/nano_sys_password" ] || { [ -d "$_pf_creds" ] && [ ! -w "$_pf_creds" ]; }; then
+        _pf_note "Root-owned leftovers from an interrupted install in $_pf_creds — the installer repairs this automatically via the container engine"
+    fi
+
     # port
     if port_in_use "${EXAKIT_DB_PORT:-8563}"; then
         _pf_note "Port ${EXAKIT_DB_PORT:-8563} is in use — fine if that is an existing local Exasol; otherwise stop the other application or set EXAKIT_DB_PORT"
