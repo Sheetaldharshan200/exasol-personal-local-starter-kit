@@ -114,7 +114,9 @@ exakit mcp-setup
 ```
 
 Tell the user that setup backs up and edits the selected client configs directly — it
-presents a checkbox multi-select of Claude, Cursor, and Codex with **Claude and Codex
+presents a checkbox multi-select of the supported clients (Claude Desktop, Claude Code,
+Cursor, Codex, VS Code Copilot, Gemini CLI). The menu is **dynamic**: only clients found on
+the machine that aren't already connected are listed, and **every listed (pending) client is
 pre-selected**. The user restarts the client afterward.
 
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not

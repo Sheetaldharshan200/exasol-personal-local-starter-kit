@@ -16,6 +16,8 @@
 #   data-load [-Force]    open focused data loading options; -Force reloads bundled sample data
 #   mcp-setup             permanently configure MCP in supported AI clients
 #   mcp-doctor [clients]  check MCP config, connectivity, and managed state
+#   mcp-status [clients]  show managed MCP state for the supported AI clients
+#   mcp-validate [clients] validate managed MCP configs and test connectivity
 #   mcp-repair [clients]  repair managed MCP config drift
 #   mcp-remove [clients]  remove managed MCP config from the supported clients
 #   mcp-restore [snapshot] restore the latest (or a chosen) MCP snapshot
@@ -598,6 +600,8 @@ try {
         "mcp-setup"    { Invoke-CmdMcpSetup }
         "mcp-repair"   { Invoke-CmdMcpOperation -Operation "repair" -OpArgs $RestArgs }
         "mcp-doctor"   { Invoke-CmdMcpOperation -Operation "doctor" -OpArgs $RestArgs }
+        "mcp-status"   { Invoke-CmdMcpOperation -Operation "status" -OpArgs $RestArgs }
+        "mcp-validate" { Invoke-CmdMcpOperation -Operation "validate" -OpArgs $RestArgs }
         "mcp-remove"   { Invoke-CmdMcpOperation -Operation "uninstall" -OpArgs $RestArgs }
         "mcp-restore"  { Invoke-CmdMcpRestore -SnapshotId ($RestArgs | Select-Object -First 1) }
         "skills-install" { Invoke-CmdSkillsInstall }

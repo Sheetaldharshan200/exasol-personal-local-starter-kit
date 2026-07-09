@@ -983,7 +983,8 @@ exakit_update_self() {
     fi
     if [ -f "$_kit_dir/setup/exakit" ]; then
         mkdir -p "$EXAKIT_BIN_DIR"
-        install -m 755 "$_kit_dir/setup/exakit" "$EXAKIT_BIN_DIR/exakit"
+        install -m 755 "$_kit_dir/setup/exakit" "$EXAKIT_BIN_DIR/exakit" \
+            || die "Could not install the exakit command to $EXAKIT_BIN_DIR (is it writable? is the disk full?)."
     else
         [ -d "$_backup" ] && { rm -rf "$_kit_dir"; mv "$_backup" "$_kit_dir"; }
         die "Updated kit did not contain setup/exakit after staging; previous kit copy was restored."
@@ -1434,7 +1435,11 @@ _exakit_run_exapump_sql() {
     _profile="$2"
     _sql="$3"
     _bin="$(exakit_exapump_bin)" || die "exapump is required for MCP read-only setup but was not found."
-    EXAPUMP_CONFIG="$_config_path" "$_bin" sql -p "$_profile" "$_sql"
+    # Feed the SQL over stdin, not as an argv: some of these statements are
+    # CREATE/ALTER USER … IDENTIFIED BY <password>, and an argv is visible to any
+    # local user via `ps` for the life of the call. stdin keeps it off the
+    # process table; callers still capture stdout exactly as before.
+    printf '%s\n' "$_sql" | EXAPUMP_CONFIG="$_config_path" "$_bin" sql -p "$_profile"
 }
 
 _exakit_exapump_sql_has_token() {

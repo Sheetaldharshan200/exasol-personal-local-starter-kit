@@ -25,6 +25,13 @@ bundled datasets are loaded and every AI client that is installed on the
 machine but not yet connected gets an MCP config. Nothing ever hangs waiting
 for input.
 
+One caveat if you drive a **WSL** install from the Windows side (`wsl.exe -- 
+bash -c "curl ... | sh"`): wsl.exe can attach a console that makes `/dev/tty`
+openable but never delivers keypresses, so the interactive menus render and
+block instead of taking defaults. Either run the command detached
+(`setsid sh -c '...' < /dev/null`) or pre-answer everything with the env vars
+below — then no prompt is ever reached.
+
 ## Answer the install's choices via environment variables
 
 Flags don't travel through a pipe, so choices are env vars. **Always use
@@ -50,8 +57,9 @@ curl -fsSL .../install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh
 
 ## Timing — read this before you run it
 
-- **macOS first install deploys a native Exasol database: 10–20 minutes.**
-  Container platforms (Linux/WSL/Windows) come up in a few minutes.
+- **macOS first install deploys a native Exasol database — usually a few
+  minutes** (the first run can take longer while it downloads the runtime on a
+  slow connection). Container platforms (Linux/WSL/Windows) are similar.
 - Your shell tool will likely **time out before the macOS deploy finishes**.
   That is not a failure. Run the install in the background (or with a raised
   timeout), then poll:

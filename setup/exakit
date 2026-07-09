@@ -17,6 +17,8 @@
 #   data-load [--force] open focused data loading options; --force reloads bundled sample data
 #   mcp-setup           permanently configure MCP in supported AI clients
 #   mcp-doctor          check MCP config, connectivity, and managed state
+#   mcp-status          show managed MCP state for the supported AI clients
+#   mcp-validate        validate managed MCP configs and test connectivity
 #   mcp-repair          repair managed MCP config drift
 #   mcp-remove          remove managed MCP config from the supported clients
 #   mcp-restore         restore the latest (or a chosen) MCP snapshot
@@ -222,6 +224,18 @@ cmd_mcp_doctor() {
     exakit_mcp_operation doctor "$@" || die "Could not run MCP diagnostics"
 }
 
+cmd_mcp_status() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation status "$@" || die "Could not read managed MCP state"
+}
+
+cmd_mcp_validate() {
+    _require_install
+    exakit_init_logging
+    exakit_mcp_operation validate "$@" || die "Could not validate managed MCP configuration"
+}
+
 cmd_mcp_remove() {
     _require_install
     exakit_init_logging
@@ -342,6 +356,8 @@ case "${1:-help}" in
     mcp-setup) cmd_mcp_setup ;;
     mcp-repair) shift; cmd_mcp_repair "$@" ;;
     mcp-doctor) shift; cmd_mcp_doctor "$@" ;;
+    mcp-status) shift; cmd_mcp_status "$@" ;;
+    mcp-validate) shift; cmd_mcp_validate "$@" ;;
     mcp-remove) shift; cmd_mcp_remove "$@" ;;
     mcp-restore) shift; cmd_mcp_restore "$@" ;;
     skills-install) cmd_skills_install ;;

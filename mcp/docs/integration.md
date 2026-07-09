@@ -37,7 +37,7 @@ The API design assumes the installer or upstream orchestration will hand this su
 - `credential_reference`
 - `dsn_reference`
 
-See [api-design.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/api-design.md) for the full request schema.
+See [api-design.md](api-design.md) for the full request schema.
 
 ## Result Contract
 
@@ -54,7 +54,7 @@ The subsystem should return structured results containing:
 - `verification_evidence`
 - `next_actions`
 
-See [api-design.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/api-design.md) for the full result schema.
+See [api-design.md](api-design.md) for the full result schema.
 
 ## Downstream Responsibilities
 
