@@ -34,6 +34,7 @@ if (-not (Get-Command Start-ExakitSpinner -ErrorAction SilentlyContinue)) {
         Set-Variable -Scope script -Name $v -Value ""
     }
     $script:UiTick = "+"; $script:UiCross = "x"; $script:UiArrow = ">"; $script:UiBullet = "-"; $script:UiVB = "|"
+    $script:UiTee = "|-"; $script:UiCorner = '`-'
     function Start-ExakitSpinner([string]$Label) { }
     function Stop-ExakitSpinner { }
     function Restore-ExakitCursor { }
@@ -340,8 +341,8 @@ class ExakitFailException : System.Exception {
 function Fail([string]$Msg) {
     Stop-ExakitSpinner
     Restore-ExakitCursor
-    # Rendered as a small "card": prominent ✗ header, then a dim gutter line to
-    # the log — the same shape as ui.sh's die().
+    # Rendered as a small "card": prominent cross header, then a dim gutter
+    # line to the log - the same shape as ui.sh's die().
     Write-Host ""
     if ($script:UiFancy) {
         Write-Host ("  {0}{1} {2}{3}{4}" -f $script:UiErr, $script:UiCross, $script:UiBold, $Msg, $script:UiReset)

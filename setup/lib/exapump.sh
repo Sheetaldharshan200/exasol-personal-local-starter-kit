@@ -744,9 +744,11 @@ EXAKIT_DLS_EOF
         # The group row is itself a checkbox: pre-selected with every dataset;
         # unchecking it clears all datasets, after which the user can pick
         # them individually. Each dataset hangs off it with a tree connector
-        # ("├─"/"└─" on fancy terminals, "|-"/"`-" in plain mode) so the
+        # (UI_TEE/UI_CORNER from the ui palette; ASCII in plain mode) so the
         # parent-child relationship is visible, not just implied by indent.
-        if [ "${UI_FANCY:-0}" = 1 ]; then _dls_tee="├─"; _dls_corner="└─"; else _dls_tee="|-"; _dls_corner="\`-"; fi
+        # Mirrors exapump.ps1, where the palette is mandatory: glyph literals
+        # in the BOM-less .ps1 twin break Windows PowerShell 5.1 parsing.
+        _dls_tee="${UI_TEE:-|-}"; _dls_corner="${UI_CORNER:-\`-}"
         _dls_labels+=("Sample datasets")
         _dls_ids+=("__group__")
         _dls_i=0
