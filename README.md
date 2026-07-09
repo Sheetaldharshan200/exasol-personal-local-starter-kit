@@ -13,7 +13,7 @@
 
 [![Documentation](https://img.shields.io/badge/docs-exasol.com-blue)](https://docs.exasol.com/db/latest/home.htm)
 [![Community](https://img.shields.io/badge/community-exasol-green)](https://community.exasol.com)
-[![Quickstart](https://img.shields.io/badge/first%20AI%20query-~15%20minutes-orange)](QUICKSTART.md)
+[![Quickstart](https://img.shields.io/badge/first%20AI%20query-~2%20min-orange)](QUICKSTART.md)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
@@ -43,7 +43,7 @@ You already use AI. The hard part is trusting it with your data. This kit gives 
 | 🤖 | **MCP server** | Lets Claude, Cursor, or other supported MCP clients query your database with a dedicated read-only login |
 | 🐍 | **pyexasol** | The official Exasol Python driver, ready in its own environment — script against your database from Python |
 
-At the end you get your connection details on screen, a managed runtime state under `~/.exasol-starter-kit/`, and guided MCP setup for supported clients. Time to first AI-assisted query: **about 15 minutes**.
+At the end you get your connection details on screen, a managed runtime state under `~/.exasol-starter-kit/`, and guided MCP setup for supported clients. Time to first AI-assisted query: **about 2 minutes** (on a fast connection; the one-time runtime download can add a few minutes).
 
 ---
 
