@@ -904,11 +904,15 @@ function Select-ExakitDataLoad {
     if ($pending.Count -gt 0) {
         # The group row is itself a checkbox: pre-selected with every dataset;
         # unchecking it clears all datasets, after which the user can pick
-        # them individually.
+        # them individually. Each dataset hangs off it with a tree connector
+        # ("├─"/"└─" on fancy terminals, "|-"/"`-" in plain mode) so the
+        # parent-child relationship is visible, not just implied by indent.
+        if ($script:UiFancy) { $tee = "├─"; $corner = "└─" } else { $tee = "|-"; $corner = "``-" }
         [void]$labels.Add("Sample datasets"); [void]$ids.Add("__group__")
-        foreach ($dataset in $pending) {
-            [void]$labels.Add("  $($dataset.Label)")
-            [void]$ids.Add($dataset.Id)
+        for ($i = 0; $i -lt $pending.Count; $i++) {
+            if ($i -eq $pending.Count - 1) { $conn = $corner } else { $conn = $tee }
+            [void]$labels.Add("$conn $($pending[$i].Label)")
+            [void]$ids.Add($pending[$i].Id)
         }
     }
     [void]$labels.Add("A local CSV/Parquet file"); [void]$ids.Add("local")
