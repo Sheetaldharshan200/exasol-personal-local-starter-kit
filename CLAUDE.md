@@ -5,8 +5,8 @@ runbook (install command, env-var answers, verification, uninstall).
 
 Claude-Code-specific tips:
 
-- The macOS first install deploys a database — **usually a few minutes**, but
-  the first run can take longer on a slow connection. Run the install command
+- The macOS first install deploys a database — **usually in under 2 minutes**.
+  Run the install command
   **in the background** and poll `exakit status` until it reports running — do
   not treat a long-running or timed-out foreground call as a failure.
   Re-running the installer is safe; it resumes.

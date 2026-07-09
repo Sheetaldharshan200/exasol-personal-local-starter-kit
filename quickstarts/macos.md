@@ -6,7 +6,7 @@ Gets you from a bare Mac to a local Exasol database with an AI assistant connect
 
 - macOS on Apple Silicon or Intel
 - 8 GB+ RAM, ~20 GB free disk
-- 15–25 minutes (the first database deployment takes 10–20 of them, unattended)
+- a few minutes end to end; the database deployment itself is usually under 2 minutes (unattended)
 
 Check before you start (installs nothing):
 
@@ -26,7 +26,7 @@ What happens, in order:
 
 1. Your Mac is detected (OS, chip, memory) and the plan is shown
 2. The Exasol launcher is downloaded (pinned version, checksum-verified) into `~/.local/bin`
-3. `exasol install local` deploys the database — **this is the 10–20 minute step**; output streams so you can watch it work
+3. `exasol install local` deploys the database — **usually under 2 minutes**; output streams so you can watch it work
 4. exapump (data loading CLI) is installed and a connection profile is created for you
 5. The MCP server (AI agent bridge) is set up, a dedicated `mcp_readonly` database user is created and validated, and the selected AI client configs are backed up and updated
 6. You get a connection panel: DSN, admin user, MCP user, where the passwords are stored, config paths

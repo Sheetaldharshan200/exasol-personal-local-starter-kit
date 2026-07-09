@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment takes 10–20 minutes (one-time); container platforms are up in a few minutes. The `exakit`/`exapump` commands below work the same way on native Windows PowerShell as on macOS/Linux/WSL — except Windows-on-ARM, which gets the database container only (see the [Windows Docker quickstart](quickstarts/windows-docker.md) for Windows-specific notes).
+What you'll see: a detection summary, the installation plan, then numbered steps — database, exapump, MCP server — ending in a **connection details panel**. On macOS the first database deployment usually finishes in under 2 minutes; container platforms are up in about the same time. The `exakit`/`exapump` commands below work the same way on native Windows PowerShell as on macOS/Linux/WSL — except Windows-on-ARM, which gets the database container only (see the [Windows Docker quickstart](quickstarts/windows-docker.md) for Windows-specific notes).
 
 > Prefer to read the scripts first? Add `EXAKIT_DRY_RUN=1` before `sh` — the kit is downloaded to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup script yourself.
 

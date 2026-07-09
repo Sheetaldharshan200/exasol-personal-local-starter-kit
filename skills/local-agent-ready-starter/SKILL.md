@@ -83,7 +83,7 @@ Example: `curl -fsSL <install.sh URL> | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASET
 Tell the user what to expect: a detection summary, an install plan, then numbered steps
 ending in a connection panel — and the suggested first AI prompt is copied to the user's
 clipboard automatically when a clipboard tool is available, ready to paste into their client.
-**On macOS the first database deployment takes 10–20 minutes**
+**On macOS the first database deployment usually finishes in under 2 minutes**
 (one-time); container platforms come up in a few minutes. Do not treat a long-running macOS
 deploy as a hang — it holds the foreground for a while. If you cannot keep a long foreground
 command open, have the user run the install command themselves and tell you when the
