@@ -543,15 +543,23 @@ exakit_run_sql_script() {
 # discovered from its dataset.conf; nothing is hardcoded here. A conf may set
 # flag= to override the default manifest key (TPC-H keeps the historical
 # data.loaded so existing installs stay recognized).
+# Read one key from a dataset.conf. The trailing-CR strip matters: a kit
+# copied from a Windows checkout can carry CRLF confs, and a CR-suffixed id
+# makes every dataset "Unknown" (gitattributes now pins these to LF, but a
+# pre-existing checkout keeps its old line endings).
+_exakit_dataset_conf_get() {
+    sed -n "s/^$1=//p" "$2" | head -1 | tr -d '\r'
+}
+
 exakit_bundled_datasets() {
     _bdr_root="$(exakit_repo_root 2>/dev/null)" || return 0
     for _bdr_conf in "$_bdr_root"/data/datasets/*/dataset.conf; do
         [ -f "$_bdr_conf" ] || continue
-        _bdr_id="$(sed -n 's/^id=//p' "$_bdr_conf" | head -1)"
-        _bdr_label="$(sed -n 's/^label=//p' "$_bdr_conf" | head -1)"
-        _bdr_markers="$(sed -n 's/^markers=//p' "$_bdr_conf" | head -1)"
-        _bdr_flag="$(sed -n 's/^flag=//p' "$_bdr_conf" | head -1)"
-        _bdr_order="$(sed -n 's/^order=//p' "$_bdr_conf" | head -1)"
+        _bdr_id="$(_exakit_dataset_conf_get id "$_bdr_conf")"
+        _bdr_label="$(_exakit_dataset_conf_get label "$_bdr_conf")"
+        _bdr_markers="$(_exakit_dataset_conf_get markers "$_bdr_conf")"
+        _bdr_flag="$(_exakit_dataset_conf_get flag "$_bdr_conf")"
+        _bdr_order="$(_exakit_dataset_conf_get order "$_bdr_conf")"
         [ -n "$_bdr_id" ] && [ -n "$_bdr_label" ] || continue
         [ -n "$_bdr_flag" ] || _bdr_flag="data.datasets.${_bdr_id}.loaded"
         case "$_bdr_order" in ''|*[!0-9]*) _bdr_order=50 ;; esac
@@ -636,7 +644,7 @@ exakit_load_dataset_dir() {
     [ -d "$_ld_dir" ] || die "Unknown bundled dataset: $_ld_id (no $_ld_dir)"
     # Honor a flag= override in dataset.conf (TPC-H keeps the historical
     # data.loaded key); default to the per-dataset key.
-    _ld_flag="$(sed -n 's/^flag=//p' "$_ld_dir/dataset.conf" 2>/dev/null | head -1)"
+    _ld_flag="$(_exakit_dataset_conf_get flag "$_ld_dir/dataset.conf" 2>/dev/null)"
     [ -n "$_ld_flag" ] || _ld_flag="data.datasets.${_ld_id}.loaded"
 
     [ -n "$(manifest_get components.exapump.profile 2>/dev/null)" ] || \
@@ -696,7 +704,7 @@ exakit_load_dataset_dir() {
 
     # Row-count summary over the dataset's tables: every uploaded CSV table
     # plus the conf's marker tables (covers SQL-generated tables too).
-    _ld_markers="$(sed -n 's/^markers=//p' "$_ld_dir/dataset.conf" 2>/dev/null | head -1 | tr ',' ' ')"
+    _ld_markers="$(_exakit_dataset_conf_get markers "$_ld_dir/dataset.conf" 2>/dev/null | tr ',' ' ')"
     for _ld_marker in $_ld_markers; do
         case " $_ld_tables " in *" $_ld_marker "*) ;; *) _ld_tables="$_ld_tables $_ld_marker" ;; esac
     done
