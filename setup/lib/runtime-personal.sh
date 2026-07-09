@@ -110,8 +110,9 @@ personal_install_launcher() {
     run_logged tar -xzf "$_tmp/$_asset" -C "$_tmp" || die "Could not extract $_asset"
     _binary="$(find "$_tmp" -name exasol -type f | head -1)"
     [ -n "$_binary" ] || die "The release archive did not contain an 'exasol' binary"
-    install -m 755 "$_binary" "$EXAKIT_PERSONAL_BIN"
-    push_rollback "rm -f $EXAKIT_PERSONAL_BIN"
+    install -m 755 "$_binary" "$EXAKIT_PERSONAL_BIN" \
+        || die "Could not install the Exasol launcher to $EXAKIT_PERSONAL_BIN (is it writable? is the disk full?)."
+    push_rollback "rm -f \"$EXAKIT_PERSONAL_BIN\""
     rm -rf "$_tmp"
 
     ensure_path_hint "$EXAKIT_BIN_DIR"

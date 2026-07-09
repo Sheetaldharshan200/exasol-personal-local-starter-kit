@@ -111,13 +111,22 @@ exapump_install() {
     fi
     if [ -n "$_expected" ]; then
         verify_sha256 "$_tmp" "$_expected"
+    elif [ "${EXAKIT_ALLOW_UNVERIFIED_EXAPUMP:-0}" = "1" ]; then
+        warn "No digest available for $_asset — proceeding WITHOUT checksum verification (EXAKIT_ALLOW_UNVERIFIED_EXAPUMP=1)."
     else
-        warn "No digest available for $_asset — continuing without checksum verification"
+        # Match the launcher's bar: never install a downloaded-and-executed
+        # binary we could not verify. For a released version the pinned digest
+        # in exapump_pinned_sha256 always resolves, so this only fires on an
+        # un-pinned version bump or an unreachable release API — both of which
+        # should fail loudly rather than run unverified code.
+        rm -f "$_tmp"
+        die "No checksum available for $_asset; refusing to install an unverified exapump binary. Add its digest to exapump_pinned_sha256 (version bump?) or check network access to the release API. Override at your own risk with EXAKIT_ALLOW_UNVERIFIED_EXAPUMP=1."
     fi
 
     mkdir -p "$EXAKIT_BIN_DIR"
-    install -m 755 "$_tmp" "$EXAKIT_EXAPUMP_BIN"
-    push_rollback "rm -f $EXAKIT_EXAPUMP_BIN"
+    install -m 755 "$_tmp" "$EXAKIT_EXAPUMP_BIN" \
+        || die "Could not install exapump to $EXAKIT_EXAPUMP_BIN (is it writable? is the disk full?)."
+    push_rollback "rm -f \"$EXAKIT_EXAPUMP_BIN\""
     rm -f "$_tmp"
     ensure_path_hint "$EXAKIT_BIN_DIR"
     ok "exapump installed: $EXAKIT_EXAPUMP_BIN"

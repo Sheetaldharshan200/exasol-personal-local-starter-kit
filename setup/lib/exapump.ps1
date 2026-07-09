@@ -181,8 +181,15 @@ function Install-Exapump {
     if (-not $expected) { $expected = Get-ExapumpDigestFromApi $asset }
     if ($expected) {
         Test-ExakitSha256 -Path $tmp -Expected $expected
+    } elseif ($env:EXAKIT_ALLOW_UNVERIFIED_EXAPUMP -eq "1") {
+        Warn2 "No digest available for $asset - proceeding WITHOUT checksum verification (EXAKIT_ALLOW_UNVERIFIED_EXAPUMP=1)."
     } else {
-        Warn2 "No digest available for $asset - continuing without checksum verification"
+        # Match the launcher's bar (and the bash twin in exapump.sh): never
+        # install a downloaded-and-executed binary we could not verify. For a
+        # released version the pinned digest always resolves, so this only
+        # fires on an un-pinned version bump or an unreachable release API.
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+        Fail "No checksum available for $asset; refusing to install an unverified exapump binary. Add its digest to the pinned list (version bump?) or check network access to the release API. Override at your own risk with EXAKIT_ALLOW_UNVERIFIED_EXAPUMP=1."
     }
 
     New-Item -ItemType Directory -Force -Path $script:BinDir | Out-Null

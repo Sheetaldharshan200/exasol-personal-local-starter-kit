@@ -55,6 +55,40 @@ class SecurityPolicyEdgeCaseTests(unittest.TestCase):
         )
         self.assertTrue(any(finding.code == "plaintext_credential_reference" for finding in findings))
 
+    def test_inline_env_plaintext_credential_is_warned(self) -> None:
+        # The path the installer actually uses: an inline_env reference whose
+        # value is embedded in the server env block (plaintext on disk).
+        findings = self.policy.preflight(
+            OperationRequest(
+                operation=OperationName.CONFIGURE,
+                deployment_mode=DeploymentMode.STDIO,
+                server_definition=ServerDefinition(
+                    transport=DeploymentMode.STDIO,
+                    name="exasol",
+                    command="uvx",
+                    env={"EXA_PASSWORD": "s3cret"},
+                ),
+                credential_reference=CredentialReference(kind="inline_env", name="EXA_PASSWORD"),
+            )
+        )
+        self.assertTrue(any(finding.code == "plaintext_credential_reference" for finding in findings))
+
+    def test_inline_env_without_embedded_value_is_not_warned(self) -> None:
+        # A pure env-var reference (no value written to the config) is not plaintext.
+        findings = self.policy.preflight(
+            OperationRequest(
+                operation=OperationName.CONFIGURE,
+                deployment_mode=DeploymentMode.STDIO,
+                server_definition=ServerDefinition(
+                    transport=DeploymentMode.STDIO,
+                    name="exasol",
+                    command="uvx",
+                ),
+                credential_reference=CredentialReference(kind="inline_env", name="EXA_PASSWORD"),
+            )
+        )
+        self.assertFalse(any(finding.code == "plaintext_credential_reference" for finding in findings))
+
 
 if __name__ == "__main__":
     unittest.main()

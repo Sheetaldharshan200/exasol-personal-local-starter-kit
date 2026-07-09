@@ -487,6 +487,10 @@ function Install-ExakitUv {
     try {
         $env:UV_NO_MODIFY_PATH = "1"
         $env:INSTALLER_NO_MODIFY_PATH = "1"
+        # HARDENING (eval-report): this fetches and executes the uv installer
+        # unpinned/unverified, unlike the kit's checksum-verified artifacts.
+        # Pin/verify to match the bash twin's chosen approach (keep both sides
+        # identical). Behavior intentionally unchanged here pending that fix.
         Invoke-Expression (Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1") *>> $script:LogFile
     } catch {
         Fail "uv installation failed (see log): $_"

@@ -28,21 +28,26 @@ mcp/
 
 ## Current Implementation Scope
 
-- Public orchestration entry point: [service.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/service.py)
-- Verified live client adapters: [claude_desktop.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/adapters/claude_desktop.py), [cursor.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/adapters/cursor.py), [codex.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/adapters/codex.py)
-- Runtime manifest and snapshots: [manifest.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/manifest.py), [snapshots.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/snapshots.py)
-- Installed-runtime permanent client setup: [exakit.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/runtime/exakit.py), [cli.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/cli.py)
+- Public orchestration entry point: [service.py](service.py)
+- Client adapters (six shipped): [claude_desktop.py](adapters/claude_desktop.py), [claude_code.py](adapters/claude_code.py), [cursor.py](adapters/cursor.py), [codex.py](adapters/codex.py), [vscode_copilot.py](adapters/vscode_copilot.py), [gemini_cli.py](adapters/gemini_cli.py)
+- Runtime manifest and snapshots: [manifest.py](runtime/manifest.py), [snapshots.py](runtime/snapshots.py)
+- Installed-runtime permanent client setup: [exakit.py](runtime/exakit.py), [cli.py](cli.py)
 
 ## Runtime Client Setup
 
-When the starter kit runtime is already installed and its manifest contains the MCP connection details, the MCP package can permanently configure:
+When the starter kit runtime is already installed and its manifest contains the MCP connection details, the MCP package can configure any of the six supported clients:
 
-- Claude
+- Claude Desktop
+- Claude Code (CLI)
 - Cursor
 - Codex
+- VS Code (GitHub Copilot)
+- Gemini CLI
+
+The setup menu is dynamic: it offers only the clients found on the machine that are not already connected, and pre-selects every one it offers.
 
 ## Remaining Gaps
 
 - Native Windows PowerShell installer parity still needs the same no-preinstalled-Python treatment as the shell flow
 
-See [architecture.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/architecture.md) for the governing component boundaries.
+See [architecture.md](docs/architecture.md) for the governing component boundaries.

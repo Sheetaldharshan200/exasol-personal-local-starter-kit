@@ -50,8 +50,9 @@ curl -fsSL .../install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh
 
 ## Timing — read this before you run it
 
-- **macOS first install deploys a native Exasol database: 10–20 minutes.**
-  Container platforms (Linux/WSL/Windows) come up in a few minutes.
+- **macOS first install deploys a native Exasol database — usually a few
+  minutes** (the first run can take longer while it downloads the runtime on a
+  slow connection). Container platforms (Linux/WSL/Windows) are similar.
 - Your shell tool will likely **time out before the macOS deploy finishes**.
   That is not a failure. Run the install in the background (or with a raised
   timeout), then poll:
