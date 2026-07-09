@@ -160,7 +160,13 @@ preflight_report() {
         else _pf_bad "$_tool missing — install it with your package manager"; fi
     done
     if command -v python3 >/dev/null 2>&1; then
-        _pf_ok "python3 available"
+        # The kit's tooling needs 3.11+ (tomllib); an older system python is
+        # fine — the installer switches to its managed runtime automatically.
+        if python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 11) else 1)' 2>/dev/null; then
+            _pf_ok "python3 available"
+        else
+            _pf_ok "python3 available but older than 3.11 — the installer will use its managed Python runtime automatically"
+        fi
     elif command -v uv >/dev/null 2>&1 || [ -x "${HOME}/.local/bin/uv" ]; then
         _pf_ok "uv available — it can provide Python automatically"
     elif [ "$_os" = "macos" ]; then
