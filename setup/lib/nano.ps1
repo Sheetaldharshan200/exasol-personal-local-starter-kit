@@ -79,7 +79,8 @@ function Test-NanoRequirements {
         if ($ramGb -lt 0) {
             Fail "Could not determine this machine's memory. Set EXAKIT_FORCE=1 to install anyway."
         } elseif ($ramGb -lt $script:NanoMinRamGb) {
-            Write-Host "  x This machine is not compatible: Exasol Nano needs at least $($script:NanoMinRamGb) GB RAM and this machine has $ramGb GB." -ForegroundColor Red
+            # On-grid outcome line (6-space cross), mirroring bash's error() + die() pair.
+            Write-Host ("      {0}{1}{2} This machine is not compatible: Exasol Nano needs at least {3} GB RAM and this machine has {4} GB." -f $script:UiErr, $script:UiCross, $script:UiReset, $script:NanoMinRamGb, $ramGb)
             Info "Nothing was installed. Re-run on a machine with $($script:NanoMinRamGb)+ GB RAM (or force at your own risk with EXAKIT_FORCE=1)."
             Fail "Insufficient memory: $ramGb GB."
         }
@@ -94,7 +95,8 @@ function Test-NanoRequirements {
         if ($freeGb -lt 0) {
             Fail "Could not determine free disk space on $sysDrive. Free up space or set EXAKIT_FORCE=1 to install anyway."
         } elseif ($freeGb -lt 10) {
-            Write-Host "  x This machine is not compatible right now: the database image and data need at least 10 GB free on $sysDrive and it has $freeGb GB." -ForegroundColor Red
+            # On-grid outcome line (6-space cross), mirroring bash's error() + die() pair.
+            Write-Host ("      {0}{1}{2} This machine is not compatible right now: the database image and data need at least 10 GB free on {3} and it has {4} GB." -f $script:UiErr, $script:UiCross, $script:UiReset, $sysDrive, $freeGb)
             Info "Nothing was installed. Free up disk space and re-run (or force at your own risk with EXAKIT_FORCE=1)."
             Fail "Insufficient free disk space: $freeGb GB."
         }
