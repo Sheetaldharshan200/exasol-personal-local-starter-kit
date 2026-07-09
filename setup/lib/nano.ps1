@@ -79,7 +79,9 @@ function Test-NanoRequirements {
         if ($ramGb -lt 0) {
             Fail "Could not determine this machine's memory. Set EXAKIT_FORCE=1 to install anyway."
         } elseif ($ramGb -lt $script:NanoMinRamGb) {
-            Fail "Exasol Nano needs at least $($script:NanoMinRamGb) GB RAM (detected: $ramGb GB). Set EXAKIT_FORCE=1 to try anyway."
+            Write-Host "  x This machine is not compatible: Exasol Nano needs at least $($script:NanoMinRamGb) GB RAM and this machine has $ramGb GB." -ForegroundColor Red
+            Info "Nothing was installed. Re-run on a machine with $($script:NanoMinRamGb)+ GB RAM (or force at your own risk with EXAKIT_FORCE=1)."
+            Fail "Insufficient memory: $ramGb GB."
         }
     }
 
@@ -92,9 +94,20 @@ function Test-NanoRequirements {
         if ($freeGb -lt 0) {
             Fail "Could not determine free disk space on $sysDrive. Free up space or set EXAKIT_FORCE=1 to install anyway."
         } elseif ($freeGb -lt 10) {
-            Fail "Less than 10 GB free on $sysDrive (detected: $freeGb GB) - the database image and data need room. Free up space or set EXAKIT_FORCE=1."
+            Write-Host "  x This machine is not compatible right now: the database image and data need at least 10 GB free on $sysDrive and it has $freeGb GB." -ForegroundColor Red
+            Info "Nothing was installed. Free up disk space and re-run (or force at your own risk with EXAKIT_FORCE=1)."
+            Fail "Insufficient free disk space: $freeGb GB."
         }
     }
+
+    # Bare minimum: run, but say what to expect.
+    if ($ramGb -ge 0 -and $ramGb -lt ($script:NanoMinRamGb + 2)) {
+        Warn2 "Memory is at the bare minimum ($ramGb GB) - the database will run, but expect slower queries and keep other heavy apps closed."
+    }
+    if ($freeGb -ge 0 -and $freeGb -lt 20) {
+        Warn2 "Free disk is tight ($freeGb GB) - fine for the bundled datasets, but watch space before loading large files."
+    }
+    Ok "Compatibility check passed ($ramGb GB RAM, $freeGb GB free)"
 }
 
 function Get-NanoImageRef { return "docker.io/$($script:NanoImage):$($script:NanoTag)" }

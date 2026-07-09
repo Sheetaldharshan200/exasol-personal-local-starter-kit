@@ -110,14 +110,6 @@ if ($uiLoaded) {
     Write-Host ""
     Write-Host "  Personal Local Starter Kit"
     Write-Host ""
-    Write-Host "  Installation plan"
-    Write-Host "  -----------------"
-    Write-Host "   Platform:   windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)"
-    Write-Host "   Database:   Exasol Nano (container via Docker Desktop)"
-    Write-Host "   Components: local database, exapump, MCP server, pyexasol"
-    Write-Host "   Kit copy:   $KitDir (read the scripts any time)"
-    Write-Host "   State/logs: $ExakitHome"
-    Write-Host ""
 }
 
 if ($env:EXAKIT_DRY_RUN -eq "1") {

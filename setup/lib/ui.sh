@@ -318,14 +318,11 @@ ui_progress() {
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     case "${1:-}" in
         __render_install_plan)
+            # Banner only: the old "Installation plan" panel repeated internals
+            # (kit copy path, component list) users don't act on. Whether this
+            # machine can run the kit is answered by the compatibility checks
+            # that follow, which fail or warn explicitly.
             ui_banner "Personal Local Starter Kit"
-            ui_panel_begin "Installation plan"
-            ui_panel_line "Platform:    ${EXAKIT_UI_PLATFORM:-unknown}"
-            ui_panel_line "Database:    ${EXAKIT_UI_TARGET:-unknown}"
-            ui_panel_line "Components:  local database, exapump, MCP server, pyexasol"
-            ui_panel_line "Kit copy:    $(ui_tilde "${EXAKIT_UI_KIT:-}")"
-            ui_panel_line "State/logs:  $(ui_tilde "${EXAKIT_UI_HOME:-}")"
-            ui_panel_end
             printf '\n'
             ;;
     esac

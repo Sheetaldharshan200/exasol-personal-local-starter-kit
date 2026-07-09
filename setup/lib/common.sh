@@ -166,8 +166,66 @@ _ui_checkbox_toggle() {
 # of an option that cannot be combined with the others — think "Skip for now".
 # Selecting it clears every other choice; selecting any other choice clears it.
 # "a" (select all) selects all non-exclusive options.
+#
+# EXAKIT_CHECKBOX_GROUP (optional, cleared after each call): "parent:first:last"
+# — row <parent> is a group checkbox whose children are rows <first>..<last>.
+# Toggling the parent ON selects every child; toggling it OFF clears them all.
+# Toggling a child re-derives the parent (checked while ANY child is checked).
 EXAKIT_CHECKBOX_SELECTION=""
 EXAKIT_CHECKBOX_EXCLUSIVE=""
+EXAKIT_CHECKBOX_GROUP=""
+
+# _ui_checkbox_apply_group <selected_csv> <toggled_idx> <group_spec> — pure
+# post-toggle parent/child rule, echoing the adjusted csv.
+_ui_checkbox_apply_group() {
+    _cg_sel="$1"; _cg_toggled="$2"; _cg_spec="$3"
+    [ -n "$_cg_spec" ] || { printf '%s' "$_cg_sel"; return 0; }
+    _cg_parent="${_cg_spec%%:*}"
+    _cg_rest="${_cg_spec#*:}"
+    _cg_first="${_cg_rest%%:*}"
+    _cg_last="${_cg_rest#*:}"
+    if [ "$_cg_toggled" = "$_cg_parent" ]; then
+        # Parent toggled: rebuild the child range to match the parent's state.
+        case ",$_cg_sel," in
+            *",$_cg_parent,"*) _cg_parent_on=1 ;;
+            *) _cg_parent_on=0 ;;
+        esac
+        _cg_out=""
+        for _cg_tok in $(printf '%s' "$_cg_sel" | tr ',' ' '); do
+            if [ "$_cg_tok" -ge "$_cg_first" ] && [ "$_cg_tok" -le "$_cg_last" ]; then
+                continue
+            fi
+            _cg_out="${_cg_out:+$_cg_out,}$_cg_tok"
+        done
+        if [ "$_cg_parent_on" = 1 ]; then
+            _cg_i="$_cg_first"
+            while [ "$_cg_i" -le "$_cg_last" ]; do
+                _cg_out="${_cg_out:+$_cg_out,}$_cg_i"
+                _cg_i=$((_cg_i + 1))
+            done
+        fi
+        printf '%s' "$_cg_out"
+        return 0
+    fi
+    if [ "$_cg_toggled" -ge "$_cg_first" ] && [ "$_cg_toggled" -le "$_cg_last" ]; then
+        # Child toggled: parent is checked while ANY child is checked.
+        _cg_any=0
+        _cg_i="$_cg_first"
+        while [ "$_cg_i" -le "$_cg_last" ]; do
+            case ",$_cg_sel," in *",$_cg_i,"*) _cg_any=1; break ;; esac
+            _cg_i=$((_cg_i + 1))
+        done
+        _cg_out=""
+        for _cg_tok in $(printf '%s' "$_cg_sel" | tr ',' ' '); do
+            [ "$_cg_tok" = "$_cg_parent" ] && continue
+            _cg_out="${_cg_out:+$_cg_out,}$_cg_tok"
+        done
+        [ "$_cg_any" = 1 ] && _cg_out="${_cg_out:+$_cg_out,}$_cg_parent"
+        printf '%s' "$_cg_out"
+        return 0
+    fi
+    printf '%s' "$_cg_sel"
+}
 
 # _ui_checkbox_apply_exclusive <selected_csv> <toggled_idx> <exclusive_idx> —
 # pure post-toggle rule, echoing the adjusted csv.
@@ -195,12 +253,34 @@ ui_checkbox_menu() {
     shift 2
     _cb_sel="$_cb_defaults"
     _cb_n=$#
-    _cb_cur=1
+    _cb_labels=("$@")
     info "$_cb_title"
+
+    # A label starting with "#" is a GROUP HEADER: rendered as a plain caption
+    # (no checkbox), never selectable, and skipped by the cursor. Headers let a
+    # menu show a small tree — e.g. "Sample datasets" with the individual
+    # datasets indented beneath it — while selection indices stay flat.
+    _cb_is_header() {
+        case "${_cb_labels[$(($1 - 1))]}" in "#"*) return 0 ;; *) return 1 ;; esac
+    }
+    _cb_step() { # _cb_step <dir:+1|-1> — move the cursor, skipping headers
+        _cb_steps=0
+        while [ "$_cb_steps" -lt "$_cb_n" ]; do
+            _cb_cur=$((_cb_cur + $1))
+            [ "$_cb_cur" -lt 1 ] && _cb_cur=$_cb_n
+            [ "$_cb_cur" -gt "$_cb_n" ] && _cb_cur=1
+            _cb_is_header "$_cb_cur" || return 0
+            _cb_steps=$((_cb_steps + 1))
+        done
+    }
+    _cb_cur=0
+    _cb_step 1                                            # first selectable row
+
     _cb_tty="$(_exakit_prompt_tty)"
     if [ -z "$_cb_tty" ]; then
         EXAKIT_CHECKBOX_SELECTION="$_cb_defaults"
         EXAKIT_CHECKBOX_EXCLUSIVE=""
+        EXAKIT_CHECKBOX_GROUP=""
         _cb_i=1
         for _cb_label in "$@"; do
             case ",$_cb_defaults," in *",$_cb_i,"*) ok "$_cb_label (selected by default)" ;; esac
@@ -219,6 +299,11 @@ ui_checkbox_menu() {
         _cb_first=0
         _cb_i=1
         for _cb_label in "$@"; do
+            if _cb_is_header "$_cb_i"; then
+                printf '    %s%s%s\n' "${UI_ACCENT:-}" "${_cb_label#\#}" "${UI_RESET:-}"
+                _cb_i=$((_cb_i + 1))
+                continue
+            fi
             if [ "$_cb_i" -eq "$_cb_cur" ]; then
                 if [ "${UI_FANCY:-0}" = 1 ]; then _cb_ptr="${UI_ACCENT:-}❯${UI_RESET:-}"; else _cb_ptr=">"; fi
             else
@@ -250,6 +335,7 @@ ui_checkbox_menu() {
                 ;;
             " ")                                         # Space → toggle highlighted
                 _cb_sel="$(_ui_checkbox_toggle "$_cb_sel" "$_cb_n" "$_cb_cur")"
+                _cb_sel="$(_ui_checkbox_apply_group "$_cb_sel" "$_cb_cur" "$EXAKIT_CHECKBOX_GROUP")"
                 _cb_sel="$(_ui_checkbox_apply_exclusive "$_cb_sel" "$_cb_cur" "$EXAKIT_CHECKBOX_EXCLUSIVE")"
                 ;;
             "$(printf '\033')")                          # arrows: ESC [ A / ESC [ B
@@ -259,23 +345,29 @@ ui_checkbox_menu() {
                     IFS= read -rsn2 -t 1 _cb_seq || _cb_seq=""
                 fi
                 case "$_cb_seq" in
-                    '[A') if [ "$_cb_cur" -gt 1 ]; then _cb_cur=$((_cb_cur - 1)); else _cb_cur=$_cb_n; fi ;;
-                    '[B') if [ "$_cb_cur" -lt "$_cb_n" ]; then _cb_cur=$((_cb_cur + 1)); else _cb_cur=1; fi ;;
+                    '[A') _cb_step -1 ;;
+                    '[B') _cb_step 1 ;;
                 esac
                 ;;
-            k|K) if [ "$_cb_cur" -gt 1 ]; then _cb_cur=$((_cb_cur - 1)); else _cb_cur=$_cb_n; fi ;;
-            j|J) if [ "$_cb_cur" -lt "$_cb_n" ]; then _cb_cur=$((_cb_cur + 1)); else _cb_cur=1; fi ;;
+            k|K) _cb_step -1 ;;
+            j|J) _cb_step 1 ;;
             a|A)
-                _cb_sel="$(_ui_checkbox_toggle "$_cb_sel" "$_cb_n" all)"
-                # "all" means all real choices, never the exclusive option.
-                if [ -n "$EXAKIT_CHECKBOX_EXCLUSIVE" ]; then
-                    _cb_sel="$(_ui_checkbox_apply_exclusive "$_cb_sel" 0 "$EXAKIT_CHECKBOX_EXCLUSIVE")"
-                fi
+                # "all" means all real choices: never headers, never the
+                # exclusive option.
+                _cb_sel=""
+                _cb_i=1
+                while [ "$_cb_i" -le "$_cb_n" ]; do
+                    if ! _cb_is_header "$_cb_i" && [ "$_cb_i" != "$EXAKIT_CHECKBOX_EXCLUSIVE" ]; then
+                        _cb_sel="${_cb_sel:+$_cb_sel,}$_cb_i"
+                    fi
+                    _cb_i=$((_cb_i + 1))
+                done
                 ;;
         esac
     done
     EXAKIT_CHECKBOX_SELECTION="$(printf '%s' "$_cb_sel" | tr ',' '\n' | sort -n | paste -sd, -)"
     EXAKIT_CHECKBOX_EXCLUSIVE=""
+    EXAKIT_CHECKBOX_GROUP=""
     return 0
 }
 
@@ -1779,6 +1871,8 @@ import json, sys
 LABELS = {
     "claude_desktop": "Claude",
     "claude_code": "Claude Code (CLI)",
+    "vscode_copilot": "GitHub Copilot",
+    "gemini_cli": "Gemini CLI",
     "cursor": "Cursor",
     "codex": "Codex",
 }
@@ -1872,6 +1966,8 @@ import json, sys
 LABELS = {
     "claude_desktop": "Claude",
     "claude_code": "Claude Code (CLI)",
+    "vscode_copilot": "GitHub Copilot",
+    "gemini_cli": "Gemini CLI",
     "cursor": "Cursor",
     "codex": "Codex",
 }
@@ -1914,7 +2010,7 @@ PY
 
 exakit_mcp_clients_from_args() {
     if [ "$#" -eq 0 ]; then
-        printf '%s\n' "claude_desktop,claude_code,cursor,codex"
+        printf '%s\n' "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli"
         return 0
     fi
     exakit_parse_mcp_client_selection "$*"
@@ -1924,7 +2020,7 @@ exakit_parse_mcp_client_selection() {
     _raw="$(printf '%s' "$1" | tr ',/' '  ' | tr -s ' ')"
     case "$_raw" in
         "" ) return 1 ;;
-        all|ALL|All ) printf '%s\n' "claude_desktop,claude_code,cursor,codex"; return 0 ;;
+        all|ALL|All ) printf '%s\n' "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli"; return 0 ;;
     esac
     _result=""
     for _token in $_raw; do
@@ -1937,6 +2033,8 @@ exakit_parse_mcp_client_selection() {
             claude_code) _clients="claude_code" ;;
             2|codex) _clients="codex" ;;
             3|cursor) _clients="cursor" ;;
+            4|copilot|vscode|vscode_copilot) _clients="vscode_copilot" ;;
+            5|gemini|gemini_cli) _clients="gemini_cli" ;;
             *) return 1 ;;
         esac
         for _client in $_clients; do
@@ -2003,7 +2101,7 @@ exakit_mcp_setup() {
                 ;;
         esac
         _clients_csv="$(exakit_parse_mcp_client_selection "$EXAKIT_MCP_CLIENTS")" || {
-            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, codex, cursor, all, skip, or numbers 1-3)."
+            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, codex, cursor, copilot, gemini, all, skip, or numbers 1-5)."
             return 1
         }
         info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $_clients_csv"
@@ -2015,14 +2113,17 @@ exakit_mcp_setup() {
         # surface still needs setup, the label names that surface. Falls back
         # to the full static list when discovery is unavailable.
         _pending="$(exakit_mcp_discover_pending)" || \
-            _pending="$(printf 'claude_desktop\nclaude_code\ncodex\ncursor\n')"
+            _pending="$(printf 'claude_desktop\nclaude_code\ncodex\ncursor\nvscode_copilot\ngemini_cli\n')"
         _cd_pending=0; _cc_pending=0; _codex_pending=0; _cursor_pending=0
+        _copilot_pending=0; _gemini_pending=0
         for _pending_id in $_pending; do
             case "$_pending_id" in
-                claude_desktop) _cd_pending=1 ;;
-                claude_code)    _cc_pending=1 ;;
-                codex)          _codex_pending=1 ;;
-                cursor)         _cursor_pending=1 ;;
+                claude_desktop)  _cd_pending=1 ;;
+                claude_code)     _cc_pending=1 ;;
+                codex)           _codex_pending=1 ;;
+                cursor)          _cursor_pending=1 ;;
+                vscode_copilot)  _copilot_pending=1 ;;
+                gemini_cli)      _gemini_pending=1 ;;
             esac
         done
         _menu_labels=()
@@ -2036,6 +2137,8 @@ exakit_mcp_setup() {
         fi
         [ "$_codex_pending" = 1 ] && { _menu_labels+=("Codex"); _menu_ids+=("codex"); }
         [ "$_cursor_pending" = 1 ] && { _menu_labels+=("Cursor"); _menu_ids+=("cursor"); }
+        [ "$_copilot_pending" = 1 ] && { _menu_labels+=("GitHub Copilot"); _menu_ids+=("vscode_copilot"); }
+        [ "$_gemini_pending" = 1 ] && { _menu_labels+=("Gemini CLI"); _menu_ids+=("gemini_cli"); }
         if [ "${#_menu_ids[@]}" -eq 0 ]; then
             ok "All AI clients found on this machine are already connected over MCP."
             info "Check them with 'exakit mcp-status'; new clients appear here once installed."
@@ -2120,7 +2223,7 @@ exakit_mcp_restore() {
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-restore.XXXXXX")"
     _operation_status=0
     info "Running MCP restore"
-    if exakit_run_mcp_operation_cli "restore" "claude_desktop,claude_code,cursor,codex" "$_result_file" "$_snapshot_id"; then
+    if exakit_run_mcp_operation_cli "restore" "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli" "$_result_file" "$_snapshot_id"; then
         :
     else
         _operation_status=$?

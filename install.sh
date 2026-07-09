@@ -66,14 +66,6 @@ main() {
             bash "$_ui" __render_install_plan && return 0
         fi
         printf '\n  Exasol Personal Local Starter Kit\n\n'
-        printf '  Installation plan\n'
-        printf '  -----------------\n'
-        printf '   Platform:   %s (%s)\n' "$platform" "$arch"
-        printf '   Database:   %s\n' "$target"
-        printf '   Components: local database, exapump, MCP server, pyexasol\n'
-        printf '   Kit copy:   %s (read the scripts any time)\n' "$kit_dir"
-        printf '   State/logs: %s\n' "$EXAKIT_HOME"
-        printf '\n'
     }
 
     # --- 1. preflight --------------------------------------------------------

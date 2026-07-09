@@ -33,7 +33,10 @@ class DiscoverClientsTests(unittest.TestCase):
     def test_reports_all_supported_clients(self) -> None:
         payload = self._run_discover(self._temp_dir)
         ids = {client["id"] for client in payload["clients"]}
-        self.assertEqual(ids, {"claude_desktop", "claude_code", "cursor", "codex"})
+        self.assertEqual(
+            ids,
+            {"claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli"},
+        )
         for client in payload["clients"]:
             self.assertIn("detected", client)
             self.assertIn("configured", client)
@@ -99,6 +102,8 @@ class DiscoverClientsTests(unittest.TestCase):
             self.assertFalse(detected["codex"])
             self.assertFalse(detected["cursor"])
             self.assertFalse(detected["claude_desktop"])
+            self.assertFalse(detected["vscode_copilot"])
+            self.assertFalse(detected["gemini_cli"])
 
 
 if __name__ == "__main__":

@@ -608,7 +608,7 @@ function Get-McpPendingClients {
     }
 }
 
-$script:McpClientLabels = @{ claude_desktop = "Claude"; claude_code = "Claude Code (CLI)"; cursor = "Cursor"; codex = "Codex" }
+$script:McpClientLabels = @{ claude_desktop = "Claude"; claude_code = "Claude Code (CLI)"; cursor = "Cursor"; codex = "Codex"; vscode_copilot = "GitHub Copilot"; gemini_cli = "Gemini CLI" }
 
 function Show-McpSetupSummary {
     param([Parameter(Mandatory)][string]$ResultJson)
@@ -707,7 +707,7 @@ function ConvertTo-McpClientSelection {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Raw)
     $tokens = @(($Raw -replace '[,/]', ' ') -split '\s+' | Where-Object { $_ })
     if ($tokens.Count -eq 0) { return $null }
-    if ($tokens.Count -eq 1 -and $tokens[0] -match '^(all|ALL|All)$') { return @("claude_desktop", "claude_code", "cursor", "codex") }
+    if ($tokens.Count -eq 1 -and $tokens[0] -match '^(all|ALL|All)$') { return @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli") }
     $result = @()
     foreach ($token in $tokens) {
         # "claude" (or 1) covers both Claude surfaces - the desktop app and the
@@ -719,6 +719,8 @@ function ConvertTo-McpClientSelection {
             "claude_code" { @("claude_code") }
             { $_ -in @("2", "codex") } { @("codex") }
             { $_ -in @("3", "cursor") } { @("cursor") }
+            { $_ -in @("4", "copilot", "vscode", "vscode_copilot") } { @("vscode_copilot") }
+            { $_ -in @("5", "gemini", "gemini_cli") } { @("gemini_cli") }
             default { $null }
         }
         if (-not $clients) { return $null }
@@ -732,7 +734,7 @@ function ConvertTo-McpClientSelection {
 
 function Get-McpClientsFromArgs {
     param([string[]]$InputArgs = @())
-    if ($InputArgs.Count -eq 0) { return @("claude_desktop", "claude_code", "cursor", "codex") }
+    if ($InputArgs.Count -eq 0) { return @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli") }
     return ConvertTo-McpClientSelection ($InputArgs -join " ")
 }
 
@@ -746,7 +748,7 @@ function Invoke-McpSetup {
     # still needs setup, the label names that surface. Falls back to the full
     # static list when discovery is unavailable.
     $pending = Get-McpPendingClients
-    if ($null -eq $pending) { $pending = @("claude_desktop", "claude_code", "codex", "cursor") }
+    if ($null -eq $pending) { $pending = @("claude_desktop", "claude_code", "codex", "cursor", "vscode_copilot", "gemini_cli") }
     $menuLabels = New-Object 'System.Collections.Generic.List[string]'
     $menuIds = New-Object 'System.Collections.Generic.List[object]'
     $cdPending = $pending -contains "claude_desktop"
@@ -756,6 +758,8 @@ function Invoke-McpSetup {
     elseif ($ccPending) { [void]$menuLabels.Add("Claude Code (CLI)"); [void]$menuIds.Add(@("claude_code")) }
     if ($pending -contains "codex") { [void]$menuLabels.Add("Codex"); [void]$menuIds.Add(@("codex")) }
     if ($pending -contains "cursor") { [void]$menuLabels.Add("Cursor"); [void]$menuIds.Add(@("cursor")) }
+    if ($pending -contains "vscode_copilot") { [void]$menuLabels.Add("GitHub Copilot"); [void]$menuIds.Add(@("vscode_copilot")) }
+    if ($pending -contains "gemini_cli") { [void]$menuLabels.Add("Gemini CLI"); [void]$menuIds.Add(@("gemini_cli")) }
     if ($menuIds.Count -eq 0) {
         Ok "All AI clients found on this machine are already connected over MCP."
         Info "Check them with 'exakit mcp-status'; new clients appear here once installed."
@@ -798,13 +802,13 @@ function Invoke-McpOperation {
 function Invoke-McpRestore {
     param([string]$SnapshotId = "")
     Info "Running MCP restore"
-    $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "claude_code", "cursor", "codex") -SnapshotId $SnapshotId
+    $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli") -SnapshotId $SnapshotId
     if ($resultJson) { Show-McpOperationSummary $resultJson }
     return [bool]$resultJson
 }
 
 function New-McpUpdateSnapshot {
-    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "claude_code", "cursor", "codex")
+    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli")
     if (-not $resultJson) { Warn2 "MCP pre-update snapshot was not created; generated configs will still be refreshed."; return "" }
     Show-McpOperationSummary $resultJson
     try {

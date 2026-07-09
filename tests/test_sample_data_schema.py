@@ -232,7 +232,7 @@ class LoadWiringTests(unittest.TestCase):
         # The selector offers the local-file source on both platforms.
         for text, name in ((bash, "exapump.sh"), (ps1, "exapump.ps1")):
             with self.subTest(menu=name):
-                self.assertIn("A local CSV/text/Parquet file", text)
+                self.assertIn("A local CSV/Parquet file", text)
                 for removed_option in (
                     "Remote CSV/Text File",
                     "Import from Another Database",
@@ -303,7 +303,7 @@ class LoadWiringTests(unittest.TestCase):
         for menu_name, local_file_flow in local_file_blocks:
             with self.subTest(menu=menu_name):
                 self.assertIn("type back to return", local_file_flow)
-                self.assertIn("Please enter a local CSV/text/Parquet file path", local_file_flow)
+                self.assertIn("Please enter a local CSV/Parquet file path", local_file_flow)
                 self.assertIn("back to return", local_file_flow)
                 self.assertIn("Returning to data loading options.", local_file_flow)
 

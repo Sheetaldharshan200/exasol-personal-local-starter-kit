@@ -442,7 +442,7 @@ exakit_prompt_optional_verification() {
 
 exakit_load_local_file() {
     while :; do
-        _raw_path="$(prompt_text "Local CSV/text/Parquet file path (type back to return)")"
+        _raw_path="$(prompt_text "Local CSV/Parquet file path (type back to return)")"
         case "$_raw_path" in
             b|B|back|Back|BACK)
                 info "Returning to data loading options."
@@ -450,7 +450,7 @@ exakit_load_local_file() {
                 ;;
         esac
         if [ -z "$_raw_path" ]; then
-            warn "Please enter a local CSV/text/Parquet file path, or type back to return."
+            warn "Please enter a local CSV/Parquet file path, or type back to return."
             continue
         fi
         _path="$(exakit_normalize_path "$_raw_path")"
@@ -542,10 +542,12 @@ exakit_bundled_datasets() {
         _bdr_label="$(sed -n 's/^label=//p' "$_bdr_conf" | head -1)"
         _bdr_markers="$(sed -n 's/^markers=//p' "$_bdr_conf" | head -1)"
         _bdr_flag="$(sed -n 's/^flag=//p' "$_bdr_conf" | head -1)"
+        _bdr_order="$(sed -n 's/^order=//p' "$_bdr_conf" | head -1)"
         [ -n "$_bdr_id" ] && [ -n "$_bdr_label" ] || continue
         [ -n "$_bdr_flag" ] || _bdr_flag="data.datasets.${_bdr_id}.loaded"
-        printf '%s|%s|%s|%s\n' "$_bdr_id" "$_bdr_label" "$_bdr_flag" "$_bdr_markers"
-    done
+        case "$_bdr_order" in ''|*[!0-9]*) _bdr_order=50 ;; esac
+        printf '%s|%s|%s|%s|%s\n' "$_bdr_order" "$_bdr_id" "$_bdr_label" "$_bdr_flag" "$_bdr_markers"
+    done | sort -t'|' -n -k1,1 | cut -d'|' -f2-
 }
 
 # exakit_db_reachable — one cached probe per run: can we run SQL right now?
@@ -706,36 +708,53 @@ exakit_load_dataset_dir() {
 }
 
 # exakit_data_load_select <final_label> — dynamic checkbox over the data
-# sources: every bundled dataset that is not loaded yet, then "A local
-# CSV/text/Parquet file", then <final_label> as the mutually exclusive
-# opt-out (Cancel/Skip). When every bundled dataset is already loaded, only
-# the local-file and opt-out choices are shown. Pending datasets are
-# pre-selected; with none pending the opt-out is the (safe) default, which is
-# also what a non-interactive run keeps. The result lands in
-# EXAKIT_DATA_LOAD_SELECTION as a csv of ids ("tpch", "local") or "none".
+# sources, shown as a small tree with exactly three top-level choices:
+#
+#   Sample datasets                 <- group header (only when any is pending)
+#     [x] <each dataset not loaded yet, visible upfront and individually
+#          selectable — no extra keypress needed to see what is available>
+#   [ ] A local CSV/Parquet file
+#   [ ] <final_label>               <- mutually exclusive opt-out (Cancel/Skip)
+#
+# Already-loaded datasets are not offered; when every bundled dataset is
+# loaded the group disappears and only the local-file and opt-out choices
+# remain. Pending datasets are pre-selected; with none pending the opt-out is
+# the (safe) default, which is also what a non-interactive run keeps. The
+# result lands in EXAKIT_DATA_LOAD_SELECTION as a csv of ids ("tpch",
+# "local") or "none".
 EXAKIT_DATA_LOAD_SELECTION=""
 exakit_data_load_select() {
     _dls_final_label="$1"
     _dls_labels=()
     _dls_ids=()
+    _dls_pending_n=0
     while IFS='|' read -r _dls_id _dls_label; do
         [ -n "$_dls_id" ] || continue
-        _dls_labels+=("$_dls_label")
+        if [ "$_dls_pending_n" -eq 0 ]; then
+            # The group row is itself a checkbox: pre-selected with every
+            # dataset; unchecking it clears all datasets, after which the user
+            # can pick them individually.
+            _dls_labels+=("Sample datasets")
+            _dls_ids+=("__group__")
+        fi
+        _dls_labels+=("  $_dls_label")
         _dls_ids+=("$_dls_id")
+        _dls_pending_n=$((_dls_pending_n + 1))
     done <<EXAKIT_DLS_EOF
 $(exakit_pending_datasets)
 EXAKIT_DLS_EOF
-    _dls_pending_n="${#_dls_ids[@]}"
-    _dls_labels+=("A local CSV/text/Parquet file"); _dls_ids+=("local")
-    _dls_labels+=("$_dls_final_label");             _dls_ids+=("none")
+    _dls_labels+=("A local CSV/Parquet file"); _dls_ids+=("local")
+    _dls_labels+=("$_dls_final_label");        _dls_ids+=("none")
     _dls_final_idx="${#_dls_labels[@]}"
     if [ "$_dls_pending_n" -gt 0 ]; then
+        # Default: the group AND every pending dataset (rows 1..pending+1).
         _dls_defaults=""
         _dls_i=1
-        while [ "$_dls_i" -le "$_dls_pending_n" ]; do
+        while [ "$_dls_i" -le $((_dls_pending_n + 1)) ]; do
             _dls_defaults="${_dls_defaults:+$_dls_defaults,}$_dls_i"
             _dls_i=$((_dls_i + 1))
         done
+        EXAKIT_CHECKBOX_GROUP="1:2:$((_dls_pending_n + 1))"
     else
         info "Every bundled dataset is already loaded (reload with: exakit data-load --force)."
         _dls_defaults="$_dls_final_idx"
@@ -752,6 +771,7 @@ EXAKIT_DLS_EOF
     for _dls_idx in $(printf '%s' "$EXAKIT_CHECKBOX_SELECTION" | tr ',' ' '); do
         [ "$_dls_idx" -ge 1 ] && [ "$_dls_idx" -lt "$_dls_final_idx" ] || continue
         _dls_id="${_dls_ids[$((_dls_idx - 1))]}"
+        [ "$_dls_id" = "__group__" ] && continue
         EXAKIT_DATA_LOAD_SELECTION="${EXAKIT_DATA_LOAD_SELECTION:+$EXAKIT_DATA_LOAD_SELECTION,}$_dls_id"
     done
     [ -n "$EXAKIT_DATA_LOAD_SELECTION" ] || EXAKIT_DATA_LOAD_SELECTION="none"

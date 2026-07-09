@@ -74,7 +74,9 @@ nano_check_requirements() {
         if [ "$_ram" -eq 0 ]; then
             die "Could not determine this machine's memory. Fix the environment or set EXAKIT_FORCE=1 to install anyway."
         elif [ "$_ram" -lt "$EXAKIT_NANO_MIN_RAM_GB" ]; then
-            die "Exasol Nano needs at least ${EXAKIT_NANO_MIN_RAM_GB} GB RAM (detected: ${_ram} GB). Set EXAKIT_FORCE=1 to try anyway."
+            error "This machine is not compatible: Exasol Nano needs at least ${EXAKIT_NANO_MIN_RAM_GB} GB RAM and this machine has ${_ram} GB."
+            info "Nothing was installed. Re-run on a machine with ${EXAKIT_NANO_MIN_RAM_GB}+ GB RAM (or force at your own risk with EXAKIT_FORCE=1)."
+            die "Insufficient memory: ${_ram} GB."
         fi
     fi
 
@@ -83,9 +85,20 @@ nano_check_requirements() {
         if [ "$_disk" -eq 0 ]; then
             die "Could not determine free disk space at $HOME. Free up space or set EXAKIT_FORCE=1 to install anyway."
         elif [ "$_disk" -lt 10 ]; then
-            die "Less than 10 GB free disk space (detected: ${_disk} GB) — the database image and data need room. Free up space or set EXAKIT_FORCE=1."
+            error "This machine is not compatible right now: the database image and data need at least 10 GB free disk and $HOME has ${_disk} GB."
+            info "Nothing was installed. Free up disk space and re-run (or force at your own risk with EXAKIT_FORCE=1)."
+            die "Insufficient free disk space: ${_disk} GB."
         fi
     fi
+
+    # Bare minimum: run, but say what to expect.
+    if [ "$_ram" -lt $((EXAKIT_NANO_MIN_RAM_GB + 2)) ]; then
+        warn "Memory is at the bare minimum (${_ram} GB) — the database will run, but expect slower queries and keep other heavy apps closed."
+    fi
+    if [ "$_disk" -lt 20 ]; then
+        warn "Free disk is tight (${_disk} GB) — fine for the bundled datasets, but watch space before loading large files."
+    fi
+    ok "Compatibility check passed (${_ram} GB RAM, ${_disk} GB free)"
 }
 
 nano_image_ref() {

@@ -634,13 +634,13 @@ function Request-ExakitOptionalVerification {
 
 function Import-ExakitLocalFile {
     while ($true) {
-        $rawPath = Read-ExakitPrompt "Local CSV/text/Parquet file path (type back to return)" ""
+        $rawPath = Read-ExakitPrompt "Local CSV/Parquet file path (type back to return)" ""
         if ($rawPath -match '^(b|back)$') {
             Info "Returning to data loading options."
             return "back"
         }
         if (-not $rawPath) {
-            Warn2 "Please enter a local CSV/text/Parquet file path, or type back to return."
+            Warn2 "Please enter a local CSV/Parquet file path, or type back to return."
             continue
         }
         $path = Get-ExakitNormalizedPath $rawPath
@@ -728,10 +728,12 @@ function Get-ExakitBundledDatasets {
             if (-not $kv.id -or -not $kv.label) { continue }
             $markers = @(($kv.markers -split ',') | Where-Object { $_ })
             $flag = if ($kv.flag) { $kv.flag } else { "data.datasets.$($kv.id).loaded" }
-            $datasets += @{ Id = $kv.id; Label = $kv.label; Flag = $flag; Markers = $markers }
+            $order = 50
+            if ($kv.order -match '^[0-9]+$') { $order = [int]$kv.order }
+            $datasets += @{ Id = $kv.id; Label = $kv.label; Flag = $flag; Markers = $markers; Order = $order }
         }
     }
-    return $datasets
+    return @($datasets | Sort-Object { $_.Order }, { $_.Id })
 }
 
 # Test-ExakitDbReachable - one cached probe per run: can we run SQL right now?
@@ -894,26 +896,36 @@ function Invoke-ExakitDatasetDirLoad {
 # string array of ids ("tpch", "local") or @("none").
 function Select-ExakitDataLoad {
     param([Parameter(Mandatory)][string]$FinalLabel)
+    # Three top-level choices, with the pending datasets shown upfront as a
+    # small tree under a "Sample datasets" group header (see exapump.sh twin).
     $labels = New-Object 'System.Collections.Generic.List[string]'
     $ids = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($dataset in (Get-ExakitPendingDatasets)) {
-        [void]$labels.Add($dataset.Label)
-        [void]$ids.Add($dataset.Id)
+    $pending = @(Get-ExakitPendingDatasets)
+    if ($pending.Count -gt 0) {
+        # The group row is itself a checkbox: pre-selected with every dataset;
+        # unchecking it clears all datasets, after which the user can pick
+        # them individually.
+        [void]$labels.Add("Sample datasets"); [void]$ids.Add("__group__")
+        foreach ($dataset in $pending) {
+            [void]$labels.Add("  $($dataset.Label)")
+            [void]$ids.Add($dataset.Id)
+        }
     }
-    $pendingCount = $ids.Count
-    [void]$labels.Add("A local CSV/text/Parquet file"); [void]$ids.Add("local")
-    [void]$labels.Add($FinalLabel);                     [void]$ids.Add("none")
+    [void]$labels.Add("A local CSV/Parquet file"); [void]$ids.Add("local")
+    [void]$labels.Add($FinalLabel);                [void]$ids.Add("none")
     $finalIdx = $labels.Count
-    if ($pendingCount -gt 0) {
-        $defaults = @(1..$pendingCount)
+    if ($pending.Count -gt 0) {
+        $defaults = @(1..($pending.Count + 1))   # group row + every dataset
+        $selection = Read-ExakitCheckboxMenu -Title "Select data to load" -Options $labels.ToArray() `
+            -Defaults $defaults -ExclusiveIndex $finalIdx `
+            -GroupParent 1 -GroupFirst 2 -GroupLast ($pending.Count + 1)
     } else {
         Info "Every bundled dataset is already loaded (reload with: exakit data-load -Force)."
-        $defaults = @($finalIdx)
+        $selection = Read-ExakitCheckboxMenu -Title "Select data to load" -Options $labels.ToArray() `
+            -Defaults @($finalIdx) -ExclusiveIndex $finalIdx
     }
-    $selection = Read-ExakitCheckboxMenu -Title "Select data to load" -Options $labels.ToArray() `
-        -Defaults $defaults -ExclusiveIndex $finalIdx
     if ($selection -contains $finalIdx) { return @("none") }
-    $chosen = @($selection | Where-Object { $_ -lt $finalIdx } | ForEach-Object { $ids[$_ - 1] })
+    $chosen = @($selection | Where-Object { $_ -lt $finalIdx } | ForEach-Object { $ids[$_ - 1] } | Where-Object { $_ -ne "__group__" })
     if ($chosen.Count -eq 0) { return @("none") }
     return $chosen
 }
