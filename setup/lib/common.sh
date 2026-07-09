@@ -2478,7 +2478,7 @@ connection_panel() {
 
     ui_panel_line "Manifest:     $(ui_tilde "$EXAKIT_MANIFEST")"
     ui_panel_line "Logs:         $(ui_tilde "$EXAKIT_LOG_DIR")"
-    ui_panel_line "SQL client:   DBeaver (recommended) — https://dbeaver.io/download/"
+    ui_panel_line "SQL client:   $(ui_link https://dbeaver.io/download/ "DBeaver (recommended)")"
     ui_panel_line "How to connect: exakit guide"
     ui_panel_end
     printf '\n'
@@ -2493,7 +2493,7 @@ exakit_print_no_ai_panel() {
     ui_panel_begin "Using your database without an AI client"
     ui_panel_line "Your database works great on its own — three easy ways in:"
     ui_panel_line ""
-    ui_panel_line "GUI client:  DBeaver (recommended) — https://dbeaver.io/download/"
+    ui_panel_line "GUI client:  $(ui_link https://dbeaver.io/download/ "DBeaver (recommended)")"
     ui_panel_line "             New Connection > Exasol > Host ${_nap_host:-127.0.0.1} Port ${_nap_port:-8563}"
     ui_panel_line "Python:      pyexasol is preinstalled in its own environment:"
     ui_panel_line "             $(ui_tilde "$EXAKIT_HOME/pyexasol-venv/bin/python")"
@@ -2534,7 +2534,7 @@ exakit_guide() {
     ui_panel_end
 
     ui_panel_begin "2 · Browse and query with a SQL client (GUI)"
-    ui_panel_line "DBeaver (recommended, free): https://dbeaver.io/download/"
+    ui_panel_line "DBeaver (recommended, free): $(ui_link https://dbeaver.io/download/)"
     ui_panel_line ""
     ui_panel_line "In DBeaver: Database > New Database Connection > search 'Exasol'"
     ui_panel_line "  Host:      $_g_host"

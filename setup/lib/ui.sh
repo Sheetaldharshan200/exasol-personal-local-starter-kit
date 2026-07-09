@@ -97,6 +97,36 @@ ui_repeat() {
     printf '%s' "$_uir_out"
 }
 
+# ui_link <url> [text] — a terminal hyperlink (OSC 8): clickable text that
+# opens <url>. Falls back to plain text (or the URL) when stdout is not an
+# interactive terminal (piped, CI, logs), so nothing leaks escape codes into
+# a captured value. Most modern terminals (iTerm2, the macOS Terminal on
+# recent macOS, GNOME Terminal, Windows Terminal, VS Code) render it; older
+# ones that don't simply show the visible text.
+ui_link() {
+    _ul_url="$1"
+    _ul_text="${2:-$1}"
+    # Gate on UI_FANCY only, not a fresh `-t 1`: ui_link is meant to be called
+    # inside $(...) when building panel lines, where its own stdout is a pipe.
+    # UI_FANCY was set at load time from the real terminal, so it is the right
+    # signal for "this session renders rich output".
+    if [ "${UI_FANCY:-0}" = 1 ]; then
+        printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$_ul_url" "$_ul_text"
+    else
+        printf '%s' "$_ul_text"
+    fi
+}
+
+# _ui_visible_len <string> — character length ignoring escape sequences, so a
+# line carrying colour (CSI) or hyperlink (OSC 8) codes still lines up inside a
+# panel box. Strips CSI `ESC [ … m` and OSC 8 `ESC ] 8 ; ; … (BEL|ESC\)`.
+_ui_visible_len() {
+    _uvl_clean="$(printf '%s' "$1" | LC_ALL=C sed \
+        -e 's/'"$(printf '\033')"'\[[0-9;]*m//g' \
+        -e 's/'"$(printf '\033')"']8;;[^'"$(printf '\007\033')"']*\('"$(printf '\007')"'\|'"$(printf '\033')"'\\\)//g')"
+    printf '%s' "${#_uvl_clean}"
+}
+
 # ui_banner <title> <subtitle> — the top-of-install wordmark block.
 # Fancy mode draws the EXASOL block-letter wordmark above the title; the
 # plain fallback prints the title as text (block glyphs can't render there).
@@ -166,7 +196,8 @@ ui_panel_end() {
     _uipe_oifs=$IFS; IFS='
 '
     for _uipe_l in $_UI_PANEL_BUF; do
-        [ ${#_uipe_l} -gt "$_uipe_w" ] && _uipe_w=${#_uipe_l}
+        _uipe_ll=$(_ui_visible_len "$_uipe_l")
+        [ "$_uipe_ll" -gt "$_uipe_w" ] && _uipe_w=$_uipe_ll
     done
     IFS=$_uipe_oifs
     _uipe_w=$(( _uipe_w + 2 ))                  # breathing room on the right
@@ -181,7 +212,7 @@ ui_panel_end() {
     _uipe_oifs=$IFS; IFS='
 '
     for _uipe_l in $_UI_PANEL_BUF; do
-        _uipe_pad=$(( _uipe_w - ${#_uipe_l} - 2 ))
+        _uipe_pad=$(( _uipe_w - $(_ui_visible_len "$_uipe_l") - 2 ))
         [ "$_uipe_pad" -lt 0 ] && _uipe_pad=0
         printf '  %s %s%s %s\n' \
             "$UI_ACCENT$UI_VB$UI_RESET" "$_uipe_l" \
