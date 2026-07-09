@@ -28,6 +28,8 @@ class AdditionalAdapterTests(unittest.TestCase):
                     self._temp_dir / "claude" / "claude_desktop_config.json"
                 ),
                 "CLAUDE_CODE_CONFIG_PATH": str(self._temp_dir / "claude-code" / ".claude.json"),
+                "VSCODE_MCP_CONFIG_PATH": str(self._temp_dir / "vscode" / "mcp.json"),
+                "GEMINI_CLI_CONFIG_PATH": str(self._temp_dir / "gemini" / "settings.json"),
             },
             cwd=self._workspace,
         )
@@ -48,6 +50,8 @@ class AdditionalAdapterTests(unittest.TestCase):
             ("claude_desktop", "mcpServers"),
             ("claude_code", "mcpServers"),
             ("cursor", "mcpServers"),
+            ("vscode_copilot", "servers"),
+            ("gemini_cli", "mcpServers"),
         ):
             with self.subTest(adapter=adapter_id):
                 adapter = self._registry.get(adapter_id)
@@ -161,12 +165,47 @@ class AdditionalAdapterTests(unittest.TestCase):
         self.assertFalse(removal.remove_file)
         self.assertEqual(json.loads(removal.content or "{}"), {})
 
+    def test_vscode_copilot_renders_stdio_type(self) -> None:
+        adapter = self._registry.get("vscode_copilot")
+        location = adapter.locate(self._environment)
+        inspection = adapter.inspect(location.path, "exasol")  # type: ignore[arg-type]
+        rendered = adapter.render(self._server, inspection)
+        self.assertEqual(adapter.validate_render(rendered), [])
+        payload = json.loads(rendered.content or "{}")
+        self.assertEqual(payload["servers"]["exasol"]["type"], "stdio")
+
+    def test_gemini_cli_adapter_preserves_settings(self) -> None:
+        # ~/.gemini/settings.json holds unrelated CLI settings; the adapter must
+        # edit only its mcpServers entry and never delete the file on removal.
+        adapter = self._registry.get("gemini_cli")
+        location = adapter.locate(self._environment)
+        assert location.path is not None
+        location.path.parent.mkdir(parents=True, exist_ok=True)
+        state = {"theme": "dark", "mcpServers": {"other": {"command": "/tmp/other", "args": []}}}
+        location.path.write_text(json.dumps(state), encoding="utf-8")
+        inspection = adapter.inspect(location.path, "exasol")
+        rendered = adapter.render(self._server, inspection)
+        self.assertEqual(adapter.validate_render(rendered), [])
+        payload = json.loads(rendered.content or "{}")
+        self.assertEqual(payload["theme"], "dark")
+        self.assertIn("other", payload["mcpServers"])
+        self.assertIn("exasol", payload["mcpServers"])
+        location.path.write_text(rendered.content or "", encoding="utf-8")
+        inspection = adapter.inspect(location.path, "exasol")
+        removal = adapter.render_removal(inspection, "exasol")
+        self.assertFalse(removal.remove_file)
+        payload = json.loads(removal.content or "{}")
+        self.assertEqual(payload["theme"], "dark")
+        self.assertNotIn("exasol", payload.get("mcpServers", {}))
+
     def test_discover_reports_supported_adapters(self) -> None:
         for adapter_id in (
             "claude_desktop",
             "claude_code",
             "cursor",
             "codex",
+            "vscode_copilot",
+            "gemini_cli",
         ):
             with self.subTest(adapter=adapter_id):
                 adapter = self._registry.get(adapter_id)

@@ -4,7 +4,9 @@ from .claude_code import ClaudeCodeAdapter
 from .claude_desktop import ClaudeDesktopAdapter
 from .codex import CodexAdapter
 from .cursor import CursorAdapter
+from .gemini_cli import GeminiCliAdapter
 from .registry import AdapterRegistry
+from .vscode_copilot import VSCodeCopilotAdapter
 
 __all__ = [
     "AdapterRegistry",
@@ -12,4 +14,6 @@ __all__ = [
     "ClaudeDesktopAdapter",
     "CodexAdapter",
     "CursorAdapter",
+    "GeminiCliAdapter",
+    "VSCodeCopilotAdapter",
 ]

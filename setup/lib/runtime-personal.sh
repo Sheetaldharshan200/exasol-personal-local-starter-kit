@@ -18,32 +18,56 @@ EXAKIT_PERSONAL_MIN_DISK_GB="${EXAKIT_PERSONAL_MIN_DISK_GB:-20}"
 EXAKIT_PERSONAL_BIN="$EXAKIT_BIN_DIR/exasol"
 EXAKIT_PERSONAL_DEPLOY_DIR="${EXAKIT_PERSONAL_DEPLOY_DIR:-$HOME/.exasol/personal/deployments/default}"
 
+# personal_check_requirements — the compatibility gate. Incompatible machines
+# get a clear explanation and a graceful exit; machines at the bare minimum
+# proceed with an explicit warning; comfortable machines get one quiet OK line.
+# (Replaces the old "Detected environment" panel: users don't act on a table of
+# facts — they act on "this will/won't work and why".)
+EXAKIT_PERSONAL_COMFORT_RAM_GB="${EXAKIT_PERSONAL_COMFORT_RAM_GB:-12}"
+EXAKIT_PERSONAL_COMFORT_DISK_GB="${EXAKIT_PERSONAL_COMFORT_DISK_GB:-40}"
 personal_check_requirements() {
-    [ "$(detect_os)" = "macos" ] || die "Exasol Personal local deployment is macOS-only in this kit. Linux/Windows use Exasol Nano."
+    if [ "$(detect_os)" != "macos" ]; then
+        error "This machine is not compatible: the Exasol Personal local deployment is macOS-only in this kit."
+        info "On Linux/WSL use the Linux installer (Exasol Nano via Docker/Podman); on Windows use install.ps1."
+        die "Incompatible platform: $(detect_os)."
+    fi
 
     _arch="$(detect_arch)"
-    [ "$_arch" != "unsupported" ] || die "Unsupported CPU architecture: $(uname -m)"
+    if [ "$_arch" = "unsupported" ]; then
+        error "This machine is not compatible: no Exasol Personal build exists for the '$(uname -m)' CPU architecture."
+        info "Supported architectures: Apple Silicon (arm64) and Intel (x86_64)."
+        die "Incompatible CPU architecture: $(uname -m)."
+    fi
 
     _ram="$(detect_ram_gb)"
+    _disk="$(detect_free_disk_gb "$HOME")"
     if [ "${EXAKIT_FORCE:-0}" != "1" ]; then
         if [ "$_ram" -eq 0 ]; then
             die "Could not determine this machine's memory. Fix the environment or set EXAKIT_FORCE=1 to install anyway."
-        elif [ "$_ram" -lt "$EXAKIT_PERSONAL_MIN_RAM_GB" ]; then
-            error "Exasol Personal needs at least ${EXAKIT_PERSONAL_MIN_RAM_GB} GB RAM; this machine has ${_ram} GB."
-            die "This machine does not meet the requirements for a local Exasol Personal deployment."
         fi
-    fi
-
-    _disk="$(detect_free_disk_gb "$HOME")"
-    if [ "${EXAKIT_FORCE:-0}" != "1" ]; then
+        if [ "$_ram" -lt "$EXAKIT_PERSONAL_MIN_RAM_GB" ]; then
+            error "This machine is not compatible: Exasol Personal needs at least ${EXAKIT_PERSONAL_MIN_RAM_GB} GB RAM and this machine has ${_ram} GB."
+            info "Nothing was installed. Re-run on a machine with ${EXAKIT_PERSONAL_MIN_RAM_GB}+ GB RAM (or force at your own risk with EXAKIT_FORCE=1)."
+            die "Insufficient memory: ${_ram} GB."
+        fi
         if [ "$_disk" -eq 0 ]; then
             die "Could not determine free disk space at $HOME. Free up space or set EXAKIT_FORCE=1 to install anyway."
-        elif [ "$_disk" -lt "$EXAKIT_PERSONAL_MIN_DISK_GB" ]; then
-            die "Less than ${EXAKIT_PERSONAL_MIN_DISK_GB} GB free disk space (detected: ${_disk} GB). Free up space or set EXAKIT_FORCE=1."
+        fi
+        if [ "$_disk" -lt "$EXAKIT_PERSONAL_MIN_DISK_GB" ]; then
+            error "This machine is not compatible right now: the deployment needs at least ${EXAKIT_PERSONAL_MIN_DISK_GB} GB free disk and $HOME has ${_disk} GB."
+            info "Nothing was installed. Free up disk space and re-run (or force at your own risk with EXAKIT_FORCE=1)."
+            die "Insufficient free disk space: ${_disk} GB."
         fi
     fi
 
-    ok "Requirements met (macOS, ${_ram} GB RAM, ${_disk} GB free)"
+    # Bare minimum: run, but say what to expect.
+    if [ "$_ram" -lt "$EXAKIT_PERSONAL_COMFORT_RAM_GB" ]; then
+        warn "Memory is at the bare minimum (${_ram} GB; comfortable: ${EXAKIT_PERSONAL_COMFORT_RAM_GB}+ GB) — the database will run, but expect slower queries and keep other heavy apps closed."
+    fi
+    if [ "$_disk" -lt "$EXAKIT_PERSONAL_COMFORT_DISK_GB" ]; then
+        warn "Free disk is tight (${_disk} GB; comfortable: ${EXAKIT_PERSONAL_COMFORT_DISK_GB}+ GB) — fine for the bundled datasets, but watch space before loading large files."
+    fi
+    ok "Compatibility check passed (macOS $_arch, ${_ram} GB RAM, ${_disk} GB free)"
 }
 
 personal_asset_name() {

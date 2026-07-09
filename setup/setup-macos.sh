@@ -37,8 +37,6 @@ manifest_init
 exakit_enable_failure_handling
 
 [ "${EXAKIT_BANNER_SHOWN:-0}" = 1 ] || ui_banner "Personal Local Starter Kit"
-detect_summary
-printf '\n'
 
 manifest_set os "$(detect_os)"
 manifest_set arch "$(detect_arch)"

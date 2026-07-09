@@ -26,6 +26,8 @@ SETUP_CLIENT_IDS = (
     "claude_code",
     "cursor",
     "codex",
+    "vscode_copilot",
+    "gemini_cli",
 )
 
 

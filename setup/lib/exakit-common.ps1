@@ -145,14 +145,37 @@ function Write-ExakitMenuHint([string]$Text) {
 # toggling feels live. Non-interactive runs keep the defaults and say so.
 # Returns the selected 1-based indices, ascending.
 function Read-ExakitCheckboxMenu {
-    param([string]$Title, [string[]]$Options, [int[]]$Defaults = @(), [int]$ExclusiveIndex = 0)
+    param(
+        [string]$Title, [string[]]$Options, [int[]]$Defaults = @(), [int]$ExclusiveIndex = 0,
+        [int]$GroupParent = 0, [int]$GroupFirst = 0, [int]$GroupLast = 0
+    )
     # $ExclusiveIndex (1-based, 0 = none): an option that cannot be combined
     # with the others - think "Skip for now". Selecting it clears every other
     # choice; selecting any other choice clears it.
+    # $GroupParent/$GroupFirst/$GroupLast (optional): row $GroupParent is a
+    # group checkbox whose children are rows $GroupFirst..$GroupLast. Toggling
+    # the parent ON selects every child; OFF clears them all. Toggling a child
+    # re-derives the parent (checked while ANY child is checked).
     Info $Title
     $sel = New-Object 'System.Collections.Generic.List[int]'
     foreach ($d in $Defaults) {
         if ($d -ge 1 -and $d -le $Options.Count -and -not $sel.Contains($d)) { [void]$sel.Add($d) }
+    }
+    $applyGroup = {
+        param($toggled)
+        if ($GroupParent -lt 1) { return }
+        if ($toggled -eq $GroupParent) {
+            $parentOn = $sel.Contains($GroupParent)
+            for ($c = $GroupFirst; $c -le $GroupLast; $c++) {
+                if ($parentOn) { if (-not $sel.Contains($c)) { [void]$sel.Add($c) } }
+                else { [void]$sel.Remove($c) }
+            }
+        } elseif ($toggled -ge $GroupFirst -and $toggled -le $GroupLast) {
+            $any = $false
+            for ($c = $GroupFirst; $c -le $GroupLast; $c++) { if ($sel.Contains($c)) { $any = $true; break } }
+            if ($any) { if (-not $sel.Contains($GroupParent)) { [void]$sel.Add($GroupParent) } }
+            else { [void]$sel.Remove($GroupParent) }
+        }
     }
     $applyExclusive = {
         param($toggled)
@@ -167,7 +190,20 @@ function Read-ExakitCheckboxMenu {
         foreach ($i in @($sel | Sort-Object)) { Ok ("{0} (selected by default)" -f $Options[$i - 1]) }
         return @($sel | Sort-Object)
     }
-    $cur = 1
+    # A label starting with "#" is a GROUP HEADER: rendered as a plain caption
+    # (no checkbox), never selectable, and skipped by the cursor.
+    $isHeader = { param($i) $Options[$i - 1].StartsWith("#") }
+    $step = {
+        param($dir)
+        for ($s = 0; $s -lt $Options.Count; $s++) {
+            $script:cbCur += $dir
+            if ($script:cbCur -lt 1) { $script:cbCur = $Options.Count }
+            if ($script:cbCur -gt $Options.Count) { $script:cbCur = 1 }
+            if (-not (& $isHeader $script:cbCur)) { return }
+        }
+    }
+    $script:cbCur = 0
+    & $step 1
     $firstDraw = $true
     while ($true) {
         if (-not $firstDraw -and $script:UiFancy) {
@@ -176,7 +212,11 @@ function Read-ExakitCheckboxMenu {
         }
         $firstDraw = $false
         for ($i = 1; $i -le $Options.Count; $i++) {
-            $ptr = if ($i -eq $cur) { ">" } else { " " }
+            if (& $isHeader $i) {
+                Write-Host ("    {0}" -f $Options[$i - 1].Substring(1)) -ForegroundColor Cyan
+                continue
+            }
+            $ptr = if ($i -eq $script:cbCur) { ">" } else { " " }
             if ($sel.Contains($i)) {
                 if ($script:UiFancy) { Write-Host ("    {0} {1}[{2}]{3} {4}" -f $ptr, $script:UiOk, $script:UiTick, $script:UiReset, $Options[$i - 1]) }
                 else { Write-Host ("    {0} [x] {1}" -f $ptr, $Options[$i - 1]) }
@@ -190,27 +230,101 @@ function Read-ExakitCheckboxMenu {
         switch ($key.Key) {
             "Enter"     { if ($sel.Count -gt 0) { return @($sel | Sort-Object) } }
             "Spacebar"  {
-                if ($sel.Contains($cur)) { [void]$sel.Remove($cur) } else { [void]$sel.Add($cur) }
-                & $applyExclusive $cur
+                if ($sel.Contains($script:cbCur)) { [void]$sel.Remove($script:cbCur) } else { [void]$sel.Add($script:cbCur) }
+                & $applyGroup $script:cbCur
+                & $applyExclusive $script:cbCur
             }
-            "UpArrow"   { $cur = if ($cur -gt 1) { $cur - 1 } else { $Options.Count } }
-            "DownArrow" { $cur = if ($cur -lt $Options.Count) { $cur + 1 } else { 1 } }
+            "UpArrow"   { & $step -1 }
+            "DownArrow" { & $step 1 }
             default     { $handled = $false }
         }
         if ($handled) { continue }
         switch -Regex ([string]$key.KeyChar) {
-            '^[kK]$' { $cur = if ($cur -gt 1) { $cur - 1 } else { $Options.Count } }
-            '^[jJ]$' { $cur = if ($cur -lt $Options.Count) { $cur + 1 } else { 1 } }
+            '^[kK]$' { & $step -1 }
+            '^[jJ]$' { & $step 1 }
             '^[aA]$' {
-                # "all" means all real choices, never the exclusive option.
+                # "all" means all real choices: never headers, never the
+                # exclusive option.
                 $sel.Clear()
                 for ($i = 1; $i -le $Options.Count; $i++) {
-                    if ($i -ne $ExclusiveIndex) { [void]$sel.Add($i) }
+                    if ($i -ne $ExclusiveIndex -and -not (& $isHeader $i)) { [void]$sel.Add($i) }
                 }
             }
         }
     }
 }
+# Show-ExakitNoAiPanel - shown when the user skips MCP client setup: the
+# database is still fully usable without an AI assistant, and this says how.
+function Show-ExakitNoAiPanel {
+    $dsn = Get-ExakitManifestValue "runtime.dsn"
+    $hostName = "127.0.0.1"; $port = "8563"
+    if ($dsn -match '^(.+):(\d+)$') { $hostName = $Matches[1]; $port = $Matches[2] }
+    Write-Host ""
+    Start-ExakitPanel "Using your database without an AI client"
+    Write-ExakitPanelLine "Your database works great on its own - three easy ways in:"
+    Write-ExakitPanelLine "GUI client:  DBeaver (recommended) - https://dbeaver.io/download/"
+    Write-ExakitPanelLine "             New Connection > Exasol > Host $hostName Port $port"
+    Write-ExakitPanelLine "Python:      pyexasol is preinstalled in its own environment:"
+    Write-ExakitPanelLine "             $(Get-ExakitTilde (Join-Path $script:ExakitHome 'pyexasol-venv'))"
+    Write-ExakitPanelLine "Terminal:    exapump interactive -p starter-kit   (SQL shell)"
+    Write-ExakitPanelLine "Step-by-step (credentials, TLS setting, first query):  exakit guide"
+    Write-ExakitPanelLine "Changed your mind about AI? Any time:  exakit mcp-setup"
+    Complete-ExakitPanel
+    Write-Host ""
+}
+
+# Show-ExakitGuide - friendly how-to-connect walkthrough (mirrors exakit_guide
+# in common.sh): AI clients over MCP, GUI SQL clients (DBeaver), and Python.
+function Show-ExakitGuide {
+    if (-not (Test-Path $script:ManifestPath)) { Warn2 "No installation found. Run the installer first."; return }
+    $dsn = Get-ExakitManifestValue "runtime.dsn"
+    $hostName = "127.0.0.1"; $port = "8563"
+    if ($dsn -match '^(.+):(\d+)$') { $hostName = $Matches[1]; $port = $Matches[2] }
+    $user = Get-ExakitManifestValue "runtime.user"; if (-not $user) { $user = "sys" }
+    $pwfile = Get-ExakitManifestValue "runtime.password_file"
+    $mcpUser = Get-ExakitManifestValue "components.mcp_server.connection.user"
+
+    Write-ExakitBanner "How to connect" "AI clients, SQL clients, Python - pick your door"
+
+    Start-ExakitPanel "1 - Ask questions with an AI client (MCP)"
+    Write-ExakitPanelLine "Connect one or more AI clients in a single guided step:"
+    Write-ExakitPanelLine "  exakit mcp-setup"
+    Write-ExakitPanelLine "Supported: Claude, Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI"
+    Write-ExakitPanelLine "Then restart/reload the client and look for the MCP server 'exasol'."
+    Write-ExakitPanelLine "First thing to ask it:"
+    Write-ExakitPanelLine "  'List the schemas and tables in my Exasol database, then answer my"
+    Write-ExakitPanelLine "   questions with read-only SQL - show me the SQL before you run it.'"
+    Write-ExakitPanelLine "14 ready-made questions: data\example-questions.md (in the kit)"
+    Complete-ExakitPanel
+
+    Start-ExakitPanel "2 - Browse and query with a SQL client (GUI)"
+    Write-ExakitPanelLine "DBeaver (recommended, free): https://dbeaver.io/download/"
+    Write-ExakitPanelLine "In DBeaver: Database > New Database Connection > search 'Exasol'"
+    Write-ExakitPanelLine "  Host:      $hostName"
+    Write-ExakitPanelLine "  Port:      $port"
+    Write-ExakitPanelLine "  User:      $user"
+    if ($pwfile) { Write-ExakitPanelLine "  Password:  Get-Content $(Get-ExakitTilde $pwfile)" }
+    if ($mcpUser) { Write-ExakitPanelLine "  (read-only alternative: user $mcpUser)" }
+    Write-ExakitPanelLine "  TLS:       local self-signed certificate - in Driver properties set"
+    Write-ExakitPanelLine "             validateservercertificate = 0, then Test Connection > Finish."
+    Write-ExakitPanelLine "Your data lives in schema STARTER_KIT."
+    Complete-ExakitPanel
+
+    Start-ExakitPanel "3 - Terminal and Python"
+    Write-ExakitPanelLine "Interactive SQL shell:   exapump interactive -p starter-kit"
+    Write-ExakitPanelLine "One-off query:           exapump sql -p starter-kit 'SELECT 42'"
+    Write-ExakitPanelLine "Python (pyexasol preinstalled in its own environment):"
+    Write-ExakitPanelLine "  $(Get-ExakitTilde (Join-Path $script:ExakitHome 'pyexasol-venv'))"
+    Complete-ExakitPanel
+
+    Start-ExakitPanel "Everything else"
+    Write-ExakitPanelLine "Connection summary:   exakit info"
+    Write-ExakitPanelLine "Load more data:       exakit data-load"
+    Write-ExakitPanelLine "Health check:         exakit status - exakit mcp-doctor"
+    Complete-ExakitPanel
+    Write-Host ""
+}
+
 # ExakitFailException - a distinct exception type so callers can tell a
 # deliberate Fail() apart from an unexpected error. Bash's die() only halts
 # the current subshell (kit_shared_steps runs risky steps in one so a

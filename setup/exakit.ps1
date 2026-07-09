@@ -9,6 +9,8 @@
 #   update-check [what]   check latest versions (all, runtime, exakit, exapump, mcp)
 #   update [what]         update all or one component without deleting database data
 #   info                  print the connection details panel
+#   guide                 friendly walkthrough: connect AI clients (MCP), SQL
+#                         clients (DBeaver), and Python (pyexasol)
 #   start                 start the local database
 #   stop                  stop the local database
 #   data-load [-Force]    open focused data loading options; -Force reloads bundled sample data
@@ -589,6 +591,7 @@ try {
         "update-check"  { Invoke-CmdUpdateCheck -Target ($RestArgs | Select-Object -First 1) }
         "update"        { Invoke-CmdUpdate -Target ($RestArgs | Select-Object -First 1) }
         "info"         { Show-ExakitConnectionPanel }
+        "guide"        { Show-ExakitGuide }
         "start"        { Invoke-CmdStart }
         "stop"         { Invoke-CmdStop }
         "data-load"    { Invoke-CmdDataLoad -ForceFlag ($RestArgs | Select-Object -First 1) }

@@ -9,6 +9,8 @@ from .claude_code import ClaudeCodeAdapter
 from .claude_desktop import ClaudeDesktopAdapter
 from .codex import CodexAdapter
 from .cursor import CursorAdapter
+from .gemini_cli import GeminiCliAdapter
+from .vscode_copilot import VSCodeCopilotAdapter
 
 
 class AdapterRegistry:
@@ -24,6 +26,8 @@ class AdapterRegistry:
                     ClaudeCodeAdapter(),
                     CursorAdapter(),
                     CodexAdapter(),
+                    VSCodeCopilotAdapter(),
+                    GeminiCliAdapter(),
                 ]
             )
         }

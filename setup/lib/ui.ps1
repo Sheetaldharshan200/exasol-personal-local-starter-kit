@@ -251,13 +251,9 @@ function Write-ExakitProgress([int]$Current, [int]$Total, [string]$Label = "") {
 # Render the install banner + plan (used by install.ps1 after download).
 function Write-ExakitInstallPlan {
     param([string]$Platform, [string]$Database, [string]$KitDir, [string]$StateDir)
+    # Banner only: the old "Installation plan" panel repeated internals users
+    # don't act on. Whether this machine can run the kit is answered by the
+    # compatibility checks that follow, which fail or warn explicitly.
     Write-ExakitBanner "Personal Local Starter Kit"
-    Start-ExakitPanel "Installation plan"
-    Write-ExakitPanelLine "Platform:    $Platform"
-    Write-ExakitPanelLine "Database:    $Database"
-    Write-ExakitPanelLine "Components:  local database, exapump, MCP server, pyexasol"
-    Write-ExakitPanelLine "Kit copy:    $(Get-ExakitTilde $KitDir)"
-    Write-ExakitPanelLine "State/logs:  $(Get-ExakitTilde $StateDir)"
-    Complete-ExakitPanel
     Write-Host ""
 }
