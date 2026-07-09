@@ -2254,7 +2254,8 @@ exakit_maybe_offer_mcp_setup() {
     fi
     # Connecting an AI client is the point of the kit, so this step always
     # runs (EXAKIT_SKIP_MCP=1 above is the scripted escape hatch). The client
-    # selection defaults to Claude + Codex; non-interactive runs keep those.
+    # selection pre-selects every detected-but-unconnected client;
+    # non-interactive runs keep that default.
     info "The Exasol runtime and MCP server are ready."
     if ! exakit_mcp_setup; then
         warn "Your local runtime is installed, but MCP client setup did not finish cleanly."
@@ -2265,14 +2266,41 @@ exakit_maybe_offer_mcp_setup() {
 # exakit_maybe_offer_data_load <kit_root> — load data during install, via the
 # dynamic dataset checkbox (bundled datasets not loaded yet are pre-selected;
 # the user can additionally or instead pick a local file, or explicitly skip).
-# Scripted installs can still steer with EXAKIT_LOAD_SAMPLE (=0 skips,
-# =1 bundled); non-interactive runs keep the pre-selected defaults. Each load
-# runs in a subshell so a die() inside the loading flow never aborts the
-# surrounding install.
+# Scripted installs can still steer with EXAKIT_DATASETS (csv of bundled
+# dataset ids) or EXAKIT_LOAD_SAMPLE (=0 skips, =1 bundled sample);
+# EXAKIT_DATASETS takes precedence. Non-interactive runs keep the
+# pre-selected defaults. Each load runs in a subshell so a die() inside the
+# loading flow never aborts the surrounding install.
 exakit_maybe_offer_data_load() {
     _kit_root="$1"
     : "$_kit_root"
     command -v exakit_load_sample_data >/dev/null 2>&1 || return 0
+
+    # EXAKIT_DATASETS names bundled datasets directly (csv of ids from
+    # data/datasets/<id>/, e.g. "tpch,weather") so an agent-driven or scripted
+    # install can pick an exact selection. Unknown ids warn and are skipped;
+    # if none are valid the install stops — the caller asked for something
+    # this kit does not ship.
+    if [ -n "${EXAKIT_DATASETS:-}" ]; then
+        _known_ids=" $(exakit_bundled_datasets | cut -d'|' -f1 | tr '\n' ' ') "
+        _valid_any=0
+        for _env_id in $(printf '%s' "$EXAKIT_DATASETS" | tr ',' ' '); do
+            case "$_known_ids" in
+                *" $_env_id "*)
+                    _valid_any=1
+                    info "Loading dataset '$_env_id' (EXAKIT_DATASETS)."
+                    if ! ( exakit_load_dataset "$_kit_root" "$_env_id" ); then
+                        warn "Data loading did not finish cleanly. Retry any time with: exakit data-load"
+                    fi
+                    ;;
+                *)
+                    warn "Unknown dataset id '$_env_id' in EXAKIT_DATASETS (available:$(printf '%s' "$_known_ids" | sed 's/ *$//'))."
+                    ;;
+            esac
+        done
+        [ "$_valid_any" -eq 1 ] || die "EXAKIT_DATASETS='$EXAKIT_DATASETS' matched no bundled dataset — nothing was loaded."
+        return 0
+    fi
 
     # EXAKIT_LOAD_SAMPLE lets an agent-driven or scripted install decide up front:
     # =1 loads the bundled sample without asking, =0 skips data loading entirely.

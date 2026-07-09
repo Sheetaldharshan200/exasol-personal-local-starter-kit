@@ -76,7 +76,11 @@ The installer detects your OS and hardware, shows you the plan, then does the re
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
-> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it connects **Claude and Codex** over MCP and loads the **bundled sample data**. To answer its choices up front — for example when an AI agent runs it for you — set these before `sh` (macOS/Linux/WSL): `EXAKIT_MCP_CLIENTS=claude,cursor,codex` (which MCP clients to configure; also accepts `all` or numbers `1-3`), `EXAKIT_SKIP_MCP=1` (skip MCP setup), `EXAKIT_LOAD_SAMPLE=0|1` (skip / load the bundled sample), `EXAKIT_REUSE_DB=0|1` (fresh deploy / reuse a running database on macOS). Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_LOAD_SAMPLE=1 sh`.
+> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it loads **every bundled dataset** and connects **every AI client found on the machine that isn't connected yet** over MCP. To answer its choices up front, set these before `sh` (macOS/Linux/WSL) — use **names, not menu numbers** (numbers change between releases): `EXAKIT_MCP_CLIENTS=claude,cursor` (which MCP clients: `claude` = desktop app + Claude Code CLI, `claude_desktop`, `claude_code`, `codex`, `cursor`, `copilot`, `gemini`, `all`, `skip`), `EXAKIT_SKIP_MCP=1` (skip MCP setup), `EXAKIT_DATASETS=tpch,weather` (which bundled datasets, by id; wins over `EXAKIT_LOAD_SAMPLE`), `EXAKIT_LOAD_SAMPLE=0|1` (skip / load the bundled sample), `EXAKIT_REUSE_DB=0|1` (fresh deploy / reuse a running database on macOS). Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh`.
+
+### 🤖 For AI agents
+
+Asked to install this repo? **Read [AGENTS.md](AGENTS.md)** — the agent runbook. The short version: the install command above runs **fully unattended** (no TTY → safe defaults, never hangs); answer its choices with the env vars in the blockquote above (**names, not numbers**); on macOS the first database deploy takes **10–20 minutes** — run it in the background and poll `exakit status` (a timed-out shell call is not a failure; re-running the installer resumes).
 
 ### Connect your AI assistant
 

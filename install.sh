@@ -22,10 +22,16 @@
 #   Non-interactive answers (for agent-driven or scripted installs, so the
 #   install honours a choice instead of silently taking the default):
 #   EXAKIT_REUSE_DB=0|1     reuse a running database (macOS): 0 deploy fresh, 1 reuse
-#   EXAKIT_MCP_CLIENTS=...  which MCP clients to configure: claude, cursor, codex,
-#                           all, or numbers (e.g. "claude,cursor" or "1,2")
+#   EXAKIT_MCP_CLIENTS=...  which MCP clients to configure, BY NAME (names are
+#                           stable across releases; menu numbers are not):
+#                           claude (= both the desktop app and the Claude Code
+#                           CLI), claude_desktop, claude_code, codex, cursor,
+#                           copilot, gemini, all, or skip (e.g. "claude,cursor")
 #   EXAKIT_SKIP_MCP=1       skip MCP client setup (run `exakit mcp-setup` later)
-#   EXAKIT_LOAD_SAMPLE=0|1  0 skip sample data, 1 load the bundled sample
+#   EXAKIT_DATASETS=...     which bundled datasets to load, by id (csv of
+#                           data/datasets/<id>/ ids, e.g. "tpch,weather");
+#                           takes precedence over EXAKIT_LOAD_SAMPLE
+#   EXAKIT_LOAD_SAMPLE=0|1  0 skip data loading, 1 load the bundled sample (tpch)
 #   GITHUB_TOKEN=...        auth for downloading from a private repo
 #
 # Windows (PowerShell): use install.ps1 instead.
