@@ -43,7 +43,7 @@ You already use AI. The hard part is trusting it with your data. This kit gives 
 | 🤖 | **MCP server** | Lets Claude, Cursor, or other supported MCP clients query your database with a dedicated read-only login |
 | 🐍 | **pyexasol** | The official Exasol Python driver, ready in its own environment — script against your database from Python |
 
-At the end you get your connection details on screen, a managed runtime state under `~/.exasol-starter-kit/`, and guided MCP setup for supported clients. Time to first AI-assisted query: **about 2 minutes** (on a fast connection; the one-time runtime download can add a few minutes).
+At the end you get your connection details on screen, a managed runtime state under `~/.exasol-starter-kit/`, and guided MCP setup for supported clients. Time to first AI-assisted query: **under 2 minutes**.
 
 ---
 
@@ -79,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the database deploys natively, usually in a few minutes (the first run can take longer while it downloads the runtime on a slow connection). Container platforms are typically ready in a few minutes too.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the database deploys natively, usually in **under 2 minutes**. Container platforms are ready in about the same time.
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
@@ -87,7 +87,7 @@ The installer detects your OS and hardware, shows you the plan, then does the re
 
 ### 🤖 For AI agents
 
-Asked to install this repo? **Read [AGENTS.md](AGENTS.md)** — the agent runbook. The short version: the install command above runs **fully unattended** (no TTY → safe defaults, never hangs); answer its choices with the env vars in the blockquote above (**names, not numbers**); the macOS database deploy usually takes a few minutes (longer on a slow first download) — run it in the background and poll `exakit status` (a timed-out shell call is not a failure; re-running the installer resumes).
+Asked to install this repo? **Read [AGENTS.md](AGENTS.md)** — the agent runbook. The short version: the install command above runs **fully unattended** (no TTY → safe defaults, never hangs); answer its choices with the env vars in the blockquote above (**names, not numbers**); the macOS database deploy usually finishes in under 2 minutes — run it in the background and poll `exakit status` (a timed-out shell call is not a failure; re-running the installer resumes).
 
 ### Connect your AI assistant
 
