@@ -49,16 +49,39 @@ nano_check_requirements() {
             ok "Container runtime: $_engine"
             ;;
         docker-stopped)
-            if wsl_docker_desktop_on_windows; then
-                error "Docker Desktop is running on Windows, but it is not connected to this WSL distro."
-                printf '    Enable it: Docker Desktop > Settings > Resources > WSL integration >\n' >&2
-                printf '    turn on this distro, click Apply & restart, then re-run this installer.\n' >&2
-                die "Enable Docker Desktop's WSL integration for this distro and re-run."
+            # Docker's CLI is present but its daemon did not respond. Podman was
+            # already tried as the fallback (detect_container_runtime checks it
+            # second), so tell the user the whole picture: what failed, what was
+            # tried, and how to fix either one.
+            if command -v podman >/dev/null 2>&1; then
+                _podman_hint="Podman was tried as a fallback, but its machine/service is not running either."
+                _podman_fix="start it: podman machine start (or: sudo systemctl start podman)"
+            else
+                _podman_hint="Podman was tried as a fallback, but it is not installed."
+                _podman_fix="install it (https://podman.io/docs/installation), then re-run"
             fi
-            die "Docker is installed but not running. Start Docker (e.g. open Docker Desktop) and re-run."
+            if wsl_docker_desktop_on_windows; then
+                error "Docker is installed but unreachable: Docker Desktop is running on Windows, but it is not connected to this WSL distro."
+                printf '    %s\n' "$_podman_hint" >&2
+                printf '    Fix either runtime and re-run this installer:\n' >&2
+                printf '      Docker:  Docker Desktop > Settings > Resources > WSL integration >\n' >&2
+                printf '               turn on this distro, then click Apply & restart\n' >&2
+                printf '      Podman:  %s\n' "$_podman_fix" >&2
+                die "No usable container runtime — connect Docker Desktop to this distro or provide Podman, then re-run."
+            fi
+            error "Docker is installed but unreachable (its daemon did not respond)."
+            printf '    %s\n' "$_podman_hint" >&2
+            printf '    Fix either runtime and re-run this installer:\n' >&2
+            printf '      Docker:  start it (e.g. open Docker Desktop, or: sudo systemctl start docker)\n' >&2
+            printf '      Podman:  %s\n' "$_podman_fix" >&2
+            die "No usable container runtime — start Docker or provide Podman, then re-run."
             ;;
         podman-stopped)
-            die "Podman is installed but its machine/service is not running. Try 'podman machine start' and re-run."
+            error "Podman is installed but its machine/service is not running (Docker was not found)."
+            printf '    Fix either runtime and re-run this installer:\n' >&2
+            printf '      Podman:  podman machine start (or: sudo systemctl start podman)\n' >&2
+            printf '      Docker:  install it (https://docs.docker.com/get-docker/)\n' >&2
+            die "No usable container runtime — start Podman or install Docker, then re-run."
             ;;
         none)
             error "No container runtime found. Exasol Nano needs Docker or Podman."

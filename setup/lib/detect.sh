@@ -175,12 +175,17 @@ preflight_report() {
             docker)         _pf_ok "Container runtime: docker (running)" ;;
             podman)         _pf_ok "Container runtime: podman (running)" ;;
             docker-stopped)
-                if wsl_docker_desktop_on_windows; then
-                    _pf_bad "Docker Desktop is running on Windows but not connected to this WSL distro — Docker Desktop > Settings > Resources > WSL integration > enable this distro, Apply & restart"
+                if command -v podman >/dev/null 2>&1; then
+                    _pf_podman="Podman (the fallback) is installed but not running either"
                 else
-                    _pf_bad "Docker is installed but not running — start Docker (e.g. Docker Desktop), then re-run"
+                    _pf_podman="Podman (the fallback) is not installed"
+                fi
+                if wsl_docker_desktop_on_windows; then
+                    _pf_bad "Docker is unreachable: Docker Desktop runs on Windows but is not connected to this WSL distro (Docker Desktop > Settings > Resources > WSL integration > enable this distro, Apply & restart); $_pf_podman"
+                else
+                    _pf_bad "Docker is installed but unreachable (daemon not responding) — start Docker (e.g. Docker Desktop); $_pf_podman"
                 fi ;;
-            podman-stopped) _pf_bad "Podman is installed but not running — try: podman machine start" ;;
+            podman-stopped) _pf_bad "Podman is installed but not running (Docker not found) — try: podman machine start, or install Docker" ;;
             none)           _pf_bad "No container runtime — install Docker (docs.docker.com/get-docker) or Podman (podman.io)" ;;
         esac
     fi
