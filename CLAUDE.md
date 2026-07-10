@@ -5,10 +5,11 @@ runbook (install command, env-var answers, verification, uninstall).
 
 Claude-Code-specific tips:
 
-- The macOS first install deploys a database for **10–20 minutes**. Run the
-  install command **in the background** and poll `exakit status` until it
-  reports running — do not treat a long-running or timed-out foreground call
-  as a failure. Re-running the installer is safe; it resumes.
+- The macOS first install deploys a database — **usually in under 2 minutes**.
+  Run the install command
+  **in the background** and poll `exakit status` until it reports running — do
+  not treat a long-running or timed-out foreground call as a failure.
+  Re-running the installer is safe; it resumes.
 - Answer install choices with env vars using **names, not menu numbers**
   (e.g. `EXAKIT_MCP_CLIENTS=claude,codex`, `EXAKIT_DATASETS=tpch`).
 - Never print or log database passwords; they live in files under

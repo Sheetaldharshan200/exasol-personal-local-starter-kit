@@ -34,6 +34,7 @@ if (-not (Get-Command Start-ExakitSpinner -ErrorAction SilentlyContinue)) {
         Set-Variable -Scope script -Name $v -Value ""
     }
     $script:UiTick = "+"; $script:UiCross = "x"; $script:UiArrow = ">"; $script:UiBullet = "-"; $script:UiVB = "|"
+    $script:UiTee = "|-"; $script:UiCorner = '`-'
     function Start-ExakitSpinner([string]$Label) { }
     function Stop-ExakitSpinner { }
     function Restore-ExakitCursor { }
@@ -341,8 +342,8 @@ class ExakitFailException : System.Exception {
 function Fail([string]$Msg) {
     Stop-ExakitSpinner
     Restore-ExakitCursor
-    # Rendered as a small "card": prominent ✗ header, then a dim gutter line to
-    # the log — the same shape as ui.sh's die().
+    # Rendered as a small "card": prominent cross header, then a dim gutter
+    # line to the log - the same shape as ui.sh's die().
     Write-Host ""
     if ($script:UiFancy) {
         Write-Host ("  {0}{1} {2}{3}{4}" -f $script:UiErr, $script:UiCross, $script:UiBold, $Msg, $script:UiReset)
@@ -487,6 +488,10 @@ function Install-ExakitUv {
     try {
         $env:UV_NO_MODIFY_PATH = "1"
         $env:INSTALLER_NO_MODIFY_PATH = "1"
+        # HARDENING (eval-report): this fetches and executes the uv installer
+        # unpinned/unverified, unlike the kit's checksum-verified artifacts.
+        # Pin/verify to match the bash twin's chosen approach (keep both sides
+        # identical). Behavior intentionally unchanged here pending that fix.
         Invoke-Expression (Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1") *>> $script:LogFile
     } catch {
         Fail "uv installation failed (see log): $_"

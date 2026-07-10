@@ -514,8 +514,30 @@ require_python3() {
     exakit_ensure_uv || die "A Python runtime is required, and the automatic uv bootstrap failed."
 }
 
+# Minimum Python for the kit's own tooling. 3.11 is the floor because the MCP
+# client-config code parses TOML via the stdlib's tomllib (added in 3.11); an
+# older system interpreter (macOS ships 3.9) made MCP client setup fail during
+# install. The PowerShell twin (Test-ExakitSystemPythonForMcp) applies the
+# same gate.
+EXAKIT_MIN_PYTHON="3.11"
+_EXAKIT_SYSTEM_PY_OK=""
+
+# A system python3 is usable only when it exists AND meets the version floor;
+# anything less is treated exactly like an absent interpreter, so the
+# uv-managed runtime takes over automatically. The probe spawns an interpreter,
+# so its verdict is cached — run_python funnels through here on every call.
 _exakit_has_system_python3() {
-    [ "${EXAKIT_DISABLE_SYSTEM_PYTHON:-0}" != "1" ] && command -v python3 >/dev/null 2>&1
+    [ "${EXAKIT_DISABLE_SYSTEM_PYTHON:-0}" != "1" ] || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    if [ -z "$_EXAKIT_SYSTEM_PY_OK" ]; then
+        if python3 -c "import sys; req = tuple(map(int, '$EXAKIT_MIN_PYTHON'.split('.'))); raise SystemExit(0 if sys.version_info[:2] >= req else 1)" 2>/dev/null; then
+            _EXAKIT_SYSTEM_PY_OK="yes"
+        else
+            _EXAKIT_SYSTEM_PY_OK="no"
+            _exakit_log_file "INFO  system python3 is older than $EXAKIT_MIN_PYTHON — using the uv-managed Python runtime instead"
+        fi
+    fi
+    [ "$_EXAKIT_SYSTEM_PY_OK" = "yes" ]
 }
 
 exakit_ensure_uv() {
@@ -961,7 +983,8 @@ exakit_update_self() {
     fi
     if [ -f "$_kit_dir/setup/exakit" ]; then
         mkdir -p "$EXAKIT_BIN_DIR"
-        install -m 755 "$_kit_dir/setup/exakit" "$EXAKIT_BIN_DIR/exakit"
+        install -m 755 "$_kit_dir/setup/exakit" "$EXAKIT_BIN_DIR/exakit" \
+            || die "Could not install the exakit command to $EXAKIT_BIN_DIR (is it writable? is the disk full?)."
     else
         [ -d "$_backup" ] && { rm -rf "$_kit_dir"; mv "$_backup" "$_kit_dir"; }
         die "Updated kit did not contain setup/exakit after staging; previous kit copy was restored."
@@ -1412,7 +1435,11 @@ _exakit_run_exapump_sql() {
     _profile="$2"
     _sql="$3"
     _bin="$(exakit_exapump_bin)" || die "exapump is required for MCP read-only setup but was not found."
-    EXAPUMP_CONFIG="$_config_path" "$_bin" sql -p "$_profile" "$_sql"
+    # Feed the SQL over stdin, not as an argv: some of these statements are
+    # CREATE/ALTER USER … IDENTIFIED BY <password>, and an argv is visible to any
+    # local user via `ps` for the life of the call. stdin keeps it off the
+    # process table; callers still capture stdout exactly as before.
+    printf '%s\n' "$_sql" | EXAPUMP_CONFIG="$_config_path" "$_bin" sql -p "$_profile"
 }
 
 _exakit_exapump_sql_has_token() {
@@ -1796,6 +1823,35 @@ exakit_configure_mcp_readonly_access() {
     return 0
 }
 
+# _exakit_log_mcp_result_failure <result_file> — copy the CLI's structured
+# diagnosis (status + findings) into the log so "see log" is honest. A crash
+# already lands in the log via the runners' stderr redirect; this covers the
+# other failure shape, where the CLI exits non-zero with the cause only in its
+# JSON payload. Deliberately logs findings, not the raw payload — the payload
+# can embed rendered client-config material.
+_exakit_log_mcp_result_failure() {
+    [ -s "$1" ] || return 0
+    [ -n "${EXAKIT_LOG_FILE:-}" ] || return 0
+    run_python - "$1" <<'PY' >> "$EXAKIT_LOG_FILE" 2>&1 || true
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        doc = json.load(handle)
+except Exception as exc:  # noqa: BLE001 - diagnostics only, never fatal
+    print(f"MCP result file unreadable: {exc}")
+    raise SystemExit(0)
+
+print(f"MCP status: {doc.get('status', 'unknown')} — {doc.get('summary', '')}")
+for finding in doc.get("findings", []) or []:
+    line = f"MCP finding [{finding.get('severity')}] {finding.get('code')}: {finding.get('message')}"
+    action = finding.get("recommended_action")
+    if action:
+        line += f" -> {action}"
+    print(line)
+PY
+}
+
 exakit_run_mcp_setup_cli() {
     _clients_csv="$1"
     _output_file="$2"
@@ -1816,6 +1872,7 @@ exakit_run_mcp_setup_cli() {
                 --runtime-root "$EXAKIT_HOME" \
                 --clients "$@"
     ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+        _exakit_log_mcp_result_failure "$_output_file"
         warn "MCP client setup failed (see log)."
         return 1
     fi
@@ -1851,6 +1908,7 @@ exakit_run_mcp_operation_cli() {
                     --snapshot-id "$_snapshot_id" \
                     --clients "$@"
         ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+            _exakit_log_mcp_result_failure "$_output_file"
             warn "MCP $_operation failed (see log)."
             return 1
         fi
@@ -1864,6 +1922,7 @@ exakit_run_mcp_operation_cli() {
                 --runtime-root "$EXAKIT_HOME" \
                 --clients "$@"
     ) > "$_output_file" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"; then
+        _exakit_log_mcp_result_failure "$_output_file"
         warn "MCP $_operation failed (see log)."
         return 1
     fi

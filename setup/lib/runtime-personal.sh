@@ -110,8 +110,9 @@ personal_install_launcher() {
     run_logged tar -xzf "$_tmp/$_asset" -C "$_tmp" || die "Could not extract $_asset"
     _binary="$(find "$_tmp" -name exasol -type f | head -1)"
     [ -n "$_binary" ] || die "The release archive did not contain an 'exasol' binary"
-    install -m 755 "$_binary" "$EXAKIT_PERSONAL_BIN"
-    push_rollback "rm -f $EXAKIT_PERSONAL_BIN"
+    install -m 755 "$_binary" "$EXAKIT_PERSONAL_BIN" \
+        || die "Could not install the Exasol launcher to $EXAKIT_PERSONAL_BIN (is it writable? is the disk full?)."
+    push_rollback "rm -f \"$EXAKIT_PERSONAL_BIN\""
     rm -rf "$_tmp"
 
     ensure_path_hint "$EXAKIT_BIN_DIR"
@@ -223,6 +224,7 @@ personal_reap_orphan_daemon() {
 }
 
 # personal_deploy_local — run the local deployment. This is the long step
+# (usually under 2 minutes); output stays visible and is logged.
 personal_deploy_local() {
     # A reachable Exasol is already up (this run, a previous run, or the user
     # started it by hand). `exasol info` is the launcher's own health signal.
@@ -251,7 +253,7 @@ personal_deploy_local() {
             die "Port $EXAKIT_PERSONAL_PORT is in use by a process that is not a reachable Exasol Personal deployment. Stop that application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
     fi
 
-    info "Deploying Exasol Personal locally - super quick !"
+    info "Deploying Exasol Personal locally — usually under 2 minutes"
     push_rollback "$(personal_cli) destroy --remove || true"
     # The launcher prints its own (verbose) output; contain it in a dim gutter so
     # it reads as "not ours", while the full text still lands in the log.

@@ -12,25 +12,40 @@ This is the kit's core loop, done once, end to end: **ask → inspect the SQL �
    ```
    You can also point the workflow at any data you upload yourself (`exapump upload yourfile.csv --table STARTER_KIT.MYDATA -p starter-kit`).
 
+The bundled sample is the standard **TPC-H** dataset (a wholesale supplier model). For every table and column — and the kit's definition of "revenue" — see [`data/data-dictionary.md`](../data/data-dictionary.md); for more ready-made questions with validated SQL, see [`data/example-questions.md`](../data/example-questions.md).
+
 ## Step 1 — Discover (let the assistant look around)
 
 Paste into your assistant:
 
 > What schemas and tables are available in my Exasol database? For the tables in the TPCH schema, describe their columns and how they relate to each other.
 
-The assistant uses the MCP server's metadata tools — no SQL runs yet. You should see the sample retail tables (customers, products, orders, returns) with their columns. This step matters: the assistant grounds itself in the *real* schema instead of guessing.
+The assistant uses the MCP server's metadata tools — no SQL runs yet. You should see the eight TPC-H tables — `CUSTOMER`, `ORDERS`, `LINEITEM`, `PART`, `SUPPLIER`, `PARTSUPP`, plus `NATION` and `REGION` — with their columns. This step matters: the assistant grounds itself in the *real* schema instead of guessing.
 
 ## Step 2 — Ask, but see the SQL first
 
-> Which product category generated the most revenue? **Show me the SQL you intend to run and explain it before executing.**
+> Which product type generated the most revenue? **Show me the SQL you intend to run and explain it before executing.**
 
-That bolded instruction is the habit this kit teaches. The assistant should reply with a query and an explanation — read it before anything runs. Things worth actually checking:
+That bolded instruction is the habit this kit teaches. In TPC-H the closest thing to a "product category" is a part's **type** (`PART.P_TYPE`, e.g. *PROMO BURNISHED COPPER*), so the assistant should join `LINEITEM` to `PART` and sum revenue per `P_TYPE`. It should reply with a query and an explanation — read it before anything runs. Things worth actually checking:
 
-- Which table and columns define "revenue"? (price × quantity? an amount column?)
-- Are returns subtracted, or is this gross revenue?
-- Is anything filtered out (date ranges, cancelled orders)?
+- Which columns define "revenue"? (the kit convention is `L_EXTENDEDPRICE * (1 - L_DISCOUNT)` — line price net of discount)
+- Is tax (`L_TAX`) included? (the convention above excludes it)
+- Are returned line items (`L_RETURNFLAG = 'R'`) subtracted, or is this gross revenue?
+- Is anything filtered out (date ranges via `O_ORDERDATE`)?
 
-If you disagree with a choice, say so — e.g. *"subtract returned orders, then show me the revised SQL."* Iterate until the SQL says what *you* mean by revenue.
+A correct query looks like this — inspect it, don't just run it:
+
+```sql
+SELECT p.P_TYPE,
+       SUM(l.L_EXTENDEDPRICE * (1 - l.L_DISCOUNT)) AS REVENUE
+FROM   STARTER_KIT.LINEITEM l
+JOIN   STARTER_KIT.PART p ON p.P_PARTKEY = l.L_PARTKEY
+GROUP  BY p.P_TYPE
+ORDER  BY REVENUE DESC
+LIMIT  10;
+```
+
+If you disagree with a choice, say so — e.g. *"exclude returned line items — add `WHERE l.L_RETURNFLAG <> 'R'` — then show me the revised SQL."* Iterate until the SQL says what *you* mean by revenue.
 
 ## Step 3 — Run
 
@@ -53,8 +68,8 @@ Save the outcome so it survives beyond this chat session. Two lightweight option
 1. **Save the SQL** to a file and rerun any time:
    ```bash
    mkdir -p ~/.exasol-starter-kit/workflows
-   # paste the approved SQL into revenue-by-category.sql, then:
-   exapump sql -p starter-kit < ~/.exasol-starter-kit/workflows/revenue-by-category.sql
+   # paste the approved SQL into revenue-by-type.sql, then:
+   exapump sql -p starter-kit < ~/.exasol-starter-kit/workflows/revenue-by-type.sql
    ```
 2. **Record the workflow** — the file next to this guide, [`first-revenue-analysis.workflow.json`](first-revenue-analysis.workflow.json), captures this session (question, approved SQL, validation) in a structured, rerunnable form. Use it as the template for your own.
 
@@ -62,6 +77,6 @@ Kit 2 (the Trusted AI Workflow Add-on) turns this from a convention into a featu
 
 ## Where to go next
 
-- Ask a harder question — *"monthly revenue trend by region, top 3 categories only"* — and hold the same discipline: SQL first, validate after
+- Ask a harder question — *"monthly revenue trend by region, top 3 nations only"* — and hold the same discipline: SQL first, validate after
 - Bring your own data: `exapump upload data.csv --table STARTER_KIT.MYTABLE -p starter-kit`, then ask about it
 - If something misbehaves: `exakit status`, `exakit logs`, and the troubleshooting table in the [README](../README.md)

@@ -43,14 +43,13 @@ mcp_command_path() {
 }
 
 mcp_ssl_cert_validation() {
-    _tls="$(manifest_get runtime.tls 2>/dev/null || true)"
+    # Disable certificate validation ONLY for a loopback DSN (the kit's local
+    # self-signed runtime). The decision is keyed on the ACTUAL address, not on
+    # the runtime.tls label: every local runtime hardcodes tls="self-signed", so
+    # keying on the label would blanket-disable validation even if the DSN were
+    # ever pointed at a non-loopback host — letting credentials cross an
+    # unauthenticated TLS channel. For any non-loopback DSN, keep validation on.
     _dsn="$(manifest_get runtime.dsn 2>/dev/null || true)"
-    case "$_tls" in
-        self-signed|self_signed|selfsigned)
-            printf '%s\n' "no"
-            return 0
-            ;;
-    esac
     case "$_dsn" in
         127.0.0.1:*|localhost:*|\[::1\]:*)
             printf '%s\n' "no"
@@ -70,6 +69,13 @@ mcp_uv_install() {
     if command -v brew >/dev/null 2>&1; then
         run_logged brew install uv || die "brew install uv failed (see log)"
     else
+        # TODO(security): this pipes a remote installer straight into a shell,
+        # unlike the kit's own artifacts which are SHA256-verified. It can't be
+        # checksum-pinned without breakage (astral's install.sh content changes
+        # over time) — a real fix means vendoring a pinned installer or shipping
+        # uv via a verified release asset. Brew is preferred above precisely to
+        # avoid this path on the common macOS case. Fetched over TLS from the
+        # official host as a documented, accepted risk until then.
         curl -LsSf --retry 3 https://astral.sh/uv/install.sh | run_logged sh || \
             die "uv installation failed (see log)"
         # The uv installer defaults to ~/.local/bin

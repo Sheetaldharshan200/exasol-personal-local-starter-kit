@@ -29,9 +29,13 @@ done
 . "$LIB_DIR/common.sh"
 . "$LIB_DIR/detect.sh"
 . "$LIB_DIR/runtime-nano.sh"
-[ -f "$LIB_DIR/exapump.sh" ]  && . "$LIB_DIR/exapump.sh"
-[ -f "$LIB_DIR/mcp.sh" ]      && . "$LIB_DIR/mcp.sh"
-[ -f "$LIB_DIR/pyexasol.sh" ] && . "$LIB_DIR/pyexasol.sh"
+# Optional modules: a missing file legitimately skips its step, but a file
+# that FAILS to load (e.g. CRLF-corrupted copy whose syntax breaks bash) must
+# fail loudly - otherwise the step silently reports "not part of this
+# installation" and the component is never installed.
+if [ -f "$LIB_DIR/exapump.sh" ];  then . "$LIB_DIR/exapump.sh"  || die "Could not load $LIB_DIR/exapump.sh (corrupted kit copy? re-download and re-run)"; fi
+if [ -f "$LIB_DIR/mcp.sh" ];      then . "$LIB_DIR/mcp.sh"      || die "Could not load $LIB_DIR/mcp.sh (corrupted kit copy? re-download and re-run)"; fi
+if [ -f "$LIB_DIR/pyexasol.sh" ]; then . "$LIB_DIR/pyexasol.sh" || die "Could not load $LIB_DIR/pyexasol.sh (corrupted kit copy? re-download and re-run)"; fi
 
 exakit_init_logging
 manifest_init

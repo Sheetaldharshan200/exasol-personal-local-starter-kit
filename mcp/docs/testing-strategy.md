@@ -33,4 +33,4 @@ Detailed test matrix and fixtures should be finalized after architecture and des
 
 ## Current QA Expansion
 
-The detailed MCP edge-case matrix is now tracked in [qa-edge-cases.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/qa-edge-cases.md).
+The detailed MCP edge-case matrix is now tracked in [qa-edge-cases.md](qa-edge-cases.md).

@@ -12,13 +12,13 @@ This subsystem now has a working Python implementation plus lifecycle tests.
 
 ## Read In Order
 
-1. [AGENT.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/AGENT.md)
-2. [requirements.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/requirements.md)
-3. [architecture.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/architecture.md)
-4. [design.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/design.md)
-5. [api-design.md](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/docs/api-design.md)
-6. [service.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/service.py)
-7. [test_service.py](/Users/sheetaldharshan.a/Desktop/exasol-personal-local-starter-kit/mcp/tests/test_service.py)
+1. [AGENT.md](AGENT.md)
+2. [requirements.md](docs/requirements.md)
+3. [architecture.md](docs/architecture.md)
+4. [design.md](docs/design.md)
+5. [api-design.md](docs/api-design.md)
+6. [service.py](service.py)
+7. [test_service.py](tests/test_service.py)
 
 ## Test Command
 

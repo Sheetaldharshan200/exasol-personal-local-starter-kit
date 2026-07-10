@@ -61,16 +61,41 @@ class SecurityPolicy:
                         blocking=True,
                     )
                 )
-        if request.credential_reference and request.credential_reference.kind == "literal":
+        if request.credential_reference and self._is_plaintext_credential(
+            request.credential_reference, request.server_definition
+        ):
             findings.append(
                 Finding(
                     code="plaintext_credential_reference",
                     severity=Severity.WARNING,
-                    message="Literal credentials increase the risk of local secret exposure.",
-                    recommended_action="Prefer an environment-backed or external credential reference.",
+                    message="The database credential is stored as plaintext in the client configuration file.",
+                    recommended_action=(
+                        "Keep the config file owner-only (0600) and prefer an external or "
+                        "OS-keychain credential reference where the client supports it."
+                    ),
                 )
             )
         return findings
+
+    @staticmethod
+    def _is_plaintext_credential(credential, server_definition) -> bool:
+        """True when the credential ends up on disk as plaintext.
+
+        Two paths reach the config file as cleartext: a ``literal`` reference
+        carries the secret value directly, and an ``inline_env`` reference names
+        an env var whose value the adapters write verbatim into the client
+        config's env block. The latter is the path the installer actually uses,
+        so checking only for ``literal`` left the warning permanently dormant.
+        """
+        if credential.kind == "literal" and credential.value:
+            return True
+        if (
+            credential.kind == "inline_env"
+            and credential.name
+            and server_definition is not None
+        ):
+            return bool(server_definition.env.get(credential.name))
+        return False
 
     def apply_managed_permissions(self, path: Path) -> str | None:
         if path.exists() and path.is_file() and hasattr(path, "chmod"):

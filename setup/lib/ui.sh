@@ -43,6 +43,7 @@ if [ "$UI_FANCY" = 1 ]; then
     UI_INFO=$'\033[1;34m';  UI_ASK=$'\033[1;36m'
     UI_TICK='✓';  UI_CROSS='✗';  UI_BULLET='•';  UI_ARROW='▸'
     UI_HR='─';  UI_TL='╭';  UI_TR='╮';  UI_BL='╰';  UI_BR='╯';  UI_VB='│'
+    UI_TEE='├─';  UI_CORNER='└─'
     UI_BAR_FULL='█';  UI_BAR_EMPTY='░'
 else
     UI_RESET='';  UI_BOLD='';  UI_DIM='';  UI_ACCENT=''
@@ -50,6 +51,7 @@ else
     UI_OK='';  UI_WARN='';  UI_ERR='';  UI_INFO='';  UI_ASK=''
     UI_TICK='[ok]';  UI_CROSS='[x]';  UI_BULLET='-';  UI_ARROW='>'
     UI_HR='-';  UI_TL='+';  UI_TR='+';  UI_BL='+';  UI_BR='+';  UI_VB='|'
+    UI_TEE='|-';  UI_CORNER='`-'
     UI_BAR_FULL='#';  UI_BAR_EMPTY='.'
 fi
 

@@ -94,7 +94,7 @@ try {
 
     # --- step 6: exakit helper command ------------------------------------------
     # The step flag alone is not trusted: if the shim was removed (cleanup,
-    # testing, older builds), a re-run must reinstall it rather than skip —
+    # testing, older builds), a re-run must reinstall it rather than skip -
     # and the PATH check must run either way, since the PATH entry can be
     # missing even when the step is marked done.
     $helperNeeded = Begin-ExakitStep "exakit_helper" "Step 5/6  exakit helper command"

@@ -83,7 +83,7 @@ Example: `curl -fsSL <install.sh URL> | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASET
 Tell the user what to expect: a detection summary, an install plan, then numbered steps
 ending in a connection panel — and the suggested first AI prompt is copied to the user's
 clipboard automatically when a clipboard tool is available, ready to paste into their client.
-**On macOS the first database deployment takes 10–20 minutes**
+**On macOS the first database deployment usually finishes in under 2 minutes**
 (one-time); container platforms come up in a few minutes. Do not treat a long-running macOS
 deploy as a hang — it holds the foreground for a while. If you cannot keep a long foreground
 command open, have the user run the install command themselves and tell you when the
@@ -115,7 +115,9 @@ exakit mcp-setup
 ```
 
 Tell the user that setup backs up and edits the selected client configs directly — it
-presents a checkbox multi-select of Claude, Cursor, and Codex with **Claude and Codex
+presents a checkbox multi-select of the supported clients (Claude Desktop, Claude Code,
+Cursor, Codex, VS Code Copilot, Gemini CLI). The menu is **dynamic**: only clients found on
+the machine that aren't already connected are listed, and **every listed (pending) client is
 pre-selected**. The user restarts the client afterward.
 
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not

@@ -1,9 +1,9 @@
 {
   "workflow_version": 1,
   "name": "first-revenue-analysis",
-  "title": "Revenue by product category",
-  "description": "The kit's first guided workflow: which product category generated the most revenue, answered with inspect-before-run discipline and independent validation. Serves as the template for saving your own workflows.",
-  "question": "Which product category generated the most revenue?",
+  "title": "Revenue by product type",
+  "description": "The kit's first guided workflow: which product type generated the most revenue, answered with inspect-before-run discipline and independent validation. Runs against the bundled TPC-H sample. Serves as the template for saving your own workflows.",
+  "question": "Which product type generated the most revenue?",
   "database": {
     "schema": "STARTER_KIT",
     "connection_profile": "starter-kit"
@@ -19,26 +19,27 @@
       "id": "ask",
       "type": "prompt",
       "description": "Ask the question with the inspect-before-run instruction",
-      "prompt": "Which product category generated the most revenue? Show me the SQL you intend to run and explain it before executing.",
+      "prompt": "Which product type generated the most revenue? Show me the SQL you intend to run and explain it before executing.",
       "inspect_before_run": true,
       "review_checklist": [
-        "Which columns define revenue (price x quantity, or an amount column)?",
-        "Are returns subtracted (net) or included (gross)?",
-        "Any filters applied (dates, order status)?"
+        "Which columns define revenue? (kit convention: L_EXTENDEDPRICE * (1 - L_DISCOUNT))",
+        "Is tax (L_TAX) included? (the convention above excludes it)",
+        "Are returned line items (L_RETURNFLAG = 'R') subtracted (net) or included (gross)?",
+        "Any filters applied (e.g. an O_ORDERDATE range)?"
       ]
     },
     {
       "id": "run",
       "type": "sql",
-      "description": "The SQL approved during the ask step. Placeholder below - replace with the reviewed query from your session; exact column names follow data/data-dictionary.md.",
-      "sql": "-- illustrative; align with the data dictionary before relying on it\nSELECT p.PRODUCT_CATEGORY,\n       SUM(o.QUANTITY * p.PRICE) AS REVENUE\nFROM   STARTER_KIT.ORDERS o\nJOIN   STARTER_KIT.PRODUCTS p ON p.PRODUCT_ID = o.PRODUCT_ID\nGROUP  BY p.PRODUCT_CATEGORY\nORDER  BY REVENUE DESC",
+      "description": "The SQL approved during the ask step. In TPC-H a part's P_TYPE is the closest thing to a product category; revenue is summed from LINEITEM joined to PART. Column names follow data/data-dictionary.md.",
+      "sql": "SELECT p.P_TYPE,\n       SUM(l.L_EXTENDEDPRICE * (1 - l.L_DISCOUNT)) AS REVENUE\nFROM   STARTER_KIT.LINEITEM l\nJOIN   STARTER_KIT.PART p ON p.P_PARTKEY = l.L_PARTKEY\nGROUP  BY p.P_TYPE\nORDER  BY REVENUE DESC\nLIMIT  10",
       "executed_via": "mcp read-only query tool"
     },
     {
       "id": "validate",
       "type": "shell",
       "description": "Independent reproduction outside the assistant - same SQL, direct database path",
-      "command": "exapump sql -p starter-kit < revenue-by-category.sql",
+      "command": "exapump sql -p starter-kit < revenue-by-type.sql",
       "expectation": "Result matches the assistant's answer"
     },
     {
@@ -48,7 +49,7 @@
     }
   ],
   "outcome": {
-    "deliverable": "Ranked product categories by revenue, verified through two independent paths",
+    "deliverable": "Ranked product types (PART.P_TYPE) by revenue, verified through two independent paths",
     "trust_properties": [
       "SQL reviewed by a human before execution",
       "Read-only database access for the assistant",

@@ -40,15 +40,20 @@ if confirm_env EXAKIT_TEST_ANS "q" n </dev/null; then r=yes; else r=no; fi
 check "unset -> default n" no "$r"
 
 echo "EXAKIT_MCP_CLIENTS — client selection parses names, 'all', and numbers:"
-# "claude" expands to BOTH Claude surfaces (desktop app + Claude Code CLI).
+# "claude" (or 1) expands to both Claude surfaces (desktop app + Claude Code
+# CLI); "all" covers every supported client. Keep these in lockstep with
+# exakit_parse_mcp_client_selection in setup/lib/common.sh.
 check "claude,cursor" "claude_desktop,claude_code,cursor" "$(exakit_parse_mcp_client_selection "claude,cursor")"
 check "all"           "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli,opencode,continue" "$(exakit_parse_mcp_client_selection "all")"
-check "1,3"           "claude_desktop,claude_code,cursor" "$(exakit_parse_mcp_client_selection "1,3")"
+check "1,2"           "claude_desktop,claude_code,codex" "$(exakit_parse_mcp_client_selection "1,2")"
 check "opencode"      "opencode" "$(exakit_parse_mcp_client_selection "opencode")"
 check "number 6"      "opencode" "$(exakit_parse_mcp_client_selection "6")"
 check "continue"      "continue" "$(exakit_parse_mcp_client_selection "continue")"
 check "number 7"      "continue" "$(exakit_parse_mcp_client_selection "7")"
 check "dedupes"       "claude_desktop,claude_code" "$(exakit_parse_mcp_client_selection "claude,1,claude")"
+check "single surface" "claude_code" "$(exakit_parse_mcp_client_selection "claude_code")"
+check "copilot"       "vscode_copilot" "$(exakit_parse_mcp_client_selection "copilot")"
+check "gemini"        "gemini_cli" "$(exakit_parse_mcp_client_selection "gemini")"
 if exakit_parse_mcp_client_selection "bogus" >/dev/null 2>&1; then r=accepted; else r=rejected; fi
 check "invalid rejected" rejected "$r"
 

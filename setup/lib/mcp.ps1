@@ -36,9 +36,12 @@ function Get-McpCommandPath {
 }
 
 function Get-McpSslCertValidation {
-    $tls = Get-ExakitManifestValue "runtime.tls"
+    # Disable certificate validation ONLY for the local self-signed loopback
+    # runtime, keyed on the DSN host - never on the runtime.tls label alone.
+    # Every runtime hardcodes tls="self-signed", so keying on the label would
+    # blanket-disable validation even for a non-loopback DSN (adopted from a
+    # deployment.json), sending credentials over an unvalidated channel.
     $dsn = Get-ExakitManifestValue "runtime.dsn"
-    if ($tls -in @("self-signed", "self_signed", "selfsigned")) { return "no" }
     if ($dsn -match '^(127\.0\.0\.1|localhost|\[::1\]):') { return "no" }
     return "yes"
 }
