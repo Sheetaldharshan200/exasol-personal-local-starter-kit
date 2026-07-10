@@ -61,11 +61,23 @@ check "runtime(no CLIs)" "none" "$got"
 got="$(PATH="$empty" bash -c ". '$ROOT/setup/lib/detect.sh'; detect_container_runtime_detail")"
 check "runtime_detail(no CLIs)" "none" "$got"
 
-# docker present but daemon down -> docker-stopped, and not selected
+# docker present but daemon down -> docker-stopped, and not selected.
+# A FAILING podman stub is created alongside: the stub dir is prepended to
+# the real PATH, so on a machine with a healthy real podman the fallback
+# would otherwise leak in and detection would (correctly, but off-test)
+# return podman instead of the docker-* state under test.
 stub="$(mktemp -d)"
 printf '#!/bin/sh\nexit 1\n' > "$stub/docker" && chmod +x "$stub/docker"
+printf '#!/bin/sh\nexit 1\n' > "$stub/podman" && chmod +x "$stub/podman"
 got="$(PATH="$stub:$PATH" bash -c ". '$ROOT/setup/lib/detect.sh'; detect_container_runtime_detail")"
 check "runtime_detail(docker down)" "docker-stopped" "$got"
+
+# docker daemon UP but the user lacks socket permission (not in the docker
+# group) -> docker-permission, so the error names the real remedy (usermod)
+# instead of telling the user to start a daemon that is already running.
+printf '#!/bin/sh\necho "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock" >&2\nexit 1\n' > "$stub/docker" && chmod +x "$stub/docker"
+got="$(PATH="$stub:$PATH" bash -c ". '$ROOT/setup/lib/detect.sh'; detect_container_runtime_detail")"
+check "runtime_detail(docker permission)" "docker-permission" "$got"
 
 # docker present and healthy -> docker
 printf '#!/bin/sh\nexit 0\n' > "$stub/docker" && chmod +x "$stub/docker"

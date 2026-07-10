@@ -51,6 +51,19 @@ nano_check_requirements() {
         docker|podman)
             ok "Container runtime: $_engine"
             ;;
+        docker-permission)
+            # The daemon is up — the USER cannot reach the socket (classic
+            # fresh-Linux state: not in the docker group). Say exactly that;
+            # "unreachable, start Docker" would send them in circles, and
+            # sudo'ing the installer is not the fix (it must run as the user).
+            error "Docker is running, but this user is not allowed to use it (permission denied on the Docker socket)."
+            printf '    Your user is not in the docker group. Fix it and re-run this installer:\n' >&2
+            printf '      1. sudo usermod -aG docker $USER\n' >&2
+            printf '      2. log out and back in (or run: newgrp docker)\n' >&2
+            printf '      3. confirm it works without sudo: docker ps\n' >&2
+            printf '    Do not run this installer with sudo — it must run as your normal user.\n' >&2
+            die "No usable container runtime — fix the Docker socket permission, then re-run."
+            ;;
         docker-stopped)
             # Docker's CLI is present but its daemon did not respond. Podman was
             # already tried as the fallback (detect_container_runtime checks it
