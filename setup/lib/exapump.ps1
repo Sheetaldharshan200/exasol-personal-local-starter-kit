@@ -865,7 +865,13 @@ function Invoke-ExakitDatasetDirLoad {
         Info "Verification ($Id 03_verify_setup.sql):"
         $result = Invoke-ExapumpSqlFileCapture $verifySql
         Write-ExapumpOutput -Output $result.Output
-        if (-not $result.Success -or $result.Output -match "FAIL") {
+        # Grade on the STATUS *column value* ",FAIL," - not the bare word. The
+        # verify SQL is full of the literal string (the header comment "a 'FAIL'
+        # row means..." and 17 "CASE ... ELSE 'FAIL' END" clauses), and exapump
+        # echoes that text back, so matching bare "FAIL" fails a dataset even
+        # when every row reads OK. A real failing check emits an unquoted STATUS
+        # column (check_name,FAIL,detail); OK rows and the echoed SQL never do.
+        if (-not $result.Success -or $result.Output -match ",FAIL,") {
             Fail "Verification failed for dataset '$Id' - see the log. Data is loaded but not marked ready; fix the underlying issue and re-run with -Force."
         }
     }
@@ -991,6 +997,43 @@ function Invoke-ExakitSampleDataLoad {
 # pwsh process instead (see setup-windows-docker.ps1).
 function Request-ExakitDataLoadOffer {
     param([Parameter(Mandatory)][string]$KitRoot)
+
+    # EXAKIT_DATASETS names bundled datasets directly (csv of ids from
+    # data\datasets\<id>\, e.g. "tpch,weather") so an agent-driven or scripted
+    # install picks an exact selection without a tty. Unknown ids warn and are
+    # skipped; if none are valid the load fails. EXAKIT_DATASETS takes
+    # precedence over EXAKIT_LOAD_SAMPLE. Twin of exakit_maybe_offer_data_load
+    # in common.sh - the .ps1 path used to ignore these documented vars.
+    if ($env:EXAKIT_DATASETS) {
+        $knownIds = @(Get-ExakitBundledDatasets | ForEach-Object { $_.Id })
+        $validAny = $false
+        foreach ($envId in ($env:EXAKIT_DATASETS -split ',')) {
+            $envId = $envId.Trim()
+            if (-not $envId) { continue }
+            if ($knownIds -contains $envId) {
+                $validAny = $true
+                Info "Loading dataset '$envId' (EXAKIT_DATASETS)."
+                Invoke-ExakitDatasetLoad -KitRoot $KitRoot -Id $envId
+            } else {
+                Warn2 "Unknown dataset id '$envId' in EXAKIT_DATASETS (available: $($knownIds -join ', '))."
+            }
+        }
+        if (-not $validAny) { Fail "EXAKIT_DATASETS='$($env:EXAKIT_DATASETS)' matched no bundled dataset - nothing was loaded." }
+        return
+    }
+
+    # EXAKIT_LOAD_SAMPLE decides up front: =0 skips data loading entirely, =1
+    # loads the bundled TPC-H sample without asking. Twin of common.sh.
+    if ($env:EXAKIT_LOAD_SAMPLE -eq "0") {
+        Info "Skipping data loading (EXAKIT_LOAD_SAMPLE=0). Run it any time with: exakit data-load"
+        return
+    }
+    if ($env:EXAKIT_LOAD_SAMPLE -eq "1") {
+        Info "Loading the bundled sample data (EXAKIT_LOAD_SAMPLE=1)."
+        Invoke-ExakitSampleDataLoad -KitRoot $KitRoot
+        return
+    }
+
     # Dynamic dataset checkbox (shared with `exakit data-load`): only bundled
     # datasets that are not loaded yet are offered, pre-selected, plus the
     # local-file option and an explicit skip. Non-interactive installs keep

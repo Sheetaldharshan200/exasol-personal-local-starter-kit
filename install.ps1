@@ -96,17 +96,26 @@ if (Test-Path $uiLib) {
     # blocks it), but a scriptblock built from the file's text is not: the
     # same exemption install.ps1 itself runs under via `irm | iex`. Guarded so
     # any failure just falls back to the plain plan below.
+    #
+    # Read as explicit UTF-8, NOT Get-Content -Raw: ui.ps1 carries the EXASOL
+    # wordmark as multi-byte block glyphs, and on Windows PowerShell 5.1
+    # Get-Content -Raw decodes a BOM-less copy (as a download/extract can leave
+    # it) using the ANSI codepage, corrupting those bytes into a scriptblock
+    # that fails to parse - the silent plain-text fallback seen in the field.
+    # ReadAllText with a UTF-8 encoding decodes correctly with or without a BOM.
+    # The plan render lives inside the try too, so a render-time failure also
+    # falls back cleanly instead of surfacing a raw error before install.
     try {
-        . ([scriptblock]::Create((Get-Content -Raw -Path $uiLib)))
+        $uiText = [System.IO.File]::ReadAllText($uiLib, [System.Text.Encoding]::UTF8)
+        . ([scriptblock]::Create($uiText))
+        Write-ExakitInstallPlan `
+            -Platform "windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)" `
+            -Database "Exasol Nano (container via Docker Desktop)" `
+            -KitDir $KitDir -StateDir $ExakitHome
         $uiLoaded = $true
     } catch { $uiLoaded = $false }
 }
-if ($uiLoaded) {
-    Write-ExakitInstallPlan `
-        -Platform "windows ($env:PROCESSOR_ARCHITECTURE, $ramGb GB RAM)" `
-        -Database "Exasol Nano (container via Docker Desktop)" `
-        -KitDir $KitDir -StateDir $ExakitHome
-} else {
+if (-not $uiLoaded) {
     Write-Host ""
     Write-Host "  Personal Local Starter Kit"
     Write-Host ""

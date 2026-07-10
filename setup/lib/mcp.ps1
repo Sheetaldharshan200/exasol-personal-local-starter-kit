@@ -780,6 +780,26 @@ function Get-McpClientsFromArgs {
 function Invoke-McpSetup {
     Info "MCP setup will edit the selected AI client config files."
 
+    # EXAKIT_MCP_CLIENTS lets an agent-driven or scripted install pick clients
+    # without a prompt (e.g. "claude", "claude,cursor", "all", or "1,2") - the
+    # Windows twin of the same hatch in common.sh's exakit_mcp_setup. "skip" or
+    # "none" opts out entirely. Without a tty the menu just keeps its defaults,
+    # so this env var is the only way an agent can actually steer the choice.
+    $clients = $null
+    if ($env:EXAKIT_MCP_CLIENTS) {
+        if ($env:EXAKIT_MCP_CLIENTS -match '^\s*(skip|none)\s*$') {
+            Info "Skipping MCP client setup (EXAKIT_MCP_CLIENTS=$($env:EXAKIT_MCP_CLIENTS)) - run 'exakit mcp-setup' any time."
+            return $true
+        }
+        $clients = ConvertTo-McpClientSelection $env:EXAKIT_MCP_CLIENTS
+        if (-not $clients) {
+            Warn2 "EXAKIT_MCP_CLIENTS='$($env:EXAKIT_MCP_CLIENTS)' is not valid (use claude, codex, cursor, copilot, gemini, opencode, continue, all, skip, or numbers 1-7)."
+            return $false
+        }
+        Info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $($clients -join ',')"
+    }
+
+    if (-not $clients) {
     Write-Host ""
     # Build the menu dynamically: offer only clients that are installed on
     # this machine AND not already connected. One "Claude" choice covers both
@@ -821,6 +841,7 @@ function Invoke-McpSetup {
         return $true
     }
     $clients = @($selection | Where-Object { $_ -lt $skipIdx } | ForEach-Object { $menuIds[$_ - 1] } | ForEach-Object { $_ })
+    }
 
     Info "Applying MCP setup"
     $resultJson = Invoke-McpSetupCli -Clients $clients
@@ -873,6 +894,12 @@ function New-McpUpdateSnapshot {
 # defaults inside Read-ExakitCheckboxMenu.
 function Request-ExakitMcpSetupOffer {
     if ((Get-ExakitManifestValue "components.mcp_server.client_setup.completed") -eq $true) { return }
+    # EXAKIT_SKIP_MCP=1 lets a scripted/agent install skip client wiring
+    # entirely (twin of the same hatch in common.sh's exakit_maybe_offer_mcp_setup).
+    if ($env:EXAKIT_SKIP_MCP -eq "1") {
+        Info "Skipping MCP client setup (EXAKIT_SKIP_MCP=1). Run it any time with: exakit mcp-setup"
+        return
+    }
     Info "The Exasol runtime and MCP server are ready."
     if (-not (Invoke-McpSetup)) {
         Warn2 "Your local runtime is installed, but MCP client setup did not finish cleanly."

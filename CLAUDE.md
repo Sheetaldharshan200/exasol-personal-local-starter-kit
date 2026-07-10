@@ -19,6 +19,10 @@ Working on the code in this repo:
 
 - Shell must stay **bash 3.2** compatible (macOS default); PowerShell must
   stay **5.1** compatible (no ternary, no `??`).
-- `setup/lib/ui.sh` and `setup/lib/ui.ps1` are function-for-function twins —
-  changes to one must be mirrored in the other, including the wordmark bytes.
+- `setup/lib/ui.sh` and `setup/lib/ui.ps1` are close twins of the shared
+  visual layer (banner, palette, status glyphs, spinner, progress, panels):
+  when you change a function that exists in both, mirror it in the other,
+  including the wordmark bytes. They are not a strict 1:1 map — some helpers
+  live in different files on each side (e.g. step rendering and the Nano
+  credential self-repair), so not every function has a peer.
 - Do not add AI attribution to commits, PRs, code, or docs.

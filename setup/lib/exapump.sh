@@ -709,7 +709,12 @@ exakit_load_dataset_dir() {
             > "$_ld_verify" 2>> "${EXAKIT_LOG_FILE:-/dev/null}"
         _ld_verify_status=$?
         exakit_stream_foreign < "$_ld_verify"
-        if [ "$_ld_verify_status" -ne 0 ] || grep -qi 'FAIL' "$_ld_verify"; then
+        # Grade on the STATUS column value ",FAIL," — not the bare word. The
+        # verify SQL is full of the literal string (its header comment and every
+        # "CASE … ELSE 'FAIL' END" clause), so matching bare FAIL would fail a
+        # dataset even when every row reads OK. A real failing check emits an
+        # unquoted STATUS column (check_name,FAIL,detail). Mirrors exapump.ps1.
+        if [ "$_ld_verify_status" -ne 0 ] || grep -q ',FAIL,' "$_ld_verify"; then
             rm -f "$_ld_verify"
             die "Verification failed for dataset '$_ld_id' — see ${EXAKIT_LOG_FILE:-the log}. Data is loaded but not marked ready; fix the underlying issue and re-run with --force."
         fi
