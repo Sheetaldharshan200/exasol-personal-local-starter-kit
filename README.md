@@ -144,17 +144,17 @@ So you're not staring at an empty database, the kit ships **three bundled datase
 | **Energy** | Smart-meter energy readings, time series (~108k rows) — [data/datasets/energy](data/datasets/energy) | `ENERGY` |
 | **Weather** | Daily city weather history (~11k rows) — [data/datasets/weather](data/datasets/weather) | `WEATHER` |
 
-The read-only MCP user has database-wide read (`USE ANY SCHEMA` + `SELECT ANY TABLE`), so it can query every schema and table — bundled, uploaded, or created later — with no per-schema grant, while remaining unable to write.
+Your AI assistant's read-only login can query every schema and table — bundled, uploaded, or created later — but can never write or change anything.
 
 **Loading data** — `exakit data-load` opens the same checkbox menu as the installer (↑/↓, Space, Enter):
 
-- It lists every bundled dataset **not loaded yet** (checked against the actual database, not just a flag), plus a **local CSV or Parquet file**, plus Cancel. Once all bundled datasets are in, only the local-file and Cancel options remain.
+- It lists every bundled dataset not yet in your database, plus a **local CSV or Parquet file**, plus Cancel. Once all bundled datasets are in, only the local-file and Cancel options remain.
 - `exakit data-load --force` reloads the TPC-H sample directly.
 - A local file prompts for its target `SCHEMA.TABLE` (default `STARTER_KIT`) and the kit creates the schema if needed. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 Dig into the data itself:
 
-- **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
+- **[data/README.md](data/README.md)** — what each dataset contains
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 - **[data/example-questions.md](data/example-questions.md)** — 14 ready-to-ask questions (revenue, customers, orders, suppliers), each with validated reference SQL to inspect before you run
 
@@ -175,32 +175,21 @@ exakit skills-install  # (re)install the AI agent skill
 exakit help            # every command (also: exakit catalog)
 ```
 
-Every command above is verified against the CLI — anything else `exakit` can do is listed by `exakit help`.
-
 Something failed mid-install? Re-run the install command. Finished steps are skipped, and failed steps are retried.
 
 ---
 
 ## Safety and operations
 
-- **Dedicated read-only MCP login** — the kit provisions and validates a database user with database-wide read (`USE ANY SCHEMA` + `SELECT ANY TABLE`) but no write privilege, and asserts that read-only posture before managed MCP flows proceed.
+- **Dedicated read-only MCP login** — the kit creates a database user with database-wide read (`USE ANY SCHEMA` + `SELECT ANY TABLE`) but no write privilege, and verifies that read-only posture before connecting any AI client.
 - **Local TLS handled for MCP clients** — the generated MCP client configs set `EXA_SSL_CERT_VALIDATION=no` only for the local self-signed `127.0.0.1` runtime; use trusted CA validation for real remote databases.
 - **No preinstalled Python required** — the setup uses `python3` when present, otherwise it bootstraps a managed runtime through `uv`.
-- **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
+- **Everything in one place** — runtime state, logs, credentials, backups, and generated configs all live under `~/.exasol-starter-kit/`; nothing is scattered around your system, and `exakit uninstall` removes it all.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.
 - **Version-aware updates** — installs resolve the latest component versions by default, record what was installed, and expose `exakit update-check` plus targeted updates: `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, `exakit update all`.
   - Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan` → `--backup` → `--apply`.
   - Nano runtime updates keep the data volume, snapshot pre-update runtime metadata, and try to restore the previous container image if the new one fails to start.
 - **Reversible lifecycle** — `exakit` manages the kit end to end: `status`, `start`/`stop`, `data-load`, MCP setup and maintenance (`mcp-setup`, `mcp-status`, `mcp-validate`, `mcp-doctor`, `mcp-repair`, `mcp-remove`, `mcp-restore`), `logs`, and a guarded `uninstall`. Run `exakit help` (or `exakit catalog`) to see every command.
-
-## Repository layout
-
-- `install.sh` and `install.ps1`: one-command entrypoints for Unix-like systems and Windows.
-- `setup/`: setup orchestration, shared libraries, and the `exakit` helper.
-- `mcp/`: MCP runtime export, client setup, validation, diagnostics, and tests.
-- `quickstarts/` and `demo/`: user-facing onboarding and first workflow guidance.
-- `sql/`, `data/`, and `upgrade/`: schema/bootstrap assets, sample data hooks, and upgrade scripts.
-- `tests/`: shell smoke checks and dry-run coverage.
 
 ## Quick answers
 
@@ -211,7 +200,7 @@ Something failed mid-install? Re-run the install command. Finished steps are ski
 | What sample data is included? | Three bundled datasets — TPC-H retail (~21 MB), smart-meter energy, and daily weather — each in its own schema (`TPCH`, `ENERGY`, `WEATHER`); see the [data dictionary](data/data-dictionary.md) |
 | "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
 | Docker Desktop runs on Windows but WSL can't see it? | Docker Desktop → Settings → Resources → **WSL integration** → enable your distro, Apply & restart (the installer detects and says this too) |
-| `exakit` not recognized after a Windows install? | Re-run the install command — it now adds `~\.local\bin` to your user PATH and repairs the command automatically |
+| `exakit` not recognized after a Windows install? | Re-run the install command — it adds `~\.local\bin` to your user PATH and repairs the command automatically |
 | Port 8563 already taken? | `EXAKIT_DB_PORT=8564` before the install command *(Linux/Windows container path)* |
 | Behind a corporate proxy? | `export HTTPS_PROXY=...` and re-run |
 | Where's the deep-dive for my OS? | [macOS](quickstarts/macos.md) · [Windows + WSL](quickstarts/windows-wsl.md) · [Windows + Docker](quickstarts/windows-docker.md) |
