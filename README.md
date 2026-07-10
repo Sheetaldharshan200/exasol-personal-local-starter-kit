@@ -83,7 +83,7 @@ The installer detects your OS and hardware, shows you the plan, then does the re
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
-> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it loads **every bundled dataset** and connects **every AI client found on the machine that isn't connected yet** over MCP. To answer its choices up front, set these before `sh` (macOS/Linux/WSL) — use **names, not menu numbers** (numbers change between releases):
+> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it loads **every bundled dataset** and connects **every AI client found on the machine that isn't connected yet** over MCP. To answer its choices up front, set these as environment variables before the install command — prefixed before `sh` on macOS/Linux/WSL, or set with `$env:` in PowerShell on Windows. Use **names, not menu numbers** (numbers change between releases):
 >
 > | Variable | What it controls |
 > |---|---|
@@ -93,7 +93,7 @@ The installer detects your OS and hardware, shows you the plan, then does the re
 > | `EXAKIT_LOAD_SAMPLE=0\|1` | Skip / load the bundled sample |
 > | `EXAKIT_REUSE_DB=0\|1` | Fresh deploy / reuse a running database (macOS) |
 >
-> Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh`.
+> Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh` — or on Windows: `$env:EXAKIT_MCP_CLIENTS = "claude"; $env:EXAKIT_DATASETS = "tpch"; irm …/install.ps1 | iex`. (`EXAKIT_REUSE_DB` applies to the macOS native runtime only.)
 
 ### 🤖 For AI agents
 
@@ -107,7 +107,7 @@ Run:
 exakit mcp-setup
 ```
 
-A checkbox menu (↑/↓ to move, **Space** to select, **Enter** to continue) lets you pick from the supported clients — **Claude**, **Codex**, **Cursor**, **Gemini CLI**, **GitHub Copilot (VS Code)**, **OpenCode**, **Continue** — or **Skip for now** (Skip touches nothing). The setup backs up each selected client's config file before editing it, validates the MCP connection, prints where each config lives, and hands you a first prompt to try — copied to your clipboard when a clipboard tool is available.
+A checkbox menu (↑/↓ to move, **Space** to select, **Enter** to continue) lets you pick from the supported clients — **Claude**, **Codex**, **Cursor**, **Gemini CLI**, **GitHub Copilot (VS Code)**, **OpenCode**, **Continue** — or **Skip for now** (Skip touches nothing). The setup backs up any existing config before changing it, validates the MCP connection, prints where each config lives, and hands you a first prompt to try — copied to your clipboard when a clipboard tool is available.
 
 Good to know:
 

@@ -55,7 +55,7 @@ Use `exakit data-load --force` when you only want to reload the bundled sample d
 
 ## Connect your AI assistant
 
-Run `exakit mcp-setup` — a checkbox menu of the supported clients (Claude, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode, Continue). The setup backs up each selected client's config file before updating it.
+Run `exakit mcp-setup` — a checkbox menu of the supported clients (Claude, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode, Continue). Any existing client config is backed up before it is updated.
 
 For Claude: after setup, restart the app and look for an MCP server named `exasol`.
 

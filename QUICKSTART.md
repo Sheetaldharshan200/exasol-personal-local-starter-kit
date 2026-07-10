@@ -51,7 +51,7 @@ Run the guided MCP setup:
 exakit mcp-setup
 ```
 
-A checkbox menu lets you pick from the supported clients — Claude, Codex, Cursor, Gemini CLI, GitHub Copilot (VS Code), OpenCode, Continue. The setup backs up each selected client's config file before editing it.
+A checkbox menu lets you pick from the supported clients — Claude, Codex, Cursor, Gemini CLI, GitHub Copilot (VS Code), OpenCode, Continue. Any existing client config is backed up before it is edited.
 
 When the kit can resolve the local MCP launcher path, it writes that exact path into the client config instead of assuming `uvx` is available on every desktop app's PATH. That keeps setup portable across macOS, Linux, and Windows clients.
 

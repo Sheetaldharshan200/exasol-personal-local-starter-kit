@@ -53,7 +53,7 @@ Use `exakit data-load --force` when you only want to reload the bundled sample d
 
 ## Connect your AI assistant
 
-Run `exakit mcp-setup` — a checkbox menu of the supported clients (Claude, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode, Continue). The setup backs up each selected client's config file before updating it.
+Run `exakit mcp-setup` — a checkbox menu of the supported clients (Claude, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode, Continue). Any existing client config is backed up before it is updated.
 
 Because WSL 2 forwards localhost, **Windows apps can reach the database at `127.0.0.1:8563` directly**. If you configure a Windows desktop app from inside WSL, make sure the selected client config uses a launcher command Windows can run. The two practical options are:
 

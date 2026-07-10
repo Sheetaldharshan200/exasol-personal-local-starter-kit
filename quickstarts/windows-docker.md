@@ -45,7 +45,7 @@ The installer offers to permanently set this up for you. Run it again any time w
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected client config files. The managed config points at the dedicated read-only `mcp_readonly` database user, not the admin user.
+The setup edits the selected client config files, backing up any existing config first. The managed config points at the dedicated read-only `mcp_readonly` database user, not the admin user.
 
 Restart your AI client, then continue with the [first workflow](../demo/first-revenue-analysis.md).
 
