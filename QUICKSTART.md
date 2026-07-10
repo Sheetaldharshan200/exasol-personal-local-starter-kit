@@ -53,7 +53,7 @@ exakit mcp-setup
 
 A checkbox menu lets you pick from the supported clients — Claude, Codex, Cursor, Gemini CLI, GitHub Copilot (VS Code), OpenCode, Continue. Any existing client config is backed up before it is edited.
 
-When the kit can resolve the local MCP launcher path, it writes that exact path into the client config instead of assuming `uvx` is available on every desktop app's PATH. That keeps setup portable across macOS, Linux, and Windows clients.
+The client config is written with the exact launcher path on your machine, so it works even when `uvx` isn't on your app's PATH — the same setup works reliably on macOS, Linux, and Windows.
 
 For the local Exasol Personal runtime, the managed MCP config also sets `EXA_SSL_CERT_VALIDATION=no`. This matches the local `127.0.0.1` self-signed certificate setup; use a trusted CA instead for a real remote or shared production database.
 
@@ -88,7 +88,7 @@ Then ask your assistant something like:
 > *"Use the exasol MCP server connected to my local Exasol database. List the available schemas and tables first. Then answer my questions with read-only SQL only, show me the SQL before you run it, and do not create, update, or delete anything."*
 > *"Show me total revenue by product category — and show me the SQL before you run it."*
 
-The MCP server is **read-only by design**: the assistant can discover schema and run SELECT queries, nothing else. Ask it to show the SQL first — inspect, then approve. That's the workflow this kit exists to prove.
+The MCP server is **read-only by design**: the assistant can discover schema and run SELECT queries, nothing else. Ask it to show the SQL first — inspect, then approve. That's the workflow this kit is built for.
 
 ## Everyday commands
 
