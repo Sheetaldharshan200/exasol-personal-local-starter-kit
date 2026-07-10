@@ -6,7 +6,7 @@ Gets you from a bare Mac to a local Exasol database with an AI assistant connect
 
 - macOS on Apple Silicon or Intel
 - 8 GB+ RAM, ~20 GB free disk
-- a few minutes end to end; the database deployment itself is usually under 2 minutes (unattended)
+- usually under 2 minutes end to end (unattended)
 
 Check before you start (installs nothing):
 

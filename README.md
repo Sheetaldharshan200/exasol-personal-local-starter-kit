@@ -13,7 +13,7 @@
 
 [![Documentation](https://img.shields.io/badge/docs-exasol.com-blue)](https://docs.exasol.com/db/latest/home.htm)
 [![Community](https://img.shields.io/badge/community-exasol-green)](https://community.exasol.com)
-[![Quickstart](https://img.shields.io/badge/first%20AI%20query-~2%20min-orange)](QUICKSTART.md)
+[![Quickstart](https://img.shields.io/badge/first%20AI%20query-under%202%20min-orange)](QUICKSTART.md)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.sh | sh
@@ -79,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On macOS the database deploys natively, usually in **under 2 minutes**. Container platforms are ready in about the same time.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On every platform the database is usually up in **under 2 minutes**.
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
