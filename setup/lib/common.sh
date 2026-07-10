@@ -1451,71 +1451,66 @@ _exakit_exapump_sql_has_token() {
     printf '%s\n' "$_output" | grep -Fq "$_token"
 }
 
-# _exakit_assert_mcp_readonly_posture <config> <user> <comma-or-space-separated schemas>
-# Verifies CREATE SESSION only, SELECT on every configured schema, and no
-# object privileges outside those schemas — across the *whole* schema list,
-# not just the first one, so posture checks cannot miss drift on additional
-# schemas (or false-positive on their legitimate SELECT grants).
+# _exakit_assert_mcp_readonly_posture <config> <user> <default-schema>
+# Verifies the read-only user holds EXACTLY the database-wide read set
+# (CREATE SESSION + USE ANY SCHEMA + SELECT ANY TABLE) and nothing more: no
+# extra system privilege, no non-SELECT object privilege, and a live write is
+# rejected. This is what lets the user read every schema while still being
+# provably unable to write. <default-schema> is only the write-probe target.
 _exakit_assert_mcp_readonly_posture() {
     _config_path="$1"
     _readonly_user="$2"
     _schemas="$3"
     _identifier_user="$(printf '%s' "$_readonly_user" | tr '[:lower:]' '[:upper:]')"
+    _user_lit="$(_exakit_sql_literal "$_identifier_user")"
 
+    # The read-only user's system privileges must be EXACTLY the read set:
+    # CREATE SESSION + USE ANY SCHEMA + SELECT ANY TABLE. Assert each is present,
+    # then assert nothing outside that set exists — which is what guarantees the
+    # user has no write/DDL/admin privilege (no INSERT ANY TABLE, CREATE USER,
+    # GRANT ANY, SELECT ANY DICTIONARY, etc.).
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'CREATE SESSION') THEN 'EXAKIT_CREATE_SESSION_OK' ELSE 'EXAKIT_CREATE_SESSION_MISSING' END AS STATUS" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$_user_lit' AND PRIVILEGE = 'CREATE SESSION') THEN 'EXAKIT_CREATE_SESSION_OK' ELSE 'EXAKIT_CREATE_SESSION_MISSING' END AS STATUS" \
         "EXAKIT_CREATE_SESSION_OK" || die "The MCP read-only user is missing CREATE SESSION."
 
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
-        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE <> 'CREATE SESSION'" \
-        "EXAKIT_SYS_PRIV_SCOPE_OK" || die "The MCP read-only user has system privileges beyond CREATE SESSION."
-
-    _old_ifs="$IFS"
-    IFS=', '
-    set -- $_schemas
-    IFS="$_old_ifs"
-    _schema_or_clause=""
-    _schema_scope_clause=""
-    for _schema in "$@"; do
-        [ -n "$_schema" ] || continue
-        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
-        _schema_lit="$(_exakit_sql_literal "$_schema_uc")"
-
-        _exakit_exapump_sql_has_token \
-            "$_config_path" "admin" \
-            "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$_schema_lit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$_schema_lit'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" \
-            "EXAKIT_SCHEMA_SELECT_OK" || die "The MCP read-only user is missing SELECT on schema $_schema_uc."
-
-        _clause="(OBJECT_SCHEMA = '$_schema_lit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$_schema_lit')"
-        if [ -z "$_schema_scope_clause" ]; then
-            _schema_scope_clause="$_clause"
-        else
-            _schema_scope_clause="$_schema_scope_clause OR $_clause"
-        fi
-    done
-    [ -n "$_schema_scope_clause" ] || die "No MCP read-only schemas were configured to assert posture against."
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$_user_lit' AND PRIVILEGE = 'USE ANY SCHEMA') THEN 'EXAKIT_USE_ANY_SCHEMA_OK' ELSE 'EXAKIT_USE_ANY_SCHEMA_MISSING' END AS STATUS" \
+        "EXAKIT_USE_ANY_SCHEMA_OK" || die "The MCP read-only user is missing USE ANY SCHEMA (needed to read every schema)."
 
     _exakit_exapump_sql_has_token \
         "$_config_path" "admin" \
-        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$(_exakit_sql_literal "$_identifier_user")' AND NOT (PRIVILEGE = 'SELECT' AND ($_schema_scope_clause))" \
-        "EXAKIT_SCHEMA_PRIV_SCOPE_OK" || die "The MCP read-only user has object privileges beyond SELECT on the configured schemas ($_schemas)."
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$_user_lit' AND PRIVILEGE = 'SELECT ANY TABLE') THEN 'EXAKIT_SELECT_ANY_TABLE_OK' ELSE 'EXAKIT_SELECT_ANY_TABLE_MISSING' END AS STATUS" \
+        "EXAKIT_SELECT_ANY_TABLE_OK" || die "The MCP read-only user is missing SELECT ANY TABLE (needed to read every table)."
 
-    for _schema in "$@"; do
-        [ -n "$_schema" ] || continue
-        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
-        if _exakit_run_exapump_sql \
-            "$_config_path" "mcp_readonly" \
-            "CREATE TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
-            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
-            _exakit_run_exapump_sql \
-                "$_config_path" "admin" \
-                "DROP TABLE ${_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
-                >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
-            die "Security check failed: the MCP read-only user was able to write to schema $_schema_uc, but it must be read-only. Setup stopped to protect your database."
-        fi
-    done
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$_user_lit' AND PRIVILEGE NOT IN ('CREATE SESSION', 'USE ANY SCHEMA', 'SELECT ANY TABLE')" \
+        "EXAKIT_SYS_PRIV_SCOPE_OK" || die "The MCP read-only user has system privileges beyond the read-only set (CREATE SESSION, USE ANY SCHEMA, SELECT ANY TABLE)."
+
+    # No object privilege may be anything other than SELECT — i.e. the user
+    # holds no INSERT/UPDATE/DELETE/ALTER/etc. object grant anywhere.
+    _exakit_exapump_sql_has_token \
+        "$_config_path" "admin" \
+        "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_OBJ_PRIV_SCOPE_OK' ELSE 'EXAKIT_OBJ_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$_user_lit' AND PRIVILEGE <> 'SELECT'" \
+        "EXAKIT_OBJ_PRIV_SCOPE_OK" || die "The MCP read-only user has a write object privilege; it must be read-only."
+
+    # Live proof the user cannot write: creating a table in the default schema
+    # (which USE ANY SCHEMA lets it OPEN) MUST be rejected, since neither read
+    # privilege grants CREATE/INSERT.
+    _probe_schema="$(_exakit_first_schema "$_schemas")"
+    _probe_schema_uc="$(printf '%s' "$_probe_schema" | tr '[:lower:]' '[:upper:]')"
+    if _exakit_run_exapump_sql \
+        "$_config_path" "mcp_readonly" \
+        "CREATE TABLE ${_probe_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)" \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1; then
+        _exakit_run_exapump_sql \
+            "$_config_path" "admin" \
+            "DROP TABLE ${_probe_schema_uc}.EXAKIT_MCP_PERMISSION_PROBE" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || true
+        die "Security check failed: the MCP read-only user was able to write to schema $_probe_schema_uc, but it must be read-only. Setup stopped to protect your database."
+    fi
 }
 
 # _exakit_reassert_mcp_readonly_posture — re-run the grant-posture check
@@ -1579,7 +1574,7 @@ PY
         return 0
     fi
     rm -f "$_temp_config"
-    warn "MCP read-only grant posture has drifted from least-privilege (see log). Run 'exakit mcp-repair' or review grants manually."
+    warn "MCP read-only grant posture has drifted from the expected read-only set (see log). Run 'exakit mcp-repair' or review grants manually."
     return 1
 }
 
@@ -1722,6 +1717,12 @@ exakit_configure_mcp_readonly_access() {
     [ -n "$_port" ] || die "runtime.dsn is missing a port; cannot prepare the MCP read-only database user."
 
     _readonly_user="$EXAKIT_MCP_READONLY_USER"
+    # The MCP user gets database-wide READ (USE ANY SCHEMA + SELECT ANY TABLE),
+    # so it can query every schema and table — bundled datasets, your own
+    # uploads, and anything you create later — with no per-schema grant. This
+    # list is now only the connection's DEFAULT schema (the landing spot for
+    # local uploads); it must exist so the exapump profile can OPEN it on
+    # connect, and it is the schema the write-rejection probe targets.
     _readonly_schemas="$EXAKIT_MCP_READONLY_SCHEMAS"
     _default_schema="$(_exakit_first_schema "$_readonly_schemas")"
     _readonly_password="$(read_credential mcp_readonly_password)"
@@ -1773,25 +1774,31 @@ exakit_configure_mcp_readonly_access() {
         "GRANT CREATE SESSION TO ${_identifier_user}" \
         >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not grant CREATE SESSION to the MCP read-only database user."
 
-    _old_ifs="$IFS"
-    IFS=', '
-    set -- $_readonly_schemas
-    IFS="$_old_ifs"
-    for _schema in "$@"; do
-        [ -n "$_schema" ] || continue
-        _schema_uc="$(printf '%s' "$_schema" | tr '[:lower:]' '[:upper:]')"
-        _exakit_validate_identifier "$_schema_uc" || die "Invalid MCP schema name: $_schema"
-        if ! _exakit_exapump_sql_has_token \
-            "$_temp_config" "admin" \
-            "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$(_exakit_sql_literal "$_schema_uc")') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" \
-            "EXAKIT_SCHEMA_PRESENT"; then
-            info "Creating starter schema $_schema_uc for MCP-safe querying"
-            _exakit_run_exapump_sql "$_temp_config" "admin" "CREATE SCHEMA ${_schema_uc}" \
-                >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create schema $_schema_uc for MCP access."
-        fi
-        _exakit_run_exapump_sql "$_temp_config" "admin" "GRANT SELECT ON SCHEMA ${_schema_uc} TO ${_identifier_user}" \
-            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not grant read-only access on schema $_schema_uc."
-    done
+    # Make sure the connection's default schema exists — exapump OPENs it on
+    # connect, and the write-rejection probe targets it.
+    _exakit_validate_identifier "$_default_schema_uc" || die "Invalid MCP default schema name: $_default_schema"
+    if ! _exakit_exapump_sql_has_token \
+        "$_temp_config" "admin" \
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$(_exakit_sql_literal "$_default_schema_uc")') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" \
+        "EXAKIT_SCHEMA_PRESENT"; then
+        info "Creating default schema $_default_schema_uc for MCP-safe querying"
+        _exakit_run_exapump_sql "$_temp_config" "admin" "CREATE SCHEMA ${_default_schema_uc}" \
+            >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not create schema $_default_schema_uc for MCP access."
+    fi
+
+    # Database-wide READ: USE ANY SCHEMA (see every schema) + SELECT ANY TABLE
+    # (read table/view contents in any schema). Together these let the AI client
+    # query every schema and table — present and future, including ones you
+    # create by hand — without a per-schema grant. Neither privilege permits any
+    # write or DDL, so the read-only guarantee is preserved (and re-checked by
+    # _exakit_assert_mcp_readonly_posture below). SELECT ANY DICTIONARY is
+    # deliberately NOT granted, so system dictionaries (audit logs, sessions,
+    # other users) stay private; the server lists metadata from the self-scoped
+    # EXA_ALL_* views, which USE ANY SCHEMA already covers.
+    _exakit_run_exapump_sql "$_temp_config" "admin" "GRANT USE ANY SCHEMA TO ${_identifier_user}" \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not grant USE ANY SCHEMA to the MCP read-only database user."
+    _exakit_run_exapump_sql "$_temp_config" "admin" "GRANT SELECT ANY TABLE TO ${_identifier_user}" \
+        >> "${EXAKIT_LOG_FILE:-/dev/null}" 2>&1 || die "Could not grant SELECT ANY TABLE to the MCP read-only database user."
 
     info "Validating dedicated MCP read-only login"
     _exakit_exapump_sql_has_token \
@@ -1806,6 +1813,9 @@ exakit_configure_mcp_readonly_access() {
 
     manifest_set components.mcp_server.connection.user "$_readonly_user"
     manifest_set components.mcp_server.connection.password_file "$EXAKIT_CREDS_DIR/mcp_readonly_password"
+    # Records the connection's default schema (read access is database-wide, not
+    # limited to this list); kept as an array for the posture re-check and the
+    # exapump default-schema pick.
     manifest_set components.mcp_server.connection.schemas "[\"$(printf '%s' "$_readonly_schemas" | tr ',' '\n' | sed '/^$/d' | paste -sd '","' -)\"]"
     manifest_set components.mcp_server.connection.validated "true"
     rm -f "$_temp_config"
@@ -1934,6 +1944,8 @@ LABELS = {
     "gemini_cli": "Gemini CLI",
     "cursor": "Cursor",
     "codex": "Codex",
+    "opencode": "OpenCode",
+    "continue": "Continue",
 }
 
 with open(sys.argv[1], encoding="utf-8") as handle:
@@ -2029,6 +2041,8 @@ LABELS = {
     "gemini_cli": "Gemini CLI",
     "cursor": "Cursor",
     "codex": "Codex",
+    "opencode": "OpenCode",
+    "continue": "Continue",
 }
 
 with open(sys.argv[1], encoding="utf-8") as handle:
@@ -2069,7 +2083,7 @@ PY
 
 exakit_mcp_clients_from_args() {
     if [ "$#" -eq 0 ]; then
-        printf '%s\n' "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli"
+        printf '%s\n' "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli,opencode,continue"
         return 0
     fi
     exakit_parse_mcp_client_selection "$*"
@@ -2079,7 +2093,7 @@ exakit_parse_mcp_client_selection() {
     _raw="$(printf '%s' "$1" | tr ',/' '  ' | tr -s ' ')"
     case "$_raw" in
         "" ) return 1 ;;
-        all|ALL|All ) printf '%s\n' "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli"; return 0 ;;
+        all|ALL|All ) printf '%s\n' "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli,opencode,continue"; return 0 ;;
     esac
     _result=""
     for _token in $_raw; do
@@ -2094,6 +2108,8 @@ exakit_parse_mcp_client_selection() {
             3|cursor) _clients="cursor" ;;
             4|copilot|vscode|vscode_copilot) _clients="vscode_copilot" ;;
             5|gemini|gemini_cli) _clients="gemini_cli" ;;
+            6|opencode) _clients="opencode" ;;
+            7|continue) _clients="continue" ;;
             *) return 1 ;;
         esac
         for _client in $_clients; do
@@ -2160,7 +2176,7 @@ exakit_mcp_setup() {
                 ;;
         esac
         _clients_csv="$(exakit_parse_mcp_client_selection "$EXAKIT_MCP_CLIENTS")" || {
-            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, codex, cursor, copilot, gemini, all, skip, or numbers 1-5)."
+            warn "EXAKIT_MCP_CLIENTS='$EXAKIT_MCP_CLIENTS' is not valid (use claude, codex, cursor, copilot, gemini, opencode, continue, all, skip, or numbers 1-7)."
             return 1
         }
         info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $_clients_csv"
@@ -2172,9 +2188,9 @@ exakit_mcp_setup() {
         # surface still needs setup, the label names that surface. Falls back
         # to the full static list when discovery is unavailable.
         _pending="$(exakit_mcp_discover_pending)" || \
-            _pending="$(printf 'claude_desktop\nclaude_code\ncodex\ncursor\nvscode_copilot\ngemini_cli\n')"
+            _pending="$(printf 'claude_desktop\nclaude_code\ncodex\ncursor\nvscode_copilot\ngemini_cli\nopencode\ncontinue\n')"
         _cd_pending=0; _cc_pending=0; _codex_pending=0; _cursor_pending=0
-        _copilot_pending=0; _gemini_pending=0
+        _copilot_pending=0; _gemini_pending=0; _opencode_pending=0; _continue_pending=0
         for _pending_id in $_pending; do
             case "$_pending_id" in
                 claude_desktop)  _cd_pending=1 ;;
@@ -2183,6 +2199,8 @@ exakit_mcp_setup() {
                 cursor)          _cursor_pending=1 ;;
                 vscode_copilot)  _copilot_pending=1 ;;
                 gemini_cli)      _gemini_pending=1 ;;
+                opencode)        _opencode_pending=1 ;;
+                continue)        _continue_pending=1 ;;
             esac
         done
         _menu_labels=()
@@ -2198,6 +2216,8 @@ exakit_mcp_setup() {
         [ "$_cursor_pending" = 1 ] && { _menu_labels+=("Cursor"); _menu_ids+=("cursor"); }
         [ "$_copilot_pending" = 1 ] && { _menu_labels+=("GitHub Copilot"); _menu_ids+=("vscode_copilot"); }
         [ "$_gemini_pending" = 1 ] && { _menu_labels+=("Gemini CLI"); _menu_ids+=("gemini_cli"); }
+        [ "$_opencode_pending" = 1 ] && { _menu_labels+=("OpenCode"); _menu_ids+=("opencode"); }
+        [ "$_continue_pending" = 1 ] && { _menu_labels+=("Continue"); _menu_ids+=("continue"); }
         if [ "${#_menu_ids[@]}" -eq 0 ]; then
             ok "All AI clients found on this machine are already connected over MCP."
             info "Check them with 'exakit mcp-status'; new clients appear here once installed."
@@ -2292,7 +2312,7 @@ exakit_mcp_restore() {
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-restore.XXXXXX")"
     _operation_status=0
     info "Running MCP restore"
-    if exakit_run_mcp_operation_cli "restore" "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli" "$_result_file" "$_snapshot_id"; then
+    if exakit_run_mcp_operation_cli "restore" "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli,opencode,continue" "$_result_file" "$_snapshot_id"; then
         :
     else
         _operation_status=$?
@@ -2583,7 +2603,7 @@ exakit_guide() {
     ui_panel_begin "1 · Ask questions with an AI client (MCP)"
     ui_panel_line "Connect one or more AI clients in a single guided step:"
     ui_panel_line "  exakit mcp-setup"
-    ui_panel_line "Supported: Claude, Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI"
+    ui_panel_line "Supported: Claude, Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI, OpenCode, Continue"
     ui_panel_line "Then restart/reload the client and look for the MCP server 'exasol'."
     ui_panel_line ""
     ui_panel_line "First thing to ask it:"
@@ -2606,7 +2626,8 @@ exakit_guide() {
     ui_panel_line "  TLS:       local self-signed certificate — in Driver properties set"
     ui_panel_line "             validateservercertificate = 0 (or add ;validateservercertificate=0"
     ui_panel_line "             to the JDBC URL), then Test Connection > Finish."
-    ui_panel_line "Your data lives in schema STARTER_KIT."
+    ui_panel_line "Each bundled dataset has its own schema (TPCH, ENERGY, WEATHER);"
+    ui_panel_line "your own uploads default to STARTER_KIT."
     ui_panel_end
 
     ui_panel_begin "3 · Terminal and Python"
@@ -2619,7 +2640,7 @@ exakit_guide() {
     ui_panel_line "  c = pyexasol.connect(dsn='$_g_host:$_g_port', user='$_g_user',"
     ui_panel_line "                       password=open('<password file above>').read(),"
     ui_panel_line "                       websocket_sslopt={'cert_reqs': 0})"
-    ui_panel_line "  c.export_to_pandas('SELECT * FROM STARTER_KIT.CUSTOMER LIMIT 5')"
+    ui_panel_line "  c.export_to_pandas('SELECT * FROM TPCH.CUSTOMER LIMIT 5')"
     ui_panel_end
 
     ui_panel_begin "Everything else"

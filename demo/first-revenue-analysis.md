@@ -18,7 +18,7 @@ The bundled sample is the standard **TPC-H** dataset (a wholesale supplier model
 
 Paste into your assistant:
 
-> What schemas and tables are available in my Exasol database? For the tables in the STARTER_KIT schema, describe their columns and how they relate to each other.
+> What schemas and tables are available in my Exasol database? For the tables in the TPCH schema, describe their columns and how they relate to each other.
 
 The assistant uses the MCP server's metadata tools — no SQL runs yet. You should see the eight TPC-H tables — `CUSTOMER`, `ORDERS`, `LINEITEM`, `PART`, `SUPPLIER`, `PARTSUPP`, plus `NATION` and `REGION` — with their columns. This step matters: the assistant grounds itself in the *real* schema instead of guessing.
 

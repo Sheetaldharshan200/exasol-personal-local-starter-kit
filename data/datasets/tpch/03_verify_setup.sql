@@ -9,7 +9,7 @@
 -- Numeric values are explicitly CAST to VARCHAR before concatenation rather
 -- than relying on implicit conversion, so this script's behavior doesn't
 -- depend on a specific Exasol version's type-coercion rules.
-OPEN SCHEMA STARTER_KIT;
+OPEN SCHEMA TPCH;
 
 -- 1. Row counts. Seven tables have a fixed count at SF=0.02 (data/README.md);
 --    lineitem's count is generator-dependent (~120K, 1-7 lines per order),

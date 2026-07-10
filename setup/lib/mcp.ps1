@@ -303,49 +303,45 @@ function Assert-McpReadonlyPosture {
     $identifierUser = ConvertTo-UpperInvariantString $ReadonlyUser
     $identifierLit = ConvertTo-SqlLiteral $identifierUser
 
+    # The read-only user's system privileges must be EXACTLY the read set:
+    # CREATE SESSION + USE ANY SCHEMA + SELECT ANY TABLE, and nothing more -
+    # which is what guarantees no write/DDL/admin privilege. Mirrors common.sh.
     if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE = 'CREATE SESSION') THEN 'EXAKIT_CREATE_SESSION_OK' ELSE 'EXAKIT_CREATE_SESSION_MISSING' END AS STATUS" "EXAKIT_CREATE_SESSION_OK")) {
         Fail "The MCP read-only user is missing CREATE SESSION."
     }
-    if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE <> 'CREATE SESSION'" "EXAKIT_SYS_PRIV_SCOPE_OK")) {
-        Fail "The MCP read-only user has system privileges beyond CREATE SESSION."
+    if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE = 'USE ANY SCHEMA') THEN 'EXAKIT_USE_ANY_SCHEMA_OK' ELSE 'EXAKIT_USE_ANY_SCHEMA_MISSING' END AS STATUS" "EXAKIT_USE_ANY_SCHEMA_OK")) {
+        Fail "The MCP read-only user is missing USE ANY SCHEMA (needed to read every schema)."
+    }
+    if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE = 'SELECT ANY TABLE') THEN 'EXAKIT_SELECT_ANY_TABLE_OK' ELSE 'EXAKIT_SELECT_ANY_TABLE_MISSING' END AS STATUS" "EXAKIT_SELECT_ANY_TABLE_OK")) {
+        Fail "The MCP read-only user is missing SELECT ANY TABLE (needed to read every table)."
+    }
+    if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SYS_PRIV_SCOPE_OK' ELSE 'EXAKIT_SYS_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_SYS_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE NOT IN ('CREATE SESSION', 'USE ANY SCHEMA', 'SELECT ANY TABLE')" "EXAKIT_SYS_PRIV_SCOPE_OK")) {
+        Fail "The MCP read-only user has system privileges beyond the read-only set (CREATE SESSION, USE ANY SCHEMA, SELECT ANY TABLE)."
     }
 
-    $schemaTokens = @($Schemas -split '[,\s]+' | Where-Object { $_ })
-    $scopeClauses = @()
-    foreach ($schema in $schemaTokens) {
-        $schemaUc = ConvertTo-UpperInvariantString $schema
-        $schemaLit = ConvertTo-SqlLiteral $schemaUc
-        if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE = 'SELECT' AND ((OBJECT_SCHEMA = '$schemaLit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$schemaLit'))) THEN 'EXAKIT_SCHEMA_SELECT_OK' ELSE 'EXAKIT_SCHEMA_SELECT_MISSING' END AS STATUS" "EXAKIT_SCHEMA_SELECT_OK")) {
-            Fail "The MCP read-only user is missing SELECT on schema $schemaUc."
-        }
-        $scopeClauses += "(OBJECT_SCHEMA = '$schemaLit') OR (OBJECT_TYPE = 'SCHEMA' AND OBJECT_NAME = '$schemaLit')"
-    }
-    if ($scopeClauses.Count -eq 0) { Fail "No MCP read-only schemas were configured to assert posture against." }
-    $scopeClause = $scopeClauses -join " OR "
-
-    if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_SCHEMA_PRIV_SCOPE_OK' ELSE 'EXAKIT_SCHEMA_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$identifierLit' AND NOT (PRIVILEGE = 'SELECT' AND ($scopeClause))" "EXAKIT_SCHEMA_PRIV_SCOPE_OK")) {
-        Fail "The MCP read-only user has object privileges beyond SELECT on the configured schemas ($Schemas)."
+    # No object privilege may be anything other than SELECT.
+    if (-not (Test-ExapumpSqlHasToken $ConfigPath "admin" "SELECT CASE WHEN COUNT(*) = 0 THEN 'EXAKIT_OBJ_PRIV_SCOPE_OK' ELSE 'EXAKIT_OBJ_PRIV_SCOPE_TOO_WIDE' END AS STATUS FROM EXA_DBA_OBJ_PRIVS WHERE GRANTEE = '$identifierLit' AND PRIVILEGE <> 'SELECT'" "EXAKIT_OBJ_PRIV_SCOPE_OK")) {
+        Fail "The MCP read-only user has a write object privilege; it must be read-only."
     }
 
-    foreach ($schema in $schemaTokens) {
-        $schemaUc = ConvertTo-UpperInvariantString $schema
-        $probe = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "mcp_readonly" -Sql "CREATE TABLE $schemaUc.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)"
-        if ($script:LogFile) { $probe.Output | Add-Content -Path $script:LogFile }
-        # This write MUST fail for a correctly-scoped read-only user. .Success
-        # (exit-code-quirk-aware) rather than raw ExitCode: if the CREATE
-        # actually went through, that is a real least-privilege violation and
-        # we must catch it regardless of exapump's exit-code behavior.
-        if ($probe.Success) {
-            $cleanup = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "admin" -Sql "DROP TABLE $schemaUc.EXAKIT_MCP_PERMISSION_PROBE"
-            if ($script:LogFile) { $cleanup.Output | Add-Content -Path $script:LogFile }
-            Fail "Security check failed: the MCP read-only user was able to write to schema $schemaUc, but it must be read-only. Setup stopped to protect your database."
-        }
+    # Live proof the user cannot write: a CREATE TABLE in the default schema
+    # (which USE ANY SCHEMA lets it OPEN) MUST be rejected.
+    $probeSchemaUc = ConvertTo-UpperInvariantString (Get-FirstSchema $Schemas)
+    $probe = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "mcp_readonly" -Sql "CREATE TABLE $probeSchemaUc.EXAKIT_MCP_PERMISSION_PROBE (ID DECIMAL)"
+    if ($script:LogFile) { $probe.Output | Add-Content -Path $script:LogFile }
+    # .Success (exit-code-quirk-aware) rather than raw ExitCode: if the CREATE
+    # actually went through, that is a real read-only violation and we must
+    # catch it regardless of exapump's exit-code behavior.
+    if ($probe.Success) {
+        $cleanup = Invoke-ExapumpAdminSql -ConfigPath $ConfigPath -Profile "admin" -Sql "DROP TABLE $probeSchemaUc.EXAKIT_MCP_PERMISSION_PROBE"
+        if ($script:LogFile) { $cleanup.Output | Add-Content -Path $script:LogFile }
+        Fail "Security check failed: the MCP read-only user was able to write to schema $probeSchemaUc, but it must be read-only. Setup stopped to protect your database."
     }
 }
 
 # Set-McpReadonlyAccess - create (or refresh) the dedicated read-only
-# database user, grant SELECT on every configured schema, validate its
-# login, and assert least-privilege posture. Safe to re-run.
+# database user, grant database-wide read (USE ANY SCHEMA + SELECT ANY TABLE),
+# validate its login, and assert the read-only posture. Safe to re-run.
 function Set-McpReadonlyAccess {
     # Ensure exapump is on PATH for this session
     $exapumpBin = Get-ExakitExapumpBin
@@ -379,6 +375,13 @@ function Set-McpReadonlyAccess {
     if (-not $dbPort) { Fail "runtime.dsn is missing a port; cannot prepare the MCP read-only database user." }
 
     $readonlyUser = $script:McpReadonlyUser
+    # The MCP user gets database-wide READ (USE ANY SCHEMA + SELECT ANY TABLE),
+    # so it can query every schema and table - bundled datasets, your own
+    # uploads, and anything you create later - with no per-schema grant. This
+    # list is now only the connection's DEFAULT schema (the landing spot for
+    # local uploads); it must exist so the exapump profile can OPEN it on
+    # connect, and it is the schema the write-rejection probe targets. Mirrors
+    # common.sh.
     $readonlySchemas = $script:McpReadonlySchemas
     $defaultSchema = Get-FirstSchema $readonlySchemas
     $readonlyPassword = Get-ExakitCredential "mcp_readonly_password"
@@ -431,21 +434,32 @@ function Set-McpReadonlyAccess {
         $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT CREATE SESSION TO $identifierUser"
         Assert-ExapumpResult -Result $r -Label "GRANT CREATE SESSION" -FailMessage "Could not grant CREATE SESSION to the MCP read-only database user."
 
+        # Make sure the connection's default schema exists - exapump OPENs it on
+        # connect, and the write-rejection probe targets it.
         $schemaTokens = @($readonlySchemas -split '[,\s]+' | Where-Object { $_ })
-        foreach ($schema in $schemaTokens) {
-            $schemaUc = ConvertTo-UpperInvariantString $schema
-            if (-not (Test-ExakitIdentifier $schemaUc)) { Fail "Invalid MCP schema name: $schema" }
-            $schemaLit = ConvertTo-SqlLiteral $schemaUc
-            if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$schemaLit') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" "EXAKIT_SCHEMA_PRESENT")) {
-                Info "Creating starter schema $schemaUc for MCP-safe querying"
-                Write-ExakitLog "SQL" "CREATE SCHEMA $schemaUc"
-                $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE SCHEMA $schemaUc"
-                Assert-ExapumpResult -Result $r -Label "CREATE SCHEMA $schemaUc" -FailMessage "Could not create schema $schemaUc for MCP access."
-            }
-            Write-ExakitLog "SQL" "GRANT SELECT ON SCHEMA $schemaUc TO $identifierUser"
-            $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT SELECT ON SCHEMA $schemaUc TO $identifierUser"
-            Assert-ExapumpResult -Result $r -Label "GRANT SELECT ON SCHEMA $schemaUc" -FailMessage "Could not grant read-only access on schema $schemaUc."
+        $defaultSchemaUc = ConvertTo-UpperInvariantString $defaultSchema
+        if (-not (Test-ExakitIdentifier $defaultSchemaUc)) { Fail "Invalid MCP default schema name: $defaultSchema" }
+        $defaultSchemaLit = ConvertTo-SqlLiteral $defaultSchemaUc
+        if (-not (Test-ExapumpSqlHasToken $tempConfig "admin" "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_SCHEMAS WHERE SCHEMA_NAME = '$defaultSchemaLit') THEN 'EXAKIT_SCHEMA_PRESENT' ELSE 'EXAKIT_SCHEMA_MISSING' END AS STATUS" "EXAKIT_SCHEMA_PRESENT")) {
+            Info "Creating default schema $defaultSchemaUc for MCP-safe querying"
+            Write-ExakitLog "SQL" "CREATE SCHEMA $defaultSchemaUc"
+            $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "CREATE SCHEMA $defaultSchemaUc"
+            Assert-ExapumpResult -Result $r -Label "CREATE SCHEMA $defaultSchemaUc" -FailMessage "Could not create schema $defaultSchemaUc for MCP access."
         }
+
+        # Database-wide READ: USE ANY SCHEMA (see every schema) + SELECT ANY
+        # TABLE (read contents in any schema). Together they let the AI client
+        # query every schema and table - present and future, including ones you
+        # create by hand - without a per-schema grant. Neither permits any write
+        # or DDL, so the read-only guarantee holds (re-checked below).
+        # SELECT ANY DICTIONARY is deliberately NOT granted, so system
+        # dictionaries (audit logs, sessions, other users) stay private.
+        Write-ExakitLog "SQL" "GRANT USE ANY SCHEMA TO $identifierUser"
+        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT USE ANY SCHEMA TO $identifierUser"
+        Assert-ExapumpResult -Result $r -Label "GRANT USE ANY SCHEMA" -FailMessage "Could not grant USE ANY SCHEMA to the MCP read-only database user."
+        Write-ExakitLog "SQL" "GRANT SELECT ANY TABLE TO $identifierUser"
+        $r = Invoke-ExapumpAdminSql -ConfigPath $tempConfig -Profile "admin" -Sql "GRANT SELECT ANY TABLE TO $identifierUser"
+        Assert-ExapumpResult -Result $r -Label "GRANT SELECT ANY TABLE" -FailMessage "Could not grant SELECT ANY TABLE to the MCP read-only database user."
 
         Info "Validating dedicated MCP read-only login"
         if (-not (Test-ExapumpSqlHasToken $tempConfig "mcp_readonly" "SELECT CURRENT_USER AS EXAKIT_CURRENT_USER" $identifierUser)) {
@@ -500,7 +514,7 @@ function Confirm-McpReadonlyPosture {
         Ok "MCP read-only grant posture is still correct"
         return $true
     } catch {
-        Warn2 "MCP read-only grant posture has drifted from least-privilege (see log). Run 'exakit mcp-repair' or review grants manually."
+        Warn2 "MCP read-only grant posture has drifted from the expected read-only set (see log). Run 'exakit mcp-repair' or review grants manually."
         return $false
     } finally {
         Remove-Item -Force $tempConfig -ErrorAction SilentlyContinue
@@ -611,7 +625,7 @@ function Get-McpPendingClients {
     }
 }
 
-$script:McpClientLabels = @{ claude_desktop = "Claude"; claude_code = "Claude Code (CLI)"; cursor = "Cursor"; codex = "Codex"; vscode_copilot = "GitHub Copilot"; gemini_cli = "Gemini CLI" }
+$script:McpClientLabels = @{ claude_desktop = "Claude"; claude_code = "Claude Code (CLI)"; cursor = "Cursor"; codex = "Codex"; vscode_copilot = "GitHub Copilot"; gemini_cli = "Gemini CLI"; opencode = "OpenCode"; continue = "Continue" }
 
 function Show-McpSetupSummary {
     param([Parameter(Mandatory)][string]$ResultJson)
@@ -710,7 +724,7 @@ function ConvertTo-McpClientSelection {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Raw)
     $tokens = @(($Raw -replace '[,/]', ' ') -split '\s+' | Where-Object { $_ })
     if ($tokens.Count -eq 0) { return $null }
-    if ($tokens.Count -eq 1 -and $tokens[0] -match '^(all|ALL|All)$') { return @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli") }
+    if ($tokens.Count -eq 1 -and $tokens[0] -match '^(all|ALL|All)$') { return @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli", "opencode", "continue") }
     $result = @()
     foreach ($token in $tokens) {
         # "claude" (or 1) covers both Claude surfaces - the desktop app and the
@@ -724,6 +738,8 @@ function ConvertTo-McpClientSelection {
             { $_ -in @("3", "cursor") } { @("cursor") }
             { $_ -in @("4", "copilot", "vscode", "vscode_copilot") } { @("vscode_copilot") }
             { $_ -in @("5", "gemini", "gemini_cli") } { @("gemini_cli") }
+            { $_ -in @("6", "opencode") } { @("opencode") }
+            { $_ -in @("7", "continue") } { @("continue") }
             default { $null }
         }
         if (-not $clients) { return $null }
@@ -737,7 +753,7 @@ function ConvertTo-McpClientSelection {
 
 function Get-McpClientsFromArgs {
     param([string[]]$InputArgs = @())
-    if ($InputArgs.Count -eq 0) { return @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli") }
+    if ($InputArgs.Count -eq 0) { return @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli", "opencode", "continue") }
     return ConvertTo-McpClientSelection ($InputArgs -join " ")
 }
 
@@ -751,7 +767,7 @@ function Invoke-McpSetup {
     # still needs setup, the label names that surface. Falls back to the full
     # static list when discovery is unavailable.
     $pending = Get-McpPendingClients
-    if ($null -eq $pending) { $pending = @("claude_desktop", "claude_code", "codex", "cursor", "vscode_copilot", "gemini_cli") }
+    if ($null -eq $pending) { $pending = @("claude_desktop", "claude_code", "codex", "cursor", "vscode_copilot", "gemini_cli", "opencode", "continue") }
     $menuLabels = New-Object 'System.Collections.Generic.List[string]'
     $menuIds = New-Object 'System.Collections.Generic.List[object]'
     $cdPending = $pending -contains "claude_desktop"
@@ -763,6 +779,8 @@ function Invoke-McpSetup {
     if ($pending -contains "cursor") { [void]$menuLabels.Add("Cursor"); [void]$menuIds.Add(@("cursor")) }
     if ($pending -contains "vscode_copilot") { [void]$menuLabels.Add("GitHub Copilot"); [void]$menuIds.Add(@("vscode_copilot")) }
     if ($pending -contains "gemini_cli") { [void]$menuLabels.Add("Gemini CLI"); [void]$menuIds.Add(@("gemini_cli")) }
+    if ($pending -contains "opencode") { [void]$menuLabels.Add("OpenCode"); [void]$menuIds.Add(@("opencode")) }
+    if ($pending -contains "continue") { [void]$menuLabels.Add("Continue"); [void]$menuIds.Add(@("continue")) }
     if ($menuIds.Count -eq 0) {
         Ok "All AI clients found on this machine are already connected over MCP."
         Info "Check them with 'exakit mcp-status'; new clients appear here once installed."
@@ -810,13 +828,13 @@ function Invoke-McpOperation {
 function Invoke-McpRestore {
     param([string]$SnapshotId = "")
     Info "Running MCP restore"
-    $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli") -SnapshotId $SnapshotId
+    $resultJson = Invoke-McpOperationCli -Operation "restore" -Clients @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli", "opencode", "continue") -SnapshotId $SnapshotId
     if ($resultJson) { Show-McpOperationSummary $resultJson }
     return [bool]$resultJson
 }
 
 function New-McpUpdateSnapshot {
-    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli")
+    $resultJson = Invoke-McpOperationCli -Operation "backup" -Clients @("claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli", "opencode", "continue")
     if (-not $resultJson) { Warn2 "MCP pre-update snapshot was not created; generated configs will still be refreshed."; return "" }
     Show-McpOperationSummary $resultJson
     try {

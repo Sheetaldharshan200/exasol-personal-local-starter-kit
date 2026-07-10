@@ -28,6 +28,8 @@ SETUP_CLIENT_IDS = (
     "codex",
     "vscode_copilot",
     "gemini_cli",
+    "opencode",
+    "continue",
 )
 
 

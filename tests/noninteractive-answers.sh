@@ -44,8 +44,12 @@ echo "EXAKIT_MCP_CLIENTS — client selection parses names, 'all', and numbers:"
 # CLI); "all" covers every supported client. Keep these in lockstep with
 # exakit_parse_mcp_client_selection in setup/lib/common.sh.
 check "claude,cursor" "claude_desktop,claude_code,cursor" "$(exakit_parse_mcp_client_selection "claude,cursor")"
-check "all"           "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli" "$(exakit_parse_mcp_client_selection "all")"
+check "all"           "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli,opencode,continue" "$(exakit_parse_mcp_client_selection "all")"
 check "1,2"           "claude_desktop,claude_code,codex" "$(exakit_parse_mcp_client_selection "1,2")"
+check "opencode"      "opencode" "$(exakit_parse_mcp_client_selection "opencode")"
+check "number 6"      "opencode" "$(exakit_parse_mcp_client_selection "6")"
+check "continue"      "continue" "$(exakit_parse_mcp_client_selection "continue")"
+check "number 7"      "continue" "$(exakit_parse_mcp_client_selection "7")"
 check "dedupes"       "claude_desktop,claude_code" "$(exakit_parse_mcp_client_selection "claude,1,claude")"
 check "single surface" "claude_code" "$(exakit_parse_mcp_client_selection "claude_code")"
 check "copilot"       "vscode_copilot" "$(exakit_parse_mcp_client_selection "copilot")"

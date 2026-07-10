@@ -35,7 +35,7 @@ class DiscoverClientsTests(unittest.TestCase):
         ids = {client["id"] for client in payload["clients"]}
         self.assertEqual(
             ids,
-            {"claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli"},
+            {"claude_desktop", "claude_code", "cursor", "codex", "vscode_copilot", "gemini_cli", "opencode", "continue"},
         )
         for client in payload["clients"]:
             self.assertIn("detected", client)

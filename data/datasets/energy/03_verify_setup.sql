@@ -1,7 +1,7 @@
 -- 03_verify_setup.sql - post-load verification for the energy dataset.
 -- Every row must read STATUS = 'OK'; a 'FAIL' row blocks marking the dataset
 -- loaded (same contract as the TPC-H verify script).
-OPEN SCHEMA STARTER_KIT;
+OPEN SCHEMA ENERGY;
 
 SELECT 'row_count: energy_meters' AS CHECK_NAME,
        CASE WHEN COUNT(*) = 50 THEN 'OK' ELSE 'FAIL' END AS STATUS,
