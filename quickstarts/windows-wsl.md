@@ -30,7 +30,7 @@ What happens, in order:
 1. WSL is detected; the Nano container route is chosen and the plan shown
 2. The pinned `exasol/nano` image is pulled (with retries)
 3. The container starts with a persistent volume and a generated password; the SQL port is bound to `127.0.0.1:8563` only
-4. The installer waits until the database reports ready (a few minutes)
+4. The installer waits until the database reports ready (usually under 2 minutes)
 5. exapump is installed with a ready connection profile; the MCP server is set up, a dedicated `mcp_readonly` database user is created and validated, and the selected AI client configs are backed up and updated
 6. You get the connection panel
 
