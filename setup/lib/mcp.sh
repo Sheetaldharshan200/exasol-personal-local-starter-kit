@@ -93,8 +93,22 @@ mcp_uv_install() {
 mcp_install() {
     mcp_uv_install
     info "Priming ${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION} (downloads on first use)"
-    run_logged uvx "${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION}" --help || \
+    # `--help` exits non-zero on server versions that demand connection env
+    # before printing usage — so the exit code can't distinguish "download
+    # failed" from "downloaded fine, refused to run without a database".
+    # Any output from the package itself proves the prime worked; warn only
+    # when the run never reached the package (uvx resolution/network failure).
+    _exakit_log_file "CMD   uvx ${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION} --help"
+    ui_spin_begin "${EXAKIT_ACTIVE_LABEL:-working}"
+    _prime_out="$(uvx "${EXAKIT_MCP_PACKAGE}@${EXAKIT_MCP_VERSION}" --help 2>&1)"
+    _prime_rc=$?
+    ui_spin_end
+    [ -n "${EXAKIT_LOG_FILE:-}" ] && printf '%s\n' "$_prime_out" >> "$EXAKIT_LOG_FILE"
+    if [ "$_prime_rc" -eq 0 ] || printf '%s' "$_prime_out" | grep -qiE 'usage:|insufficient database connection|exasol[./]ai[./]mcp|site-packages/exasol'; then
+        ok "MCP server package cached"
+    else
         warn "Could not prime the MCP server package (it will download on first client start)"
+    fi
     _uv_bin="$(command -v uv 2>/dev/null || true)"
     [ -n "$_uv_bin" ] && manifest_set components.mcp_server.uv_path "$_uv_bin"
     manifest_set components.mcp_server.command "$(mcp_command_path)"
