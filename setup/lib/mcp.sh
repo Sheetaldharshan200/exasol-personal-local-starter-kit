@@ -119,7 +119,7 @@ mcp_update() {
 mcp_update_snapshot() {
     command -v exakit_run_mcp_operation_cli >/dev/null 2>&1 || return 1
     _result_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-update-backup.XXXXXX")"
-    if ! exakit_run_mcp_operation_cli "backup" "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli" "$_result_file"; then
+    if ! exakit_run_mcp_operation_cli "backup" "claude_desktop,claude_code,cursor,codex,vscode_copilot,gemini_cli,opencode,continue" "$_result_file"; then
         rm -f "$_result_file"
         return 1
     fi

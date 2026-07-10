@@ -10,8 +10,8 @@ Reference for every table and column in this folder. Use it to write correct SQL
 - CSV itself is untyped text; the *logical* types below are what the columns represent
   (and what `sql/01_create_schema.sql` should declare when defined). Money is `DECIMAL(15,2)`,
   dates are `DATE` (`YYYY-MM-DD`).
-- Loaded by `setup/load-data.sh` into schema `STARTER_KIT`, one table per file
-  (`lineitem.csv` → `STARTER_KIT.LINEITEM`).
+- Loaded by `setup/load-data.sh` into schema `TPCH`, one table per file
+  (`lineitem.csv` → `TPCH.LINEITEM`).
 
 ## Relationships & keys
 

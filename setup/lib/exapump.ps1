@@ -710,13 +710,16 @@ function Invoke-ExakitSqlScript {
 # --- bundled dataset registry (mirrors exapump.sh) --------------------------
 # TPC-H is the original flat-layout dataset; every additional dataset is a
 # self-contained directory data/datasets/<id>/ with a dataset.conf (id=,
-# label=, markers=), a schema script, optional bulk CSVs, an optional
-# transform, and an optional verify script. All bundled datasets load into
-# STARTER_KIT so the read-only MCP user sees them without extra grants.
+# label=, markers=, schema=), a schema script, optional bulk CSVs, an optional
+# transform, and an optional verify script. Each dataset loads into its own
+# schema (schema=, default the id uppercased); the read-only MCP user has
+# database-wide read (USE ANY SCHEMA + SELECT ANY TABLE), so it sees every
+# dataset schema with no per-schema grant.
 function Get-ExakitBundledDatasets {
     # Every dataset (TPC-H included) is discovered from its dataset.conf;
     # nothing is hardcoded. A conf may set flag= to override the default
-    # manifest key (TPC-H keeps the historical data.loaded).
+    # manifest key (TPC-H keeps the historical data.loaded) and schema= to name
+    # the schema it loads into (default: the id, uppercased).
     $datasets = @()
     $kitRoot = Get-ExakitRepoRoot
     if ($kitRoot) {
@@ -728,9 +731,10 @@ function Get-ExakitBundledDatasets {
             if (-not $kv.id -or -not $kv.label) { continue }
             $markers = @(($kv.markers -split ',') | Where-Object { $_ })
             $flag = if ($kv.flag) { $kv.flag } else { "data.datasets.$($kv.id).loaded" }
+            $schema = if ($kv.schema) { $kv.schema } else { $kv.id.ToUpper() }
             $order = 50
             if ($kv.order -match '^[0-9]+$') { $order = [int]$kv.order }
-            $datasets += @{ Id = $kv.id; Label = $kv.label; Flag = $flag; Markers = $markers; Order = $order }
+            $datasets += @{ Id = $kv.id; Label = $kv.label; Flag = $flag; Markers = $markers; Schema = $schema; Order = $order }
         }
     }
     return @($datasets | Sort-Object { $_.Order }, { $_.Id })
@@ -749,10 +753,11 @@ function Test-ExakitDbReachable {
     return $script:ExakitDbReachable
 }
 
-# Test-ExakitTablePresent <table> - does the table exist in the kit schema?
+# Test-ExakitTablePresent <table> [schema] - does the table exist in the given
+# schema (default STARTER_KIT / $EXAKIT_SCHEMA)?
 function Test-ExakitTablePresent {
-    param([Parameter(Mandatory)][string]$Table)
-    $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA.ToUpper() } else { "STARTER_KIT" }
+    param([Parameter(Mandatory)][string]$Table, [string]$Schema)
+    $schema = if ($Schema) { $Schema.ToUpper() } elseif ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA.ToUpper() } else { "STARTER_KIT" }
     $tableUc = $Table.ToUpper()
     $sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM EXA_ALL_TABLES WHERE TABLE_SCHEMA = '$schema' AND TABLE_NAME = '$tableUc') THEN 'EXAKIT_TABLE_PRESENT' ELSE 'EXAKIT_TABLE_MISSING' END AS STATUS"
     $result = Invoke-Exapump @("sql", "-p", $script:ExapumpProfile, $sql)
@@ -768,7 +773,7 @@ function Test-ExakitDatasetLoaded {
     param([Parameter(Mandatory)][hashtable]$Dataset)
     if ((Test-ExakitDbReachable) -and $Dataset.Markers.Count -gt 0) {
         foreach ($table in $Dataset.Markers) {
-            if (-not (Test-ExakitTablePresent $table)) {
+            if (-not (Test-ExakitTablePresent $table $Dataset.Schema)) {
                 if ((Get-ExakitManifestValue $Dataset.Flag) -eq $true) { Set-ExakitManifestValue $Dataset.Flag $false }
                 return $false
             }
@@ -799,13 +804,16 @@ function Invoke-ExakitDatasetDirLoad {
     param([Parameter(Mandatory)][string]$KitRoot, [Parameter(Mandatory)][string]$Id, [switch]$Force)
     $dir = Join-Path $KitRoot "data\datasets\$Id"
     $flag = "data.datasets.$Id.loaded"
+    # Each dataset loads into its own schema (schema= in dataset.conf, default
+    # the id uppercased); the dataset's SQL scripts create and OPEN that schema.
+    $schema = $Id.ToUpper()
     $confPath = Join-Path $dir "dataset.conf"
     if (Test-Path $confPath) {
         foreach ($line in (Get-Content $confPath)) {
-            if ($line -match '^flag=(.+)$') { $flag = $Matches[1]; break }
+            if ($line -match '^flag=(.+)$') { $flag = $Matches[1] }
+            if ($line -match '^schema=(.+)$') { $schema = $Matches[1] }
         }
     }
-    $schema = if ($env:EXAKIT_SCHEMA) { $env:EXAKIT_SCHEMA } else { "STARTER_KIT" }
     if (-not (Test-Path $dir)) { Fail "Unknown bundled dataset: $Id (no $dir)" }
     if (-not (Get-ExakitManifestValue "components.exapump.profile")) {
         Fail "No exapump connection profile is recorded - the exapump setup step has not completed. Re-run the installer, then retry."
@@ -883,7 +891,6 @@ function Invoke-ExakitDatasetDirLoad {
     }
 
     Set-ExakitManifestValue $flag $true
-    Set-ExakitManifestValue "data.schema" $schema
     Set-ExakitManifestValue "data.last_load.source" "dataset:$Id"
     Ok "Dataset '$Id' loaded and verified"
 }

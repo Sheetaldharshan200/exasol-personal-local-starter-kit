@@ -289,7 +289,7 @@ function Show-ExakitGuide {
     Start-ExakitPanel "1 - Ask questions with an AI client (MCP)"
     Write-ExakitPanelLine "Connect one or more AI clients in a single guided step:"
     Write-ExakitPanelLine "  exakit mcp-setup"
-    Write-ExakitPanelLine "Supported: Claude, Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI"
+    Write-ExakitPanelLine "Supported: Claude, Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI, OpenCode, Continue"
     Write-ExakitPanelLine "Then restart/reload the client and look for the MCP server 'exasol'."
     Write-ExakitPanelLine "First thing to ask it:"
     Write-ExakitPanelLine "  'List the schemas and tables in my Exasol database, then answer my"
@@ -307,7 +307,8 @@ function Show-ExakitGuide {
     if ($mcpUser) { Write-ExakitPanelLine "  (read-only alternative: user $mcpUser)" }
     Write-ExakitPanelLine "  TLS:       local self-signed certificate - in Driver properties set"
     Write-ExakitPanelLine "             validateservercertificate = 0, then Test Connection > Finish."
-    Write-ExakitPanelLine "Your data lives in schema STARTER_KIT."
+    Write-ExakitPanelLine "Each bundled dataset has its own schema (TPCH, ENERGY, WEATHER);"
+    Write-ExakitPanelLine "your own uploads default to STARTER_KIT."
     Complete-ExakitPanel
 
     Start-ExakitPanel "3 - Terminal and Python"

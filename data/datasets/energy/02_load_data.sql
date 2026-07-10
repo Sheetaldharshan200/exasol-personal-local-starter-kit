@@ -4,7 +4,7 @@
 -- deterministic jitter derived from (meter, hour) - so re-runs produce the
 -- exact same data. TRUNCATE first so a --force re-run cannot double-insert.
 
-OPEN SCHEMA STARTER_KIT;
+OPEN SCHEMA ENERGY;
 
 TRUNCATE TABLE ENERGY_READINGS;
 

@@ -2,21 +2,24 @@
 # mcp-readonly-sql-matrix.sh — integration test proving the dedicated MCP
 # read-only database user can run the full breadth of read/analytic SQL that AI
 # clients issue (aggregation, window functions, CTEs, set ops, ROLLUP/CUBE,
-# statistics, ...) while every write/DDL is rejected — and that the schema-level
-# SELECT grant automatically covers newly loaded tables.
+# statistics, ...) while every write/DDL is rejected — and that its database-wide
+# read (USE ANY SCHEMA + SELECT ANY TABLE) automatically covers newly created
+# tables in any schema.
 #
 #   bash tests/mcp-readonly-sql-matrix.sh
 #
 # Requires a running local deployment plus the kit's stored credentials. If any
 # are missing it SKIPs (exit 0) so it is safe in a dry CI environment. It runs
 # only SELECTs as the read-only user; the one mutation (a probe table to prove
-# the grant covers future tables) is created and dropped as the admin user.
+# read-all covers future tables) is created and dropped as the admin user.
 
 set -u
 EXAKIT_HOME="${EXAKIT_HOME:-$HOME/.exasol-starter-kit}"
 CREDS="$EXAKIT_HOME/credentials"
 MANIFEST="$EXAKIT_HOME/manifest.json"
-S=STARTER_KIT
+# The TPC-H sample tables this matrix exercises load into the TPCH schema; the
+# grant-coverage probe also lands here (any granted dataset schema would do).
+S=TPCH
 
 skip() { echo "SKIP: $1"; exit 0; }
 
@@ -112,9 +115,10 @@ check "drop table"    fail "DROP TABLE $S.NATION;"
 check "create schema" fail "CREATE SCHEMA HACKZONE;"
 check "truncate"      fail "TRUNCATE TABLE $S.NATION;"
 
-echo "schema grant covers newly loaded tables:"
-# Create+populate a probe table as admin (simulates a user data-load), then
-# confirm the read-only user can query it with no extra grant.
+echo "database-wide read covers newly created tables:"
+# Create+populate a probe table as admin (simulates a user data-load) in a
+# schema, then confirm the read-only user can query it with no per-schema grant
+# (USE ANY SCHEMA + SELECT ANY TABLE cover it).
 printf 'CREATE TABLE %s.EXAKIT_GRANT_PROBE (ID DECIMAL(9), LABEL VARCHAR(20));\nINSERT INTO %s.EXAKIT_GRANT_PROBE VALUES (1,'\''a'\''),(2,'\''b'\'');' "$S" "$S" \
     | HOME="$TMP" "$EXAPUMP" sql -p sysadm >/dev/null 2>&1
 check "read newly created table" ok "SELECT COUNT(*) FROM $S.EXAKIT_GRANT_PROBE;"

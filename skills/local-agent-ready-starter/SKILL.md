@@ -72,8 +72,8 @@ honored (macOS/Linux/WSL). Always use **names, not menu numbers** — numbers ch
 releases:
 - which MCP client(s) to connect → `EXAKIT_MCP_CLIENTS=claude` (`claude` = desktop app +
   Claude Code CLI; also `claude_desktop`, `claude_code`, `codex`, `cursor`, `copilot`,
-  `gemini`, `all`, comma-separated); or `EXAKIT_SKIP_MCP=1` to set MCP up later via
-  `exakit mcp-setup`
+  `gemini`, `opencode`, `continue`, `all`, comma-separated); or `EXAKIT_SKIP_MCP=1` to set
+  MCP up later via `exakit mcp-setup`
 - which data to load → `EXAKIT_DATASETS=tpch,weather` (bundled dataset ids; wins over
   `EXAKIT_LOAD_SAMPLE`), or `EXAKIT_LOAD_SAMPLE=1` (bundled sample) / `0` (skip data)
 - on macOS, if a database is already running → `EXAKIT_REUSE_DB=1` (reuse) or `0` (deploy fresh)
@@ -104,8 +104,9 @@ A returned timestamp means the local database works end to end. If `status` is n
 `running`, `exakit start` brings it back.
 
 > Two names that look alike but are not the same thing — do not conflate or "correct" them:
-> `starter-kit` is the **exapump connection profile** (`-p starter-kit`); `STARTER_KIT` is the
-> **database schema** the sample data lives in. Use each exactly as written.
+> `starter-kit` is the **exapump connection profile** (`-p starter-kit`); each bundled dataset
+> lives in its **own database schema** (`TPCH`, `ENERGY`, `WEATHER`), while `STARTER_KIT` is the
+> default schema for data the user uploads themselves. Use each exactly as written.
 
 ## Step 3 — Connect the AI client over MCP
 
@@ -120,13 +121,14 @@ pre-selected**. The user restarts the client afterward.
 After setup, the client starts the MCP server named `exasol` on demand over stdio (it is not
 a background service). Verify with `exakit mcp-doctor`.
 
-The MCP login is a **dedicated, least-privilege, read-only database user** — this is enforced
-by the database, not by trust. That is what makes the next steps safe.
+The MCP login is a **dedicated, read-only database user** — it can read every schema in the
+database but cannot write, and that read-only limit is enforced by the database, not by
+trust. That is what makes the next steps safe.
 
 ## Step 4 — Load the sample data
 
 So the user is not staring at an empty database, load the bundled TPC-H sample (customers,
-orders, line items, parts, suppliers) into the `STARTER_KIT` schema:
+orders, line items, parts, suppliers) into the `TPCH` schema:
 
 ```bash
 exakit data-load
@@ -147,7 +149,7 @@ ASK  ->  INSPECT (show the SQL first)  ->  RUN (read-only)  ->  VALIDATE (indepe
 ```
 
 1. **Discover.** Ask the user's assistant to list schemas/tables and describe the
-   `STARTER_KIT` tables first — ground in the *real* schema, do not guess column names.
+   `TPCH` tables first — ground in the *real* schema, do not guess column names.
 2. **Ask, but show the SQL first.** For a question like *"which product category generated
    the most revenue?"*, present the SQL and a plain-English explanation **before executing**.
    Call out the judgment calls: what defines "revenue" (price × quantity? an amount column?),
@@ -175,8 +177,9 @@ Follow these on every interaction, no exceptions:
 
 - **Read-only only — and know which path is actually enforced.** Never CREATE, UPDATE, DELETE,
   DROP, or otherwise mutate data. Two access paths, two levels of protection:
-  - **MCP tools** run as the dedicated least-privilege read-only user — the database *enforces*
-    read-only, so a mutation is rejected outright. This is the safe default path for querying.
+  - **MCP tools** run as the dedicated read-only user — it can read every schema
+    (`USE ANY SCHEMA` + `SELECT ANY TABLE`) but the database *enforces* read-only, so a
+    mutation is rejected outright. This is the safe default path for querying.
   - **`exapump -p starter-kit`** connects as the **admin** user and is *not* restricted — the
     only thing stopping a destructive statement there is you. Use it solely for the approved
     `SELECT` in Step 5.4. Never route a write through it, and never use it to "work around"

@@ -52,6 +52,7 @@ class AdditionalAdapterTests(unittest.TestCase):
             ("cursor", "mcpServers"),
             ("vscode_copilot", "servers"),
             ("gemini_cli", "mcpServers"),
+            ("opencode", "mcp"),
         ):
             with self.subTest(adapter=adapter_id):
                 adapter = self._registry.get(adapter_id)
@@ -92,6 +93,76 @@ class AdditionalAdapterTests(unittest.TestCase):
             'command = "C:\\\\Users\\\\Example\\\\.local\\\\bin\\\\uvx.exe"',
             rendered.content or "",
         )
+
+    def test_opencode_adapter_renders_local_entry_shape(self) -> None:
+        # OpenCode's entry shape is distinctive: the section key is "mcp", the
+        # command and its args fold into ONE array, env goes under
+        # "environment" (not "env"), and the server marks itself
+        # type=local / enabled=true.
+        adapter = self._registry.get("opencode")
+        location = adapter.locate(self._environment)
+        inspection = adapter.inspect(location.path, "exasol")  # type: ignore[arg-type]
+        rendered = adapter.render(self._server, inspection)
+        self.assertEqual(adapter.validate_render(rendered), [])
+        payload = json.loads(rendered.content or "{}")
+        entry = payload["mcp"]["exasol"]
+        self.assertEqual(entry["type"], "local")
+        self.assertTrue(entry["enabled"])
+        self.assertEqual(entry["command"], ["/tmp/uvx", "exasol-mcp-server@1.10.1"])
+        self.assertEqual(entry["environment"], {"EXA_DSN": "127.0.0.1:8563", "EXA_USER": "sys"})
+        self.assertNotIn("args", entry)
+        self.assertNotIn("env", entry)
+
+    def test_opencode_adapter_preserves_unrelated_settings_on_removal(self) -> None:
+        adapter = self._registry.get("opencode")
+        location = adapter.locate(self._environment)
+        assert location.path is not None
+        location.path.parent.mkdir(parents=True, exist_ok=True)
+        location.path.write_text(
+            json.dumps({"theme": "opencode", "mcp": {"exasol": {"type": "local"}}}),
+            encoding="utf-8",
+        )
+        inspection = adapter.inspect(location.path, "exasol")
+        removal = adapter.render_removal(inspection, "exasol")
+        self.assertFalse(removal.remove_file)
+        payload = json.loads(removal.content or "{}")
+        self.assertEqual(payload["theme"], "opencode")
+        self.assertNotIn("exasol", payload.get("mcp", {}))
+
+    def test_continue_adapter_renders_block_file_yaml(self) -> None:
+        # Continue's block file is YAML with top-level name/version/schema and an
+        # mcpServers LIST. The command/args stay bare; env values that YAML 1.1
+        # would coerce (a bare "no" -> boolean, a bare port -> int) MUST be
+        # quoted so they survive as strings.
+        adapter = self._registry.get("continue")
+        location = adapter.locate(self._environment)
+        server = ServerDefinition(
+            transport=DeploymentMode.STDIO,
+            name="exasol",
+            command="uvx",
+            args=("exasol-mcp-server@1.10.1",),
+            env={"EXA_DSN": "127.0.0.1:8563", "EXA_SSL_CERT_VALIDATION": "no"},
+        )
+        inspection = adapter.inspect(location.path, "exasol")  # type: ignore[arg-type]
+        rendered = adapter.render(server, inspection)
+        self.assertEqual(adapter.validate_render(rendered), [])
+        content = rendered.content or ""
+        self.assertIn("mcpServers:", content)
+        self.assertIn("- name: exasol", content)
+        self.assertIn("command: uvx", content)
+        self.assertIn("- exasol-mcp-server@1.10.1", content)
+        # YAML 1.1 coercion guards:
+        self.assertIn('EXA_SSL_CERT_VALIDATION: "no"', content)
+        self.assertIn('EXA_DSN: "127.0.0.1:8563"', content)
+
+    def test_continue_adapter_removes_owned_file(self) -> None:
+        adapter = self._registry.get("continue")
+        location = adapter.locate(self._environment)
+        inspection = adapter.inspect(location.path, "exasol")  # type: ignore[arg-type]
+        removal = adapter.render_removal(inspection, "exasol")
+        # The block file is kit-owned, so removal deletes it wholesale.
+        self.assertTrue(removal.remove_file)
+        self.assertIsNone(removal.content)
 
     def test_codex_adapter_preserves_quoted_table_keys(self) -> None:
         adapter = self._registry.get("codex")
@@ -206,6 +277,8 @@ class AdditionalAdapterTests(unittest.TestCase):
             "codex",
             "vscode_copilot",
             "gemini_cli",
+            "opencode",
+            "continue",
         ):
             with self.subTest(adapter=adapter_id):
                 adapter = self._registry.get(adapter_id)

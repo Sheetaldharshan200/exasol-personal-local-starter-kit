@@ -16,7 +16,7 @@ This is the kit's core loop, done once, end to end: **ask → inspect the SQL �
 
 Paste into your assistant:
 
-> What schemas and tables are available in my Exasol database? For the tables in the STARTER_KIT schema, describe their columns and how they relate to each other.
+> What schemas and tables are available in my Exasol database? For the tables in the TPCH schema, describe their columns and how they relate to each other.
 
 The assistant uses the MCP server's metadata tools — no SQL runs yet. You should see the sample retail tables (customers, products, orders, returns) with their columns. This step matters: the assistant grounds itself in the *real* schema instead of guessing.
 

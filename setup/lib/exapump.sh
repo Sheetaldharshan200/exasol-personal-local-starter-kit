@@ -524,16 +524,20 @@ exakit_run_sql_script() {
 #   data/datasets/<id>/02_load_data.sql  optional transform/generation step
 #   data/datasets/<id>/03_verify_setup.sql  optional checks (a FAIL row blocks)
 #
-# All bundled datasets load into $EXAKIT_SCHEMA (STARTER_KIT) so the dedicated
-# read-only MCP user sees them without extra grants — table names must be
-# unique across datasets. "markers" names the dataset's tables used to answer
-# "is this loaded?" against the DATABASE, not just the manifest.
+# Each bundled dataset loads into its own schema (schema= in dataset.conf,
+# default the id uppercased — e.g. TPCH, ENERGY, WEATHER) so its tables stay
+# grouped in the AI client; the MCP read-only user has database-wide read
+# (USE ANY SCHEMA + SELECT ANY TABLE — see exakit_configure_mcp_readonly_access)
+# so it sees every dataset schema with no per-schema grant. "markers" names the
+# dataset's tables used to answer "is this loaded?" against the DATABASE (in
+# that schema), not just the manifest.
 
-# exakit_bundled_datasets — one line per dataset: "id|label|flag|markers".
+# exakit_bundled_datasets — one line per dataset: "id|label|flag|markers|schema".
 # Every dataset (TPC-H included) lives under data/datasets/<id>/ and is
 # discovered from its dataset.conf; nothing is hardcoded here. A conf may set
 # flag= to override the default manifest key (TPC-H keeps the historical
-# data.loaded so existing installs stay recognized).
+# data.loaded so existing installs stay recognized) and schema= to name the
+# schema it loads into (default: the id, uppercased).
 exakit_bundled_datasets() {
     _bdr_root="$(exakit_repo_root 2>/dev/null)" || return 0
     for _bdr_conf in "$_bdr_root"/data/datasets/*/dataset.conf; do
@@ -543,10 +547,12 @@ exakit_bundled_datasets() {
         _bdr_markers="$(sed -n 's/^markers=//p' "$_bdr_conf" | head -1)"
         _bdr_flag="$(sed -n 's/^flag=//p' "$_bdr_conf" | head -1)"
         _bdr_order="$(sed -n 's/^order=//p' "$_bdr_conf" | head -1)"
+        _bdr_schema="$(sed -n 's/^schema=//p' "$_bdr_conf" | head -1)"
         [ -n "$_bdr_id" ] && [ -n "$_bdr_label" ] || continue
         [ -n "$_bdr_flag" ] || _bdr_flag="data.datasets.${_bdr_id}.loaded"
+        [ -n "$_bdr_schema" ] || _bdr_schema="$(printf '%s' "$_bdr_id" | tr '[:lower:]' '[:upper:]')"
         case "$_bdr_order" in ''|*[!0-9]*) _bdr_order=50 ;; esac
-        printf '%s|%s|%s|%s|%s\n' "$_bdr_order" "$_bdr_id" "$_bdr_label" "$_bdr_flag" "$_bdr_markers"
+        printf '%s|%s|%s|%s|%s|%s\n' "$_bdr_order" "$_bdr_id" "$_bdr_label" "$_bdr_flag" "$_bdr_markers" "$_bdr_schema"
     done | sort -t'|' -n -k1,1 | cut -d'|' -f2-
 }
 
@@ -564,9 +570,10 @@ exakit_db_reachable() {
     [ "$_EXAKIT_DB_REACHABLE" = 1 ]
 }
 
-# exakit_table_present <table> — does the table exist in $EXAKIT_SCHEMA?
+# exakit_table_present <table> [schema] — does the table exist in the given
+# schema (default STARTER_KIT / $EXAKIT_SCHEMA)?
 exakit_table_present() {
-    _tp_schema="$(printf '%s' "${EXAKIT_SCHEMA:-STARTER_KIT}" | tr '[:lower:]' '[:upper:]')"
+    _tp_schema="$(printf '%s' "${2:-${EXAKIT_SCHEMA:-STARTER_KIT}}" | tr '[:lower:]' '[:upper:]')"
     _tp_table="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
     [ -n "$_tp_table" ] || return 1
     "$(exapump_cli)" sql -p "$EXAKIT_EXAPUMP_PROFILE" \
@@ -574,17 +581,19 @@ exakit_table_present() {
         2>> "${EXAKIT_LOG_FILE:-/dev/null}" | grep -q "EXAKIT_TABLE_PRESENT"
 }
 
-# exakit_dataset_loaded <flag> <markers_csv> — is the dataset actually loaded?
-# The DATABASE is the source of truth: when it is reachable, every marker
-# table must exist (and the manifest flag is synced to what was observed, so a
-# destroy+redeploy that left a stale "loaded" flag self-heals). Only when the
-# database is unreachable do we fall back to the manifest flag alone.
+# exakit_dataset_loaded <flag> <markers_csv> [schema] — is the dataset actually
+# loaded? The DATABASE is the source of truth: when it is reachable, every
+# marker table must exist in the dataset's schema (and the manifest flag is
+# synced to what was observed, so a destroy+redeploy that left a stale "loaded"
+# flag self-heals). Only when the database is unreachable do we fall back to
+# the manifest flag alone.
 exakit_dataset_loaded() {
     _dl_flag="$1"
     _dl_markers="$(printf '%s' "$2" | tr ',' ' ')"
+    _dl_schema="$3"
     if exakit_db_reachable && [ -n "$_dl_markers" ]; then
         for _dl_table in $_dl_markers; do
-            if ! exakit_table_present "$_dl_table"; then
+            if ! exakit_table_present "$_dl_table" "$_dl_schema"; then
                 [ "$(manifest_get "$_dl_flag" 2>/dev/null)" = "true" ] && \
                     manifest_set "$_dl_flag" false
                 return 1
@@ -600,9 +609,9 @@ exakit_dataset_loaded() {
 # exakit_pending_datasets — "id|label" lines for bundled datasets that are NOT
 # loaded yet. Drives the dynamic data menus: loaded datasets are not offered.
 exakit_pending_datasets() {
-    exakit_bundled_datasets | while IFS='|' read -r _bd_id _bd_label _bd_flag _bd_markers; do
+    exakit_bundled_datasets | while IFS='|' read -r _bd_id _bd_label _bd_flag _bd_markers _bd_schema; do
         [ -n "$_bd_id" ] || continue
-        exakit_dataset_loaded "$_bd_flag" "$_bd_markers" || printf '%s|%s\n' "$_bd_id" "$_bd_label"
+        exakit_dataset_loaded "$_bd_flag" "$_bd_markers" "$_bd_schema" || printf '%s|%s\n' "$_bd_id" "$_bd_label"
     done
 }
 
@@ -623,8 +632,12 @@ exakit_load_dataset_dir() {
     _ld_id="$2"
     _ld_force="${3:-}"
     _ld_dir="$_ld_kit_root/data/datasets/$_ld_id"
-    _ld_schema="${EXAKIT_SCHEMA:-STARTER_KIT}"
     [ -d "$_ld_dir" ] || die "Unknown bundled dataset: $_ld_id (no $_ld_dir)"
+    # Each dataset loads into its own schema (schema= in dataset.conf, default
+    # the id uppercased) so the tables stay grouped per dataset in the AI
+    # client. The dataset's SQL scripts create and OPEN that same schema.
+    _ld_schema="$(sed -n 's/^schema=//p' "$_ld_dir/dataset.conf" 2>/dev/null | head -1)"
+    [ -n "$_ld_schema" ] || _ld_schema="$(printf '%s' "$_ld_id" | tr '[:lower:]' '[:upper:]')"
     # Honor a flag= override in dataset.conf (TPC-H keeps the historical
     # data.loaded key); default to the per-dataset key.
     _ld_flag="$(sed -n 's/^flag=//p' "$_ld_dir/dataset.conf" 2>/dev/null | head -1)"

@@ -1,7 +1,7 @@
 -- 03_verify_setup.sql - post-load verification for the weather dataset.
 -- Every row must read STATUS = 'OK'; a 'FAIL' row blocks marking the dataset
 -- loaded (same contract as the TPC-H verify script).
-OPEN SCHEMA STARTER_KIT;
+OPEN SCHEMA WEATHER;
 
 SELECT 'row_count: weather_cities' AS CHECK_NAME,
        CASE WHEN COUNT(*) = 10 THEN 'OK' ELSE 'FAIL' END AS STATUS,

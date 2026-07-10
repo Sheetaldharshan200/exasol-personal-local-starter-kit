@@ -26,7 +26,8 @@
 #                           stable across releases; menu numbers are not):
 #                           claude (= both the desktop app and the Claude Code
 #                           CLI), claude_desktop, claude_code, codex, cursor,
-#                           copilot, gemini, all, or skip (e.g. "claude,cursor")
+#                           copilot, gemini, opencode, continue, all, or skip
+#                           (e.g. "claude,cursor")
 #   EXAKIT_SKIP_MCP=1       skip MCP client setup (run `exakit mcp-setup` later)
 #   EXAKIT_DATASETS=...     which bundled datasets to load, by id (csv of
 #                           data/datasets/<id>/ ids, e.g. "tpch,weather");

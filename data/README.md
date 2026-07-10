@@ -14,16 +14,18 @@ datasets/<id>/
   03_verify_setup.sql   # post-load checks — a FAIL row blocks "loaded"
 ```
 
-All datasets load into the `STARTER_KIT` schema (unique table names per dataset), so
-the read-only MCP user sees them without extra grants. The `exakit data-load` menu
-discovers datasets from these folders and only offers ones **not already in the
-database** (verified against the marker tables, not just a manifest flag).
+Each dataset loads into its **own schema** (`schema=` in `dataset.conf`, default the id
+uppercased). The read-only MCP user has database-wide read (`USE ANY SCHEMA` + `SELECT ANY
+TABLE`), so the AI client sees every schema — these datasets and anything you add later —
+without a per-schema grant. The `exakit data-load` menu discovers datasets from these
+folders and only offers ones **not already in the database** (verified against the marker
+tables, not just a manifest flag).
 
-| Dataset | Contents |
-|---|---|
-| [`datasets/tpch/`](datasets/tpch/) | TPC-H retail benchmark (below) — the original sample |
-| [`datasets/energy/`](datasets/energy/) | 50 smart meters + 108,000 hourly readings (SQL-generated time series) |
-| [`datasets/weather/`](datasets/weather/) | 10 European cities, ~11k days of daily weather (2023–2025) |
+| Dataset | Schema | Contents |
+|---|---|---|
+| [`datasets/tpch/`](datasets/tpch/) | `TPCH` | TPC-H retail benchmark (below) — the original sample |
+| [`datasets/energy/`](datasets/energy/) | `ENERGY` | 50 smart meters + 108,000 hourly readings (SQL-generated time series) |
+| [`datasets/weather/`](datasets/weather/) | `WEATHER` | 10 European cities, ~11k days of daily weather (2023–2025) |
 
 ## The TPC-H dataset (`datasets/tpch/`)
 

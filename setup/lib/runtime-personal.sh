@@ -223,7 +223,6 @@ personal_reap_orphan_daemon() {
 }
 
 # personal_deploy_local — run the local deployment. This is the long step
-# (10-20 minutes on first install); output stays visible and is logged.
 personal_deploy_local() {
     # A reachable Exasol is already up (this run, a previous run, or the user
     # started it by hand). `exasol info` is the launcher's own health signal.
@@ -252,7 +251,7 @@ personal_deploy_local() {
             die "Port $EXAKIT_PERSONAL_PORT is in use by a process that is not a reachable Exasol Personal deployment. Stop that application and re-run (EXAKIT_DB_PORT does not apply to the macOS deployment)."
     fi
 
-    info "Deploying Exasol Personal locally — this takes 10-20 minutes on first install"
+    info "Deploying Exasol Personal locally - super quick !"
     push_rollback "$(personal_cli) destroy --remove || true"
     # The launcher prints its own (verbose) output; contain it in a dim gutter so
     # it reads as "not ours", while the full text still lands in the log.

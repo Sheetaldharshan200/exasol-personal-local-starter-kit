@@ -1,13 +1,13 @@
 -- 01_create_schema.sql - smart-meter energy dataset schema.
--- Loads into STARTER_KIT alongside the other bundled datasets so the
--- dedicated read-only MCP user sees it without extra grants; table names are
--- prefixed ENERGY_ to stay unique across datasets.
+-- Loads into its own ENERGY schema; the dedicated read-only MCP user reads it
+-- via database-wide read (USE ANY SCHEMA + SELECT ANY TABLE), no per-schema
+-- grant. Tables keep the ENERGY_ prefix so fully-qualified names stay clear.
 --
 -- Idempotent: CREATE OR REPLACE TABLE means this can be re-run (e.g. via
 -- exakit data-load --force) without manual cleanup.
 
-CREATE SCHEMA IF NOT EXISTS STARTER_KIT;
-OPEN SCHEMA STARTER_KIT;
+CREATE SCHEMA IF NOT EXISTS ENERGY;
+OPEN SCHEMA ENERGY;
 
 -- energy_meters (50 rows, from data/energy_meters.csv). PK: meter_id.
 CREATE OR REPLACE TABLE ENERGY_METERS (

@@ -13,8 +13,8 @@
 -- never fails on constraint drop-order (dropping a table that a FOREIGN KEY
 -- elsewhere points at would otherwise block CREATE OR REPLACE).
 
-CREATE SCHEMA IF NOT EXISTS STARTER_KIT;
-OPEN SCHEMA STARTER_KIT;
+CREATE SCHEMA IF NOT EXISTS TPCH;
+OPEN SCHEMA TPCH;
 
 -- region (5 rows). PK: r_regionkey.
 CREATE OR REPLACE TABLE REGION (
