@@ -165,7 +165,12 @@ main() {
     # When piped (curl | sh), stdin is the exhausted pipe. Reattach the
     # terminal when one is available so any interactive step (for example a
     # first-run license confirmation) can still read the keyboard.
-    say "Starting setup: $setup_script"
+    # Name the platform, not just the script: setup-wsl.sh also serves native
+    # Linux, and a Linux user reading "setup-wsl" wonders if WSL is required.
+    case "$setup_script" in
+        */setup-wsl.sh) say "Starting setup: $setup_script (shared Linux / WSL setup)" ;;
+        *)              say "Starting setup: $setup_script" ;;
+    esac
     printf '\n'
     # We already showed the banner above; tell the setup script to skip its
     # own so the wordmark appears exactly once through the installer. A direct

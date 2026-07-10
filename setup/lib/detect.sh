@@ -79,7 +79,7 @@ detect_container_runtime() {
 }
 
 # detect_container_runtime_detail — richer status for error messages:
-#   docker | podman | docker-stopped | podman-stopped | none
+#   docker | podman | docker-permission | docker-stopped | podman-stopped | none
 detect_container_runtime_detail() {
     _usable="$(detect_container_runtime)"
     if [ "$_usable" != "none" ]; then
@@ -87,6 +87,15 @@ detect_container_runtime_detail() {
         return
     fi
     if command -v docker >/dev/null 2>&1; then
+        # Distinguish "the daemon is down" from "the daemon is UP but this
+        # user may not talk to it" (typically: not in the docker group, so
+        # /var/run/docker.sock refuses with permission denied). The remedies
+        # are completely different — telling that user to start a daemon
+        # that is already running sends them in circles.
+        if docker info 2>&1 | grep -qi 'permission denied'; then
+            echo "docker-permission"
+            return
+        fi
         echo "docker-stopped"
         return
     fi
@@ -191,6 +200,7 @@ preflight_report() {
                 else
                     _pf_bad "Docker is installed but unreachable (daemon not responding) — start Docker (e.g. Docker Desktop); $_pf_podman"
                 fi ;;
+            docker-permission) _pf_bad "Docker is running but this user may not use it (permission denied on the Docker socket) — add yourself to the docker group: sudo usermod -aG docker \$USER, then log out and back in" ;;
             podman-stopped) _pf_bad "Podman is installed but not running (Docker not found) — try: podman machine start, or install Docker" ;;
             none)           _pf_bad "No container runtime — install Docker (docs.docker.com/get-docker) or Podman (podman.io)" ;;
         esac
