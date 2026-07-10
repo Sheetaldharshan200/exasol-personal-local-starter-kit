@@ -51,7 +51,7 @@ Run the guided MCP setup:
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected supported client config files for Claude, Cursor, or Codex.
+A checkbox menu lets you pick from the supported clients — Claude, Codex, Cursor, Gemini CLI, GitHub Copilot (VS Code), OpenCode, Continue. Any existing client config is backed up before it is edited.
 
 When the kit can resolve the local MCP launcher path, it writes that exact path into the client config instead of assuming `uvx` is available on every desktop app's PATH. That keeps setup portable across macOS, Linux, and Windows clients.
 
@@ -71,13 +71,13 @@ Then, in a **fresh** agent session, say **"setup starter kit"** — it checks st
 
 ## 5. Ask your first question
 
-The installer offers a focused data loading menu after exapump is ready and before MCP setup. Open it any time for the bundled sample or a local CSV or Parquet file; the default option loads and verifies the bundled `data/` folder:
+The installer offers a data loading menu after exapump is ready and before MCP setup. Open it again any time to load the bundled sample datasets or a local CSV/Parquet file — each load is verified after it runs:
 
 ```bash
 exakit data-load
 ```
 
-If you only want to reload the bundled sample dataset without opening the menu, use `--force`:
+To reload the bundled TPC-H sample directly, without the menu:
 
 ```bash
 exakit data-load --force

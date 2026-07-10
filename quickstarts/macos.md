@@ -6,7 +6,8 @@ Gets you from a bare Mac to a local Exasol database with an AI assistant connect
 
 - macOS on Apple Silicon or Intel
 - 8 GB+ RAM, ~20 GB free disk
-- usually under 2 minutes end to end (unattended)
+
+The install runs unattended and usually finishes in **under 2 minutes** end to end.
 
 Check before you start (installs nothing):
 
@@ -54,7 +55,7 @@ Use `exakit data-load --force` when you only want to reload the bundled sample d
 
 ## Connect your AI assistant
 
-Run `exakit mcp-setup` to permanently configure Claude, Cursor, or Codex. The setup backs up the selected client config files before updating them.
+Run `exakit mcp-setup` — a checkbox menu of the supported clients (Claude, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode, Continue). Any existing client config is backed up before it is updated.
 
 For Claude: after setup, restart the app and look for an MCP server named `exasol`.
 
