@@ -20,7 +20,7 @@ What happens, in order:
 2. Docker (or Podman) is verified — if Docker Desktop isn't running you get told exactly that, and re-run after starting it
 3. The pinned `exasol/nano` image is pulled; the container starts with a persistent volume, a generated password, and the SQL port on `127.0.0.1:8563` only
 4. exapump (the data-loading CLI) is installed and connected with its own profile
-5. You're offered the sample dataset (TPC-H) — accept it and MCP gets set up against real tables, not an empty schema
+5. You're offered the bundled sample datasets — accept them and MCP gets set up against real tables, not an empty schema
 6. The MCP server is installed, a dedicated read-only database user is provisioned and posture-checked, and you're offered live client setup
 7. The `exakit` command is installed to `~\.local\bin` — works the same from PowerShell or `cmd.exe`
 8. You get the connection panel: DSN `127.0.0.1:8563`, admin user, dedicated MCP user, and password file locations

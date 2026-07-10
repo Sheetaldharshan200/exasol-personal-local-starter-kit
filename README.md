@@ -79,11 +79,21 @@ curl -fsSL https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-s
 irm https://raw.githubusercontent.com/ranjanm-chn/exasol-personal-local-starter-kit/main/install.ps1 | iex
 ```
 
-The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol, the same on native Windows PowerShell as on macOS/Linux/WSL. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)* On every platform the database is usually up in **under 2 minutes**.
+The installer detects your OS and hardware, shows you the plan, then does the rest — database, exapump, MCP server, and pyexasol. It works the same on native Windows PowerShell as on macOS/Linux/WSL, and on every platform the database is usually up in **under 2 minutes**. *(One exception: Windows-on-ARM gets the database container only — exapump ships x86_64 Windows builds; see the [Windows quickstart](quickstarts/windows-docker.md).)*
 
 > **Prefer to read before you run?** Add `EXAKIT_DRY_RUN=1` before `sh` — the kit downloads to `~/.exasol-starter-kit/kit` and nothing installs until you run the setup yourself.
 
-> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it loads **every bundled dataset** and connects **every AI client found on the machine that isn't connected yet** over MCP. To answer its choices up front, set these before `sh` (macOS/Linux/WSL) — use **names, not menu numbers** (numbers change between releases): `EXAKIT_MCP_CLIENTS=claude,cursor` (which MCP clients: `claude` = desktop app + Claude Code CLI, `claude_desktop`, `claude_code`, `codex`, `cursor`, `copilot`, `gemini`, `opencode`, `continue`, `all`, `skip`), `EXAKIT_SKIP_MCP=1` (skip MCP setup), `EXAKIT_DATASETS=tpch,weather` (which bundled datasets, by id; wins over `EXAKIT_LOAD_SAMPLE`), `EXAKIT_LOAD_SAMPLE=0|1` (skip / load the bundled sample), `EXAKIT_REUSE_DB=0|1` (fresh deploy / reuse a running database on macOS). Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh`.
+> **Installing unattended (agent-driven or scripted)?** With no terminal to prompt, the install takes safe defaults: it loads **every bundled dataset** and connects **every AI client found on the machine that isn't connected yet** over MCP. To answer its choices up front, set these before `sh` (macOS/Linux/WSL) — use **names, not menu numbers** (numbers change between releases):
+>
+> | Variable | What it controls |
+> |---|---|
+> | `EXAKIT_MCP_CLIENTS=claude,cursor` | Which MCP clients to configure: `claude` (= desktop app + Claude Code CLI), `claude_desktop`, `claude_code`, `codex`, `cursor`, `copilot`, `gemini`, `opencode`, `continue`, `all`, `skip` |
+> | `EXAKIT_SKIP_MCP=1` | Skip MCP setup entirely |
+> | `EXAKIT_DATASETS=tpch,weather` | Which bundled datasets to load, by id (wins over `EXAKIT_LOAD_SAMPLE`) |
+> | `EXAKIT_LOAD_SAMPLE=0\|1` | Skip / load the bundled sample |
+> | `EXAKIT_REUSE_DB=0\|1` | Fresh deploy / reuse a running database (macOS) |
+>
+> Example: `curl -fsSL …/install.sh | EXAKIT_MCP_CLIENTS=claude EXAKIT_DATASETS=tpch sh`.
 
 ### 🤖 For AI agents
 
@@ -97,9 +107,14 @@ Run:
 exakit mcp-setup
 ```
 
-The setup backs up and edits the selected supported client config files. The flow is a checkbox multi-select — ↑/↓ to move, **Space** to select, **Enter** to continue — over **Claude**, **Codex**, **Cursor**, **Gemini cli**, **Github copilot(vscode)**, **OpenCode**, **Continue** and **Skip for now** (Skip cancels without touching any client config). The list is **dynamic**: clients that are already connected, or not installed on this machine, are simply not offered — when everything found is already connected, the command says so and exits. It validates the MCP connection, prints where the MCP config lives, and gives you a first prompt to use with the assistant — copied to your clipboard when a clipboard tool is available. Selecting **Claude** configures both Claude surfaces at once: the desktop app (`claude_desktop_config.json`) and the **Claude Code CLI** (`~/.claude.json`, user scope — available in every project); if one Claude surface is already connected, only the remaining one is offered (labelled e.g. *Claude Code (CLI)*). The installer runs this step for you; `exakit mcp-setup` re-runs it any time.
+A checkbox menu (↑/↓ to move, **Space** to select, **Enter** to continue) lets you pick from the supported clients — **Claude**, **Codex**, **Cursor**, **Gemini CLI**, **GitHub Copilot (VS Code)**, **OpenCode**, **Continue** — or **Skip for now** (Skip touches nothing). The setup backs up each selected client's config file before editing it, validates the MCP connection, prints where each config lives, and hands you a first prompt to try — copied to your clipboard when a clipboard tool is available.
 
-When the kit can detect the local MCP launcher path, it writes that exact path into the client configs instead of assuming `uvx` is on every desktop app's PATH. That keeps the same setup working more reliably across macOS, Linux, and Windows clients.
+Good to know:
+
+- **The menu is dynamic** — clients already connected, or not installed on this machine, are simply not offered. When everything found is already connected, the command says so and exits.
+- **Selecting Claude configures both Claude surfaces at once**: the desktop app (`claude_desktop_config.json`) and the Claude Code CLI (`~/.claude.json`, user scope — available in every project). If one is already connected, only the remaining one is offered.
+- **Configs are written with the resolved launcher path** — the kit writes the exact local MCP launcher path instead of assuming `uvx` is on every desktop app's PATH, so the same setup works reliably across macOS, Linux, and Windows clients.
+- The installer runs this step for you; `exakit mcp-setup` re-runs it any time.
 
 ### Let an AI assistant drive the kit (the skill)
 
@@ -121,13 +136,27 @@ Ask your assistant: *"Which product category generated the most revenue? Show me
 
 ### Sample data included
 
-So you're not staring at an empty database, the kit ships with **three bundled sample datasets** (detailed just below), led by standard **TPC-H** (a wholesale/retail model: customers, orders, line items, parts, suppliers). Each loads into its own schema (`TPCH`, `ENERGY`, `WEATHER`).
+So you're not staring at an empty database, the kit ships **three bundled datasets**, each in its **own schema** so your AI client sees them grouped and self-describing:
+
+| Dataset | What it is | Schema |
+|---|---|---|
+| **TPC-H retail** | Standard wholesale/retail benchmark — customers, orders, line items, parts, suppliers (~175k rows) | `TPCH` |
+| **Energy** | Smart-meter energy readings, time series (~108k rows) — [data/datasets/energy](data/datasets/energy) | `ENERGY` |
+| **Weather** | Daily city weather history (~11k rows) — [data/datasets/weather](data/datasets/weather) | `WEATHER` |
+
+The read-only MCP user has database-wide read (`USE ANY SCHEMA` + `SELECT ANY TABLE`), so it can query every schema and table — bundled, uploaded, or created later — with no per-schema grant, while remaining unable to write.
+
+**Loading data** — `exakit data-load` opens the same checkbox menu as the installer (↑/↓, Space, Enter):
+
+- It lists every bundled dataset **not loaded yet** (checked against the actual database, not just a flag), plus a **local CSV or Parquet file**, plus Cancel. Once all bundled datasets are in, only the local-file and Cancel options remain.
+- `exakit data-load --force` reloads the TPC-H sample directly.
+- A local file prompts for its target `SCHEMA.TABLE` (default `STARTER_KIT`) and the kit creates the schema if needed. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
+
+Dig into the data itself:
 
 - **[data/README.md](data/README.md)** — what's included and how to regenerate it at a different size
 - **[data/data-dictionary.md](data/data-dictionary.md)** — every table and column, with types, keys, and the revenue formula
 - **[data/example-questions.md](data/example-questions.md)** — 14 ready-to-ask questions (revenue, customers, orders, suppliers), each with validated reference SQL to inspect before you run
-
-The kit ships **three bundled datasets**, each in its **own schema** so your AI client sees them grouped and self-describing: **TPC-H retail** (~175k rows, schema `TPCH`), **smart-meter energy readings** (~108k-row time series, [data/datasets/energy](data/datasets/energy), schema `ENERGY`), and **daily city weather history** (~11k rows, [data/datasets/weather](data/datasets/weather), schema `WEATHER`). The read-only MCP user has database-wide read (`USE ANY SCHEMA` + `SELECT ANY TABLE`), so it can query every schema and table — bundled, uploaded, or created later — with no per-schema grant, while remaining unable to write. Run `exakit data-load` — the same checkbox menu as the installer (↑/↓, Space, Enter), listing every bundled dataset **not loaded yet** (checked against the actual database, not just a flag), a **local CSV or Parquet file**, and Cancel. Once all bundled datasets are in the database, only the local-file and Cancel options remain (`exakit data-load --force` reloads the TPC-H sample). A local file prompts for its target `SCHEMA.TABLE` (default `STARTER_KIT`) and the kit creates the schema if needed. One-liner alternative: `exapump upload yourfile.csv --table STARTER_KIT.MYTABLE -p starter-kit`.
 
 ### Day-to-day
 
@@ -159,7 +188,9 @@ Something failed mid-install? Re-run the install command. Finished steps are ski
 - **No preinstalled Python required** — the setup uses `python3` when present, otherwise it bootstraps a managed runtime through `uv`.
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.
-- **Version-aware updates** — installs resolve the latest component versions by default on Unix and Windows, record what was installed, and expose `exakit update-check` plus targeted updates such as `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, and `exakit update all`. Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan`, `exakit update personal --backup`, then `exakit update personal --apply`. Nano runtime updates keep the data volume, create pre-update runtime snapshot metadata, and try to restore the previous container image if the new one fails to start.
+- **Version-aware updates** — installs resolve the latest component versions by default, record what was installed, and expose `exakit update-check` plus targeted updates: `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, `exakit update all`.
+  - Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan` → `--backup` → `--apply`.
+  - Nano runtime updates keep the data volume, snapshot pre-update runtime metadata, and try to restore the previous container image if the new one fails to start.
 - **Reversible lifecycle** — `exakit` manages the kit end to end: `status`, `start`/`stop`, `data-load`, MCP setup and maintenance (`mcp-setup`, `mcp-status`, `mcp-validate`, `mcp-doctor`, `mcp-repair`, `mcp-remove`, `mcp-restore`), `logs`, and a guarded `uninstall`. Run `exakit help` (or `exakit catalog`) to see every command.
 
 ## Repository layout
@@ -177,7 +208,7 @@ Something failed mid-install? Re-run the install command. Finished steps are ski
 |---|---|
 | Do I need Rust / Python / Homebrew / git? | **No.** The installer brings everything it needs |
 | Does it cost anything? | No — Exasol Personal is free for personal use |
-| What sample data is included? | Three bundled datasets — TPC-H retail (~21 MB), smart-meter energy, and daily weather — all loaded into `STARTER_KIT`; see the [data dictionary](data/data-dictionary.md) |
+| What sample data is included? | Three bundled datasets — TPC-H retail (~21 MB), smart-meter energy, and daily weather — each in its own schema (`TPCH`, `ENERGY`, `WEATHER`); see the [data dictionary](data/data-dictionary.md) |
 | "Docker is installed but not running"? | Start Docker Desktop, run the install command again |
 | Docker Desktop runs on Windows but WSL can't see it? | Docker Desktop → Settings → Resources → **WSL integration** → enable your distro, Apply & restart (the installer detects and says this too) |
 | `exakit` not recognized after a Windows install? | Re-run the install command — it now adds `~\.local\bin` to your user PATH and repairs the command automatically |
