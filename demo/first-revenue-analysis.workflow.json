@@ -45,7 +45,7 @@
     {
       "id": "rerun",
       "type": "note",
-      "description": "Rerun any time with the validate command above; results are comparable run over run because the SQL is fixed and reviewed. Kit 2 adds the audit/run log and semantic definitions on top of this format."
+      "description": "Rerun any time with the validate command above; results are comparable run over run because the SQL is fixed and reviewed."
     }
   ],
   "outcome": {

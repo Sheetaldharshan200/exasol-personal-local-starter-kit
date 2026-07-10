@@ -47,7 +47,7 @@ At the end you get your connection details on screen, a managed runtime state un
 
 ---
 
-## 🚀 Kit 1 — Local Agent-Ready Starter
+## 🚀 Local Agent-Ready Starter
 
 *The default first experience: install, connect an AI assistant, ask your first question.*
 
@@ -152,23 +152,6 @@ Something failed mid-install? Re-run the install command. Finished steps are ski
 
 ---
 
-## 🔐 Kit 2 — Trusted AI Workflow Add-on
-
-*When "it works" needs to become "it's governed": add the trust layer.*
-
-Kit 2 builds **on top of** Kit 1 — nothing is reinstalled, your data stays put. One command adds:
-
-- **Semantic model** — shared business definitions for the assistant
-- **Audit / run log** — question, SQL, time, and status recorded
-- **Saved workflows** — repeatable assets you can rerun and share
-
-```bash
-bash ~/.exasol-starter-kit/kit/upgrade/upgrade-kit2.sh
-bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
-```
-
----
-
 ## Safety and operations
 
 - **Dedicated read-only MCP login** — the kit provisions and validates a database user with database-wide read (`USE ANY SCHEMA` + `SELECT ANY TABLE`) but no write privilege, and asserts that read-only posture before managed MCP flows proceed.
@@ -185,7 +168,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 - `setup/`: setup orchestration, shared libraries, and the `exakit` helper.
 - `mcp/`: MCP runtime export, client setup, validation, diagnostics, and tests.
 - `quickstarts/` and `demo/`: user-facing onboarding and first workflow guidance.
-- `sql/`, `data/`, and `upgrade/`: schema/bootstrap assets, sample data hooks, and Kit 2 upgrade scripts.
+- `sql/`, `data/`, and `upgrade/`: schema/bootstrap assets, sample data hooks, and upgrade scripts.
 - `tests/`: shell smoke checks and dry-run coverage.
 
 ## Quick answers

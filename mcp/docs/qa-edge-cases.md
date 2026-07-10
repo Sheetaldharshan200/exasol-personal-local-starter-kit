@@ -1,10 +1,10 @@
 # MCP QA Edge Cases
 
-Status: Expanded QA matrix for the implemented Kit 1 MCP scope.
+Status: Expanded QA matrix for the implemented MCP scope.
 
 ## Purpose
 
-This document captures the edge cases and failure paths that should be tested for the production-facing MCP flow in Kit 1.
+This document captures the edge cases and failure paths that should be tested for the production-facing MCP flow.
 
 It covers:
 
