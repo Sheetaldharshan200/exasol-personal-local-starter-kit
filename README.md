@@ -132,14 +132,21 @@ The kit ships **three bundled datasets**, each in its **own schema** so your AI 
 ### Day-to-day
 
 ```bash
-exakit status
-exakit info
-exakit stop
-exakit start
-exakit data-load
-exakit skills-install
-exakit mcp-doctor
+exakit status          # is everything running?
+exakit info            # connection details panel
+exakit start           # start the database
+exakit stop            # stop it (data persists)
+exakit data-load       # load bundled datasets or your own file
+exakit mcp-setup       # connect AI clients over MCP
+exakit mcp-status      # which clients are connected
+exakit mcp-doctor      # MCP health check
+exakit guide           # query without an AI client (SQL clients, pyexasol)
+exakit update-check    # component updates available?
+exakit skills-install  # (re)install the AI agent skill
+exakit help            # every command (also: exakit catalog)
 ```
+
+Every command above is verified against the CLI — anything else `exakit` can do is listed by `exakit help`.
 
 Something failed mid-install? Re-run the install command. Finished steps are skipped, and failed steps are retried.
 
@@ -170,7 +177,7 @@ bash ~/.exasol-starter-kit/kit/upgrade/rollback-kit2.sh
 - **Repo stays pure source** — runtime state, logs, credentials, backups, and generated configs live under `~/.exasol-starter-kit/`.
 - **Everything is inspectable** — install scripts, MCP configs, backups, and logs remain available on disk.
 - **Version-aware updates** — installs resolve the latest component versions by default on Unix and Windows, record what was installed, and expose `exakit update-check` plus targeted updates such as `exakit update mcp`, `exakit update exapump`, `exakit update runtime`, and `exakit update all`. Exasol Personal major-version changes use an explicit safe path: `exakit update personal --plan`, `exakit update personal --backup`, then `exakit update personal --apply`. Nano runtime updates keep the data volume, create pre-update runtime snapshot metadata, and try to restore the previous container image if the new one fails to start.
-- **Reversible lifecycle** — `exakit` manages the kit end to end: `status`, `start`/`stop`, `data-load`, MCP setup and maintenance (`mcp-setup`, `mcp-doctor`, `mcp-repair`, `mcp-remove`, `mcp-restore`), `logs`, and a guarded `uninstall`. Run `exakit help` (or `exakit catalog`) to see every command.
+- **Reversible lifecycle** — `exakit` manages the kit end to end: `status`, `start`/`stop`, `data-load`, MCP setup and maintenance (`mcp-setup`, `mcp-status`, `mcp-validate`, `mcp-doctor`, `mcp-repair`, `mcp-remove`, `mcp-restore`), `logs`, and a guarded `uninstall`. Run `exakit help` (or `exakit catalog`) to see every command.
 
 ## Repository layout
 
