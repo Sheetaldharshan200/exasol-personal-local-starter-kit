@@ -193,15 +193,6 @@ Something failed mid-install? Re-run the install command. Finished steps are ski
   - Nano runtime updates keep the data volume, snapshot pre-update runtime metadata, and try to restore the previous container image if the new one fails to start.
 - **Reversible lifecycle** — `exakit` manages the kit end to end: `status`, `start`/`stop`, `data-load`, MCP setup and maintenance (`mcp-setup`, `mcp-status`, `mcp-validate`, `mcp-doctor`, `mcp-repair`, `mcp-remove`, `mcp-restore`), `logs`, and a guarded `uninstall`. Run `exakit help` (or `exakit catalog`) to see every command.
 
-## Repository layout
-
-- `install.sh` and `install.ps1`: one-command entrypoints for Unix-like systems and Windows.
-- `setup/`: setup orchestration, shared libraries, and the `exakit` helper.
-- `mcp/`: MCP runtime export, client setup, validation, diagnostics, and tests.
-- `quickstarts/` and `demo/`: user-facing onboarding and first workflow guidance.
-- `sql/`, `data/`, and `upgrade/`: schema/bootstrap assets, sample data hooks, and upgrade scripts.
-- `tests/`: shell smoke checks and dry-run coverage.
-
 ## Quick answers
 
 | Question | Answer |
