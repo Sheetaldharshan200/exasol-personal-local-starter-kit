@@ -73,8 +73,6 @@ Save the outcome so it survives beyond this chat session. Two lightweight option
    ```
 2. **Record the workflow** — the file next to this guide, [`first-revenue-analysis.workflow.json`](first-revenue-analysis.workflow.json), captures this session (question, approved SQL, validation) in a structured, rerunnable form. Use it as the template for your own.
 
-Kit 2 (the Trusted AI Workflow Add-on) turns this from a convention into a feature: an audit/run log in the database, semantic definitions so "revenue" is defined once, and saved workflows as first-class assets. `bash ~/.exasol-starter-kit/kit/upgrade/upgrade-kit2.sh` when you're ready.
-
 ## Where to go next
 
 - Ask a harder question — *"monthly revenue trend by region, top 3 nations only"* — and hold the same discipline: SQL first, validate after

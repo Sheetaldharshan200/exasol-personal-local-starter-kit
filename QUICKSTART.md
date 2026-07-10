@@ -112,13 +112,3 @@ Re-running the installer is always safe — it skips what's done and repairs wha
 | Setup failed mid-way | Re-run the same install command — it resumes from the failed step |
 | Assistant can't see the database | `exakit status` (is the runtime running?), then restart the MCP client after config changes |
 | Anything else | `exakit logs` has the full story; every error message names its remedy |
-
-## Next: Kit 2 — the trust layer
-
-When you're ready for semantic grounding, an audit/run log, and saved workflows:
-
-```bash
-bash ~/.exasol-starter-kit/kit/upgrade/upgrade-kit2.sh
-```
-
-No reinstall — it detects your Kit 1 setup and adds only what's missing.

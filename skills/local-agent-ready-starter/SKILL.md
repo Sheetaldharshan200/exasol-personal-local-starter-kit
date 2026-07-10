@@ -206,11 +206,4 @@ Follow these on every interaction, no exceptions:
 - Fuller guidance: `~/.exasol-starter-kit/kit/QUICKSTART.md` and the README troubleshooting
   table.
 
-## What comes next (do not do it now)
-
-Once the first trusted query works, the user can add the **Trusted AI Workflow Add-on**
-(Kit 2): a semantic model, an audit/run log, and saved workflows —
-`bash ~/.exasol-starter-kit/kit/upgrade/upgrade-kit2.sh`. That is a separate skill
-(`trusted-ai-workflow`); keep this session focused on first value.
-
 [README troubleshooting table]: https://github.com/ranjanm-chn/exasol-personal-local-starter-kit#readme

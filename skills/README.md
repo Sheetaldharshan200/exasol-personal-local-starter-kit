@@ -7,10 +7,9 @@
 
 ## What's here
 
-| Skill | Use it when… | Ships in |
+| Skill | Use it when… | Version |
 |---|---|---|
-| [`local-agent-ready-starter`](local-agent-ready-starter/SKILL.md) | Setting up the kit and running a first trusted, AI-assisted query — install → connect MCP → load data → ask/inspect/run/validate/rerun. | Kit 1 (v0.1) |
-| `trusted-ai-workflow` | Adding the trust layer: semantic model, audit/run log, saved workflows. *(placeholder — Kit 2, v0.2)* | Kit 2 |
+| [`local-agent-ready-starter`](local-agent-ready-starter/SKILL.md) | Setting up the kit and running a first trusted, AI-assisted query — install → connect MCP → load data → ask/inspect/run/validate/rerun. | v0.1 |
 
 Each skill is a directory containing a `SKILL.md`: `name` + `description`
 frontmatter, then the instructions. The agent always sees the name and
