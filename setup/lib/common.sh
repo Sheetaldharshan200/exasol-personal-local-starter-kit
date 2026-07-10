@@ -2552,8 +2552,14 @@ connection_panel() {
         ui_panel_line "exapump:      $(ui_tilde "$_exapump") (profile: $(manifest_get components.exapump.profile 2>/dev/null))"
     fi
 
+    # Stdio MCP configs live inside each AI client's own config file, not in
+    # the kit's mcp/ dir (that holds only pre-edit backups) — point users at
+    # the command that lists the real locations.
     _mcp="$(manifest_get components.mcp_server.configs 2>/dev/null)"
-    [ -n "$_mcp" ] && ui_panel_line "MCP configs:  $(ui_tilde "$EXAKIT_MCP_DIR")"
+    if [ -n "$_mcp" ]; then
+        ui_panel_line "MCP configs:  in each AI client's config (list: exakit mcp-status)"
+        ui_panel_line "MCP backups:  $(ui_tilde "$EXAKIT_MCP_DIR")"
+    fi
 
     ui_panel_line "Manifest:     $(ui_tilde "$EXAKIT_MANIFEST")"
     ui_panel_line "Logs:         $(ui_tilde "$EXAKIT_LOG_DIR")"

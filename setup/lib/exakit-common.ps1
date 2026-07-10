@@ -1009,7 +1009,12 @@ function Show-ExakitConnectionPanel {
     if ($mcpPwf)  { Write-ExakitPanelLine "MCP pass:     stored in $(Get-ExakitTilde $mcpPwf)" }
     Write-ExakitPanelLine "TLS:          enabled (self-signed certificate)"
     if ($exapumpPath) { Write-ExakitPanelLine "exapump:      $(Get-ExakitTilde $exapumpPath) (profile: $exapumpProfile)" }
-    if ($mcpConfigs) { Write-ExakitPanelLine "MCP configs:  $(Get-ExakitTilde $script:McpDir)" }
+    # Stdio MCP configs live inside each AI client's own config file, not in
+    # the kit's mcp/ dir (that holds only pre-edit backups) - mirrors common.sh.
+    if ($mcpConfigs) {
+        Write-ExakitPanelLine "MCP configs:  in each AI client's config (list: exakit mcp-status)"
+        Write-ExakitPanelLine "MCP backups:  $(Get-ExakitTilde $script:McpDir)"
+    }
     Write-ExakitPanelLine "Manifest:     $(Get-ExakitTilde $script:ManifestPath)"
     Write-ExakitPanelLine "Logs:         $(Get-ExakitTilde $script:LogDir)"
     Complete-ExakitPanel

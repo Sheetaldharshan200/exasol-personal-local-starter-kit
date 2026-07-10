@@ -51,8 +51,28 @@ function Install-Mcp {
     Info "Priming $($script:McpPackage)@$($script:McpVersion) (downloads on first use)"
     # Use the resolved uvx path, not a bare "uvx" - uv was just installed to
     # a dir that isn't on this process's PATH yet.
-    $code = Invoke-ExakitLogged (Get-UvxPath) "$($script:McpPackage)@$($script:McpVersion)" "--help"
-    if ($code -ne 0) { Warn2 "Could not prime the MCP server package (it will download on first client start)" }
+    # `--help` exits non-zero on server versions that demand connection env
+    # before printing usage - so the exit code can't distinguish "download
+    # failed" from "downloaded fine, refused to run without a database". Any
+    # output from the package itself proves the prime worked (mirrors mcp.sh).
+    $primeOut = ""
+    $primeCode = 1
+    $previousEAP = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $primeOut = & (Get-UvxPath) "$($script:McpPackage)@$($script:McpVersion)" "--help" 2>&1 | Out-String
+        $primeCode = $LASTEXITCODE
+    } catch {
+        $primeOut = "$_"
+    } finally {
+        $ErrorActionPreference = $previousEAP
+    }
+    if ($script:LogFile) { "uvx $($script:McpPackage)@$($script:McpVersion) --help" | Add-Content -Path $script:LogFile; $primeOut | Add-Content -Path $script:LogFile }
+    if ($primeCode -eq 0 -or $primeOut -match '(?i)usage:|insufficient database connection|exasol[./\\]ai[./\\]mcp|site-packages[/\\]exasol') {
+        Ok "MCP server package cached"
+    } else {
+        Warn2 "Could not prime the MCP server package (it will download on first client start)"
+    }
     $uvBin = Get-ExakitUvBin
     if ($uvBin) { Set-ExakitManifestValue "components.mcp_server.uv_path" $uvBin }
     Set-ExakitManifestValue "components.mcp_server.command" (Get-McpCommandPath)
