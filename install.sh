@@ -18,6 +18,9 @@
 #   EXAKIT_REF=...          override the git ref to install from
 #   EXAKIT_LOCAL_KIT=path   use a local checkout instead of downloading
 #                           (development / private-repo testing)
+#   EXAKIT_NO_PROFILE_EDIT=1  never edit shell profiles; print the PATH
+#                           line to add instead (default: the installer
+#                           adds ~/.local/bin to the user's own profile)
 #
 #   Non-interactive answers (for agent-driven or scripted installs, so the
 #   install honours a choice instead of silently taking the default):
