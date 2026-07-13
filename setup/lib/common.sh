@@ -1270,16 +1270,53 @@ verify_sha256_from_file() {
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
-# ensure_path_hint <dir> — warn if dir is not on PATH (never edits rc files).
+# ensure_path_hint <dir> — make dir usable on PATH without sudo: fix the
+# current process immediately, then persist the export in the user's own
+# shell profile (their file, their permissions — never /etc, never root).
+# Mirrors the Windows side, which has always persisted the user PATH via
+# [Environment]::SetEnvironmentVariable(..., "User") in exakit-common.ps1.
+# Idempotent: the marker comment keeps re-runs from stacking duplicates.
+# EXAKIT_NO_PROFILE_EDIT=1 restores the old print-a-hint-only behavior.
 ensure_path_hint() {
     case ":$PATH:" in
-        *":$1:"*) ;;
-        *)
-            warn "$1 is not on your PATH."
-            printf '      %s%s Add this to your shell profile:%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
-            printf '      %s%s%s   export PATH="%s:$PATH"\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" "$1" >&2
-            ;;
+        *":$1:"*) return 0 ;;
     esac
+    # Fix the running install right away so later steps can call the kit's
+    # CLIs by name; the profile edit below covers future sessions.
+    PATH="$1:$PATH"
+    export PATH
+
+    if [ "${EXAKIT_NO_PROFILE_EDIT:-0}" = "1" ]; then
+        warn "$1 is not on your PATH."
+        printf '      %s%s Add this to your shell profile:%s\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" >&2
+        printf '      %s%s%s   export PATH="%s:$PATH"\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" "$1" >&2
+        return 0
+    fi
+
+    # The user's interactive shell decides which profile matters; fish has
+    # no POSIX profile, so it keeps the printed hint instead of a bad edit.
+    case "$(basename "${SHELL:-}")" in
+        zsh)  _eph_profile="$HOME/.zshrc" ;;
+        bash) _eph_profile="$HOME/.bashrc" ;;
+        fish)
+            warn "$1 is not on your PATH. For fish, run: fish_add_path $1"
+            return 0
+            ;;
+        *)    _eph_profile="$HOME/.profile" ;;
+    esac
+
+    _eph_marker="# Added by the Exasol Personal Local Starter Kit (exakit CLIs)"
+    if [ -f "$_eph_profile" ] && grep -qF "$_eph_marker" "$_eph_profile"; then
+        # Already persisted by an earlier run; this session just hasn't
+        # sourced it (covered by the export above).
+        return 0
+    fi
+    if { printf '\n%s\nexport PATH="%s:$PATH"\n' "$_eph_marker" "$1" >> "$_eph_profile"; } 2>/dev/null; then
+        ok "Added $1 to your PATH in $_eph_profile (new terminals pick it up automatically)"
+    else
+        warn "$1 is not on your PATH and $_eph_profile is not writable. Add this to your shell profile:"
+        printf '      %s%s%s   export PATH="%s:$PATH"\n' "${UI_DIM:-}" "${UI_VB:-|}" "${UI_RESET:-}" "$1" >&2
+    fi
 }
 
 exakit_repo_root() {
