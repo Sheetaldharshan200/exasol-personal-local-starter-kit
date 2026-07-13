@@ -32,6 +32,29 @@ detect_arch() {
     esac
 }
 
+# detect_cpu_advertises_sve — true when a Linux aarch64 kernel advertises any
+# SVE capability. Some hypervisors (seen: VirtualBox on Apple Silicon) expose
+# SVE feature bits the host CPU cannot actually execute, so OpenSSL's runtime
+# CPU detection picks an SVE code path and dies with SIGILL. Used by the
+# pyexasol and MCP validation steps to recognize that crash and self-repair
+# (pin OPENSSL_armcap=0 for the affected component).
+detect_cpu_advertises_sve() {
+    [ "$(uname -s)" = "Linux" ] || return 1
+    [ "$(uname -m)" = "aarch64" ] || return 1
+    grep -m1 '^Features' /proc/cpuinfo 2>/dev/null | grep -qE '(^| )sve'
+}
+
+# detect_sve_remedy_hint — the permanent, system-wide fix for the faked-SVE
+# crash, printed wherever the per-component workaround is applied. Kernels
+# before ~5.16 ignore arm64.nosve, hence the HWE kernel step.
+detect_sve_remedy_hint() {
+    info "This guest advertises SVE support its host CPU cannot execute (common with VirtualBox on Apple Silicon)."
+    info "Permanent fix: install a kernel that honors arm64.nosve and disable SVE at boot:"
+    info "  sudo apt-get install -y linux-generic-hwe-\$(lsb_release -rs 2>/dev/null || echo 22.04)"
+    info "  add 'arm64.nosve arm64.nosme' to GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub"
+    info "  sudo update-grub && sudo reboot"
+}
+
 # detect_ram_gb — total physical memory in whole GB. ALWAYS prints a
 # non-negative integer, and 0 when it cannot be determined. This matters:
 # callers compare it with `-lt`/`-ge`, and an empty value there makes the test

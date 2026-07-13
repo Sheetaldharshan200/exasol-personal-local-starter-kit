@@ -59,6 +59,63 @@ pyexasol_install() {
     manifest_set components.pyexasol.python "$(pyexasol_venv_python)"
 }
 
+# pyexasol_apply_sve_workaround <venv-python> — recognize and self-repair the
+# faked-SVE crash. On aarch64 guests whose hypervisor advertises SVE the host
+# CPU cannot execute (seen: VirtualBox on Apple Silicon), importing
+# cryptography's native module dies with SIGILL inside OpenSSL's CPU
+# detection, taking `import pyexasol` down with it. Confirm that exact
+# signature (the import succeeds with OPENSSL_armcap=0), then pin the
+# override into the venv via sitecustomize.py — it runs at interpreter
+# startup, before any package can load OpenSSL — so every consumer of this
+# venv works without callers having to know about the quirk. Returns 0 only
+# when the plain import provably works afterwards.
+pyexasol_apply_sve_workaround() {
+    _sve_python="$1"
+    detect_cpu_advertises_sve || return 1
+    ( OPENSSL_armcap=0 "$_sve_python" -c 'import pyexasol' && : ) >/dev/null 2>&1 || return 1
+
+    warn "pyexasol crashed inside OpenSSL's CPU detection: this guest advertises SVE its host CPU cannot execute."
+    info "Self-repair: pinning OPENSSL_armcap=0 for this venv (disables OpenSSL's ARM fast paths, correctness unaffected)"
+    _sve_site="$("$_sve_python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])' 2>/dev/null)"
+    [ -n "$_sve_site" ] && [ -d "$_sve_site" ] || return 1
+    cat > "$_sve_site/sitecustomize.py" <<'EXAKIT_SVE_EOF'
+# Written by the Exasol Personal Local Starter Kit.
+# This virtualization guest advertises SVE support the host CPU cannot
+# execute (seen with VirtualBox on Apple Silicon), which crashes OpenSSL's
+# runtime CPU detection with SIGILL when cryptography loads. Pinning
+# OPENSSL_armcap=0 here runs before any package import and disables the
+# optimized paths. The pin applies only while the kernel still advertises
+# SVE, so it deactivates itself once the guest boots with arm64.nosve
+# (needs a kernel that honors it, e.g. the HWE kernel) — full crypto speed
+# returns without touching this file.
+import os
+
+
+def _kernel_advertises_sve() -> bool:
+    try:
+        with open("/proc/cpuinfo") as handle:
+            features = next(
+                (line for line in handle if line.startswith("Features")), ""
+            )
+    except OSError:
+        return False
+    return " sve" in features
+
+
+if _kernel_advertises_sve():
+    os.environ.setdefault("OPENSSL_armcap", "0")
+EXAKIT_SVE_EOF
+
+    if ! ( "$_sve_python" -c 'import pyexasol' && : ) >/dev/null 2>&1; then
+        rm -f "$_sve_site/sitecustomize.py"
+        return 1
+    fi
+    manifest_set components.pyexasol.openssl_armcap_workaround true
+    detect_sve_remedy_hint
+    ok "pyexasol imports cleanly with the workaround in place"
+    return 0
+}
+
 # pyexasol_validate — prove the driver imports, then run SELECT 1 against the
 # local database with the runtime credentials. A failed live check records
 # validated=false and warns rather than aborting the install: the database
@@ -69,10 +126,19 @@ pyexasol_validate() {
     # below): pyexasol is the last, optional component, so a broken import
     # records validated=false and warns rather than turning an otherwise
     # complete install — database, exapump, MCP all working — into a hard fail.
-    if ! "$_pyx_python" -c 'import pyexasol' >/dev/null 2>&1; then
-        warn "pyexasol is installed but cannot be imported from $EXAKIT_PYEXASOL_VENV (see log). Recorded validated=false; remove the venv and re-run setup to retry."
-        manifest_set components.pyexasol.validated false
-        return 0
+    # The subshell keeps bash's job-status noise ("Illegal instruction (core
+    # dumped)") out of the user-facing output when the probe dies on a
+    # signal. The `&& :` matters: it defeats bash's single-command subshell
+    # exec optimization, which would otherwise leave the OUTER shell (whose
+    # stderr is the terminal) as the one reporting the signal death.
+    if ! ( "$_pyx_python" -c 'import pyexasol' && : ) >/dev/null 2>&1; then
+        if pyexasol_apply_sve_workaround "$_pyx_python"; then
+            : # import fixed in place — fall through to the live check below
+        else
+            warn "pyexasol is installed but cannot be imported from $EXAKIT_PYEXASOL_VENV (see log). Recorded validated=false; remove the venv and re-run setup to retry."
+            manifest_set components.pyexasol.validated false
+            return 0
+        fi
     fi
 
     _pyx_host="$(_exakit_parse_runtime_host)"

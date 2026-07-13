@@ -119,6 +119,11 @@ class ExakitRuntimeLoader:
             "EXA_MCP_SETTINGS": json.dumps(DEFAULT_READ_ONLY_MCP_SETTINGS),
         }
         env.update(self._ssl_environment(runtime, dsn))
+        # The install validated the server only with OpenSSL's ARM fast paths
+        # disabled (this guest advertises SVE its host CPU cannot execute —
+        # see setup/lib/mcp.sh mcp_validate). Launch clients the same way.
+        if component_state.get("openssl_armcap_workaround") is True:
+            env["OPENSSL_armcap"] = "0"
         definition = ServerDefinition(
             transport=DeploymentMode.STDIO,
             name=server_name,
