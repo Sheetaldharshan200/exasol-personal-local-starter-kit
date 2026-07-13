@@ -111,8 +111,8 @@ A checkbox menu (↑/↓ to move, **Space** to select, **Enter** to continue) le
 
 Good to know:
 
-- **The menu is dynamic** — clients already connected, or not installed on this machine, are simply not offered. When everything found is already connected, the command says so and exits.
-- **Selecting Claude configures both Claude surfaces at once**: the desktop app (`claude_desktop_config.json`) and the Claude Code CLI (`~/.claude.json`, user scope — available in every project). If one is already connected, only the remaining one is offered.
+- **The menu always shows every supported client** — the ones installed on your machine and not yet connected are selectable (and pre-selected); anything already connected or not installed appears greyed out with the reason. When everything found is already connected, the command says so and exits.
+- **Selecting Claude configures both Claude surfaces at once**: the desktop app (`claude_desktop_config.json`) and the Claude Code CLI (`~/.claude.json`, user scope — available in every project). If one is already connected, only the remaining one is selectable.
 - **Configs are written with the resolved launcher path** — the kit writes the exact local MCP launcher path instead of assuming `uvx` is on every desktop app's PATH, so the same setup works reliably across macOS, Linux, and Windows clients.
 - The installer runs this step for you; `exakit mcp-setup` re-runs it any time.
 

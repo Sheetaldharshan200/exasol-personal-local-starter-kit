@@ -630,16 +630,24 @@ function Invoke-McpOperationCli {
     return $result.Output
 }
 
-# Get-McpPendingClients - ids of supported MCP clients that are installed on
-# this machine but have no managed config yet (detected && !configured, from
-# the adapters' own detection). Returns $null when discovery is unavailable so
-# the caller can fall back to the static list.
-function Get-McpPendingClients {
+# Get-McpClientStates - hashtable of client id -> state, straight from the
+# adapters' own detection: "pending" (installed, no managed config yet),
+# "connected" (has a managed config), or "missing" (not installed). Returns
+# $null when discovery is unavailable so the caller can fall back to the
+# static everything-selectable menu. Twin of exakit_mcp_discover_status in
+# common.sh.
+function Get-McpClientStates {
     $result = Invoke-McpModule -ModuleArgs @("discover-clients", "--runtime-root", $script:ExakitHome)
     if (-not $result -or $result.ExitCode -ne 0) { return $null }
     try {
         $doc = $result.Output | ConvertFrom-Json
-        return @($doc.clients | Where-Object { $_.detected -and -not $_.configured } | ForEach-Object { $_.id })
+        $states = @{}
+        foreach ($client in @($doc.clients)) {
+            if ($client.configured) { $states[$client.id] = "connected" }
+            elseif ($client.detected) { $states[$client.id] = "pending" }
+            else { $states[$client.id] = "missing" }
+        }
+        return $states
     } catch {
         return $null
     }
@@ -801,34 +809,63 @@ function Invoke-McpSetup {
 
     if (-not $clients) {
     Write-Host ""
-    # Build the menu dynamically: offer only clients that are installed on
-    # this machine AND not already connected. One "Claude" choice covers both
-    # Claude surfaces (desktop app + Claude Code CLI); when only one surface
-    # still needs setup, the label names that surface. Falls back to the full
-    # static list when discovery is unavailable.
-    $pending = Get-McpPendingClients
-    if ($null -eq $pending) { $pending = @("claude_desktop", "claude_code", "codex", "cursor", "vscode_copilot", "gemini_cli", "opencode", "continue") }
+    # Show the FULL list of supported clients so the user sees everything the
+    # kit can connect: pending clients (installed, not connected yet) are
+    # selectable and pre-selected; clients that are already connected or not
+    # installed on this machine appear greyed out with the reason and cannot
+    # be checked. One "Claude" row covers both Claude surfaces (desktop app +
+    # Claude Code CLI) while their states match; when they differ, each
+    # surface gets its own row. Falls back to everything selectable when
+    # discovery is unavailable.
+    $states = Get-McpClientStates
+    if ($null -eq $states) {
+        $states = @{}
+        foreach ($id in @("claude_desktop", "claude_code", "codex", "cursor", "vscode_copilot", "gemini_cli", "opencode", "continue")) { $states[$id] = "pending" }
+    }
     $menuLabels = New-Object 'System.Collections.Generic.List[string]'
     $menuIds = New-Object 'System.Collections.Generic.List[object]'
-    $cdPending = $pending -contains "claude_desktop"
-    $ccPending = $pending -contains "claude_code"
-    if ($cdPending -and $ccPending) { [void]$menuLabels.Add("Claude"); [void]$menuIds.Add(@("claude_desktop", "claude_code")) }
-    elseif ($cdPending) { [void]$menuLabels.Add("Claude (desktop app)"); [void]$menuIds.Add(@("claude_desktop")) }
-    elseif ($ccPending) { [void]$menuLabels.Add("Claude Code (CLI)"); [void]$menuIds.Add(@("claude_code")) }
-    if ($pending -contains "codex") { [void]$menuLabels.Add("Codex"); [void]$menuIds.Add(@("codex")) }
-    if ($pending -contains "cursor") { [void]$menuLabels.Add("Cursor"); [void]$menuIds.Add(@("cursor")) }
-    if ($pending -contains "vscode_copilot") { [void]$menuLabels.Add("GitHub Copilot"); [void]$menuIds.Add(@("vscode_copilot")) }
-    if ($pending -contains "gemini_cli") { [void]$menuLabels.Add("Gemini CLI"); [void]$menuIds.Add(@("gemini_cli")) }
-    if ($pending -contains "opencode") { [void]$menuLabels.Add("OpenCode"); [void]$menuIds.Add(@("opencode")) }
-    if ($pending -contains "continue") { [void]$menuLabels.Add("Continue"); [void]$menuIds.Add(@("continue")) }
-    if ($menuIds.Count -eq 0) {
+    $dot = [char]0xB7
+    # One client row: pending rows carry their ids and count as selectable;
+    # connected and missing rows are disabled ("!" prefix) with no ids.
+    $addRow = {
+        param($label, $state, $ids)
+        switch ($state) {
+            "pending"   { [void]$menuLabels.Add($label); [void]$menuIds.Add($ids) }
+            "connected" { [void]$menuLabels.Add(("!{0} {1} already connected" -f $label, $dot)); [void]$menuIds.Add(@()) }
+            default     { [void]$menuLabels.Add(("!{0} {1} not installed" -f $label, $dot)); [void]$menuIds.Add(@()) }
+        }
+    }
+    $stateOf = {
+        param($id)
+        if ($states.ContainsKey($id)) { $states[$id] } else { "missing" }
+    }
+    $cdState = & $stateOf "claude_desktop"
+    $ccState = & $stateOf "claude_code"
+    if ($cdState -eq $ccState) { & $addRow "Claude" $cdState @("claude_desktop", "claude_code") }
+    else {
+        & $addRow "Claude (desktop app)" $cdState @("claude_desktop")
+        & $addRow "Claude Code (CLI)" $ccState @("claude_code")
+    }
+    & $addRow "Codex" (& $stateOf "codex") @("codex")
+    & $addRow "Cursor" (& $stateOf "cursor") @("cursor")
+    & $addRow "GitHub Copilot" (& $stateOf "vscode_copilot") @("vscode_copilot")
+    & $addRow "Gemini CLI" (& $stateOf "gemini_cli") @("gemini_cli")
+    & $addRow "OpenCode" (& $stateOf "opencode") @("opencode")
+    & $addRow "Continue" (& $stateOf "continue") @("continue")
+    $pendingCount = 0
+    foreach ($ids in $menuIds) { if (@($ids).Count -gt 0) { $pendingCount++ } }
+    if ($pendingCount -eq 0) {
         Ok "All AI clients found on this machine are already connected over MCP."
         Info "Check them with 'exakit mcp-status'; new clients appear here once installed."
         return $true
     }
     [void]$menuLabels.Add("Skip for now (no MCP client changes)")
     $skipIdx = $menuLabels.Count
-    $defaults = @(1..($skipIdx - 1))
+    # Pre-select every pending client - never a disabled row, never Skip.
+    $defaults = @()
+    for ($i = 1; $i -lt $skipIdx; $i++) {
+        if (@($menuIds[$i - 1]).Count -gt 0) { $defaults += $i }
+    }
     $selection = Read-ExakitCheckboxMenu -Title "Select the AI clients to connect (MCP)" `
         -Options $menuLabels.ToArray() -Defaults $defaults -ExclusiveIndex $skipIdx
     if ($selection -contains $skipIdx) {
