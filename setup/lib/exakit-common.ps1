@@ -193,14 +193,18 @@ function Read-ExakitCheckboxMenu {
     }
     # A label starting with "#" is a GROUP HEADER: rendered as a plain caption
     # (no checkbox), never selectable, and skipped by the cursor.
+    # A label starting with "!" is a DISABLED row: rendered as a dimmed,
+    # unchecked checkbox (the label should say why - e.g. "not installed"),
+    # never selectable, skipped by the cursor, and excluded from "a".
     $isHeader = { param($i) $Options[$i - 1].StartsWith("#") }
+    $isDisabled = { param($i) $Options[$i - 1].StartsWith("!") }
     $step = {
         param($dir)
         for ($s = 0; $s -lt $Options.Count; $s++) {
             $script:cbCur += $dir
             if ($script:cbCur -lt 1) { $script:cbCur = $Options.Count }
             if ($script:cbCur -gt $Options.Count) { $script:cbCur = 1 }
-            if (-not (& $isHeader $script:cbCur)) { return }
+            if (-not (& $isHeader $script:cbCur) -and -not (& $isDisabled $script:cbCur)) { return }
         }
     }
     $script:cbCur = 0
@@ -215,6 +219,11 @@ function Read-ExakitCheckboxMenu {
         for ($i = 1; $i -le $Options.Count; $i++) {
             if (& $isHeader $i) {
                 Write-Host ("    {0}" -f $Options[$i - 1].Substring(1)) -ForegroundColor Cyan
+                continue
+            }
+            if (& $isDisabled $i) {
+                if ($script:UiFancy) { Write-Host ("      {0}[ ] {1}{2}" -f $script:UiDim, $Options[$i - 1].Substring(1), $script:UiReset) }
+                else { Write-Host ("      [ ] {0}" -f $Options[$i - 1].Substring(1)) }
                 continue
             }
             $ptr = if ($i -eq $script:cbCur) { ">" } else { " " }
@@ -244,11 +253,11 @@ function Read-ExakitCheckboxMenu {
             '^[kK]$' { & $step -1 }
             '^[jJ]$' { & $step 1 }
             '^[aA]$' {
-                # "all" means all real choices: never headers, never the
-                # exclusive option.
+                # "all" means all real choices: never headers, never disabled
+                # rows, never the exclusive option.
                 $sel.Clear()
                 for ($i = 1; $i -le $Options.Count; $i++) {
-                    if ($i -ne $ExclusiveIndex -and -not (& $isHeader $i)) { [void]$sel.Add($i) }
+                    if ($i -ne $ExclusiveIndex -and -not (& $isHeader $i) -and -not (& $isDisabled $i)) { [void]$sel.Add($i) }
                 }
             }
         }

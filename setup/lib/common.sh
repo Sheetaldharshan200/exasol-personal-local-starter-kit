@@ -260,16 +260,26 @@ ui_checkbox_menu() {
     # (no checkbox), never selectable, and skipped by the cursor. Headers let a
     # menu show a small tree — e.g. "Sample datasets" with the individual
     # datasets indented beneath it — while selection indices stay flat.
+    # A label starting with "!" is a DISABLED row: rendered as a dimmed,
+    # unchecked checkbox (the label should say why — e.g. "· not installed"),
+    # never selectable, skipped by the cursor, and excluded from "a". Disabled
+    # rows let a menu show the full set of options while only the applicable
+    # ones can be chosen.
     _cb_is_header() {
         case "${_cb_labels[$(($1 - 1))]}" in "#"*) return 0 ;; *) return 1 ;; esac
     }
-    _cb_step() { # _cb_step <dir:+1|-1> — move the cursor, skipping headers
+    _cb_is_disabled() {
+        case "${_cb_labels[$(($1 - 1))]}" in "!"*) return 0 ;; *) return 1 ;; esac
+    }
+    _cb_step() { # _cb_step <dir:+1|-1> — move the cursor, skipping headers/disabled
         _cb_steps=0
         while [ "$_cb_steps" -lt "$_cb_n" ]; do
             _cb_cur=$((_cb_cur + $1))
             [ "$_cb_cur" -lt 1 ] && _cb_cur=$_cb_n
             [ "$_cb_cur" -gt "$_cb_n" ] && _cb_cur=1
-            _cb_is_header "$_cb_cur" || return 0
+            if ! _cb_is_header "$_cb_cur" && ! _cb_is_disabled "$_cb_cur"; then
+                return 0
+            fi
             _cb_steps=$((_cb_steps + 1))
         done
     }
@@ -301,6 +311,11 @@ ui_checkbox_menu() {
         for _cb_label in "$@"; do
             if _cb_is_header "$_cb_i"; then
                 printf '    %s%s%s\n' "${UI_ACCENT:-}" "${_cb_label#\#}" "${UI_RESET:-}"
+                _cb_i=$((_cb_i + 1))
+                continue
+            fi
+            if _cb_is_disabled "$_cb_i"; then
+                printf '      %s[ ] %s%s\n' "${UI_DIM:-}" "${_cb_label#\!}" "${UI_RESET:-}"
                 _cb_i=$((_cb_i + 1))
                 continue
             fi
@@ -352,12 +367,12 @@ ui_checkbox_menu() {
             k|K) _cb_step -1 ;;
             j|J) _cb_step 1 ;;
             a|A)
-                # "all" means all real choices: never headers, never the
-                # exclusive option.
+                # "all" means all real choices: never headers, never disabled
+                # rows, never the exclusive option.
                 _cb_sel=""
                 _cb_i=1
                 while [ "$_cb_i" -le "$_cb_n" ]; do
-                    if ! _cb_is_header "$_cb_i" && [ "$_cb_i" != "$EXAKIT_CHECKBOX_EXCLUSIVE" ]; then
+                    if ! _cb_is_header "$_cb_i" && ! _cb_is_disabled "$_cb_i" && [ "$_cb_i" != "$EXAKIT_CHECKBOX_EXCLUSIVE" ]; then
                         _cb_sel="${_cb_sel:+$_cb_sel,}$_cb_i"
                     fi
                     _cb_i=$((_cb_i + 1))
@@ -2129,13 +2144,14 @@ exakit_parse_mcp_client_selection() {
     printf '%s\n' "$_result"
 }
 
-# exakit_mcp_discover_pending — one client id per line for every supported MCP
-# client that is installed on this machine but has no managed config yet
-# (detected && !configured, straight from the adapters' own detection). Used to
-# build the setup menu dynamically: already-connected clients and clients that
-# are not installed are simply not offered. Fails (rc 1) when discovery is
-# unavailable so the caller can fall back to the static menu.
-exakit_mcp_discover_pending() {
+# exakit_mcp_discover_status — one "id state" line per supported MCP client,
+# straight from the adapters' own detection: "pending" (installed on this
+# machine, no managed config yet), "connected" (has a managed config), or
+# "missing" (not installed). Used to build the setup menu: pending clients are
+# selectable and pre-selected, the others are shown greyed out with the
+# reason. Fails (rc 1) when discovery is unavailable so the caller can fall
+# back to the static everything-selectable menu.
+exakit_mcp_discover_status() {
     require_python3 2>/dev/null || return 1
     _repo_root="$(exakit_repo_root)" || return 1
     _discover_file="$(mktemp "${TMPDIR:-/tmp}/exakit-mcp-discover.XXXXXX")"
@@ -2155,8 +2171,13 @@ try:
 except Exception:
     sys.exit(1)
 for client in doc.get("clients", []):
-    if client.get("detected") and not client.get("configured"):
-        print(client["id"])
+    if client.get("configured"):
+        state = "connected"
+    elif client.get("detected"):
+        state = "pending"
+    else:
+        state = "missing"
+    print(f'{client["id"]} {state}')
 PY
     _parse_status=$?
     rm -f "$_discover_file"
@@ -2182,54 +2203,75 @@ exakit_mcp_setup() {
         info "Configuring MCP clients from EXAKIT_MCP_CLIENTS: $_clients_csv"
     else
         printf '\n'
-        # Build the menu dynamically: offer only clients that are installed on
-        # this machine AND not already connected. One "Claude" choice covers
-        # both Claude surfaces (desktop app + Claude Code CLI); when only one
-        # surface still needs setup, the label names that surface. Falls back
-        # to the full static list when discovery is unavailable.
-        _pending="$(exakit_mcp_discover_pending)" || \
-            _pending="$(printf 'claude_desktop\nclaude_code\ncodex\ncursor\nvscode_copilot\ngemini_cli\nopencode\ncontinue\n')"
-        _cd_pending=0; _cc_pending=0; _codex_pending=0; _cursor_pending=0
-        _copilot_pending=0; _gemini_pending=0; _opencode_pending=0; _continue_pending=0
-        for _pending_id in $_pending; do
-            case "$_pending_id" in
-                claude_desktop)  _cd_pending=1 ;;
-                claude_code)     _cc_pending=1 ;;
-                codex)           _codex_pending=1 ;;
-                cursor)          _cursor_pending=1 ;;
-                vscode_copilot)  _copilot_pending=1 ;;
-                gemini_cli)      _gemini_pending=1 ;;
-                opencode)        _opencode_pending=1 ;;
-                continue)        _continue_pending=1 ;;
-            esac
-        done
+        # Show the FULL list of supported clients so the user sees everything
+        # the kit can connect: pending clients (installed, not connected yet)
+        # are selectable and pre-selected; clients that are already connected
+        # or not installed on this machine appear greyed out with the reason
+        # and cannot be checked. One "Claude" row covers both Claude surfaces
+        # (desktop app + Claude Code CLI) while their states match; when they
+        # differ, each surface gets its own row. Falls back to everything
+        # selectable when discovery is unavailable.
+        _cd_state=pending; _cc_state=pending; _codex_state=pending
+        _cursor_state=pending; _copilot_state=pending; _gemini_state=pending
+        _opencode_state=pending; _continue_state=pending
+        if _client_status="$(exakit_mcp_discover_status)"; then
+            while read -r _st_id _st_state; do
+                [ -n "$_st_id" ] || continue
+                case "$_st_id" in
+                    claude_desktop)  _cd_state="$_st_state" ;;
+                    claude_code)     _cc_state="$_st_state" ;;
+                    codex)           _codex_state="$_st_state" ;;
+                    cursor)          _cursor_state="$_st_state" ;;
+                    vscode_copilot)  _copilot_state="$_st_state" ;;
+                    gemini_cli)      _gemini_state="$_st_state" ;;
+                    opencode)        _opencode_state="$_st_state" ;;
+                    continue)        _continue_state="$_st_state" ;;
+                esac
+            done <<EOF
+$_client_status
+EOF
+        fi
         _menu_labels=()
         _menu_ids=()
-        if [ "$_cd_pending" = 1 ] && [ "$_cc_pending" = 1 ]; then
-            _menu_labels+=("Claude"); _menu_ids+=("claude_desktop,claude_code")
-        elif [ "$_cd_pending" = 1 ]; then
-            _menu_labels+=("Claude (desktop app)"); _menu_ids+=("claude_desktop")
-        elif [ "$_cc_pending" = 1 ]; then
-            _menu_labels+=("Claude Code (CLI)"); _menu_ids+=("claude_code")
+        _pending_count=0
+        # _exakit_mcp_menu_row <label> <state> <ids_csv> — one client row:
+        # pending rows carry their ids and count as selectable; connected and
+        # missing rows are disabled ("!" prefix) with an empty id.
+        _exakit_mcp_menu_row() {
+            case "$2" in
+                pending)
+                    _menu_labels+=("$1"); _menu_ids+=("$3")
+                    _pending_count=$((_pending_count + 1))
+                    ;;
+                connected) _menu_labels+=("!$1 · already connected"); _menu_ids+=("") ;;
+                *)         _menu_labels+=("!$1 · not installed"); _menu_ids+=("") ;;
+            esac
+        }
+        if [ "$_cd_state" = "$_cc_state" ]; then
+            _exakit_mcp_menu_row "Claude" "$_cd_state" "claude_desktop,claude_code"
+        else
+            _exakit_mcp_menu_row "Claude (desktop app)" "$_cd_state" "claude_desktop"
+            _exakit_mcp_menu_row "Claude Code (CLI)" "$_cc_state" "claude_code"
         fi
-        [ "$_codex_pending" = 1 ] && { _menu_labels+=("Codex"); _menu_ids+=("codex"); }
-        [ "$_cursor_pending" = 1 ] && { _menu_labels+=("Cursor"); _menu_ids+=("cursor"); }
-        [ "$_copilot_pending" = 1 ] && { _menu_labels+=("GitHub Copilot"); _menu_ids+=("vscode_copilot"); }
-        [ "$_gemini_pending" = 1 ] && { _menu_labels+=("Gemini CLI"); _menu_ids+=("gemini_cli"); }
-        [ "$_opencode_pending" = 1 ] && { _menu_labels+=("OpenCode"); _menu_ids+=("opencode"); }
-        [ "$_continue_pending" = 1 ] && { _menu_labels+=("Continue"); _menu_ids+=("continue"); }
-        if [ "${#_menu_ids[@]}" -eq 0 ]; then
+        _exakit_mcp_menu_row "Codex" "$_codex_state" "codex"
+        _exakit_mcp_menu_row "Cursor" "$_cursor_state" "cursor"
+        _exakit_mcp_menu_row "GitHub Copilot" "$_copilot_state" "vscode_copilot"
+        _exakit_mcp_menu_row "Gemini CLI" "$_gemini_state" "gemini_cli"
+        _exakit_mcp_menu_row "OpenCode" "$_opencode_state" "opencode"
+        _exakit_mcp_menu_row "Continue" "$_continue_state" "continue"
+        if [ "$_pending_count" -eq 0 ]; then
             ok "All AI clients found on this machine are already connected over MCP."
             info "Check them with 'exakit mcp-status'; new clients appear here once installed."
             return 0
         fi
         _menu_labels+=("Skip for now (no MCP client changes)")
         _skip_idx="${#_menu_labels[@]}"
-        # Pre-select every pending client (ascending indices), never Skip.
+        # Pre-select every pending client (ascending indices) — never a
+        # disabled row, never Skip.
         _defaults=""
         _menu_i=1
         while [ "$_menu_i" -lt "$_skip_idx" ]; do
-            _defaults="${_defaults:+$_defaults,}$_menu_i"
+            [ -n "${_menu_ids[$((_menu_i - 1))]}" ] && _defaults="${_defaults:+$_defaults,}$_menu_i"
             _menu_i=$((_menu_i + 1))
         done
         # Loop so a not-confirmed skip returns the user to the menu.
@@ -2254,6 +2296,7 @@ exakit_mcp_setup() {
         for _client_idx in $(printf '%s' "$EXAKIT_CHECKBOX_SELECTION" | tr ',' ' '); do
             [ "$_client_idx" -ge 1 ] && [ "$_client_idx" -lt "$_skip_idx" ] || continue
             _client_id="${_menu_ids[$((_client_idx - 1))]}"
+            [ -n "$_client_id" ] || continue              # disabled rows carry no id
             _clients_csv="${_clients_csv:+$_clients_csv,}$_client_id"
         done
     fi
