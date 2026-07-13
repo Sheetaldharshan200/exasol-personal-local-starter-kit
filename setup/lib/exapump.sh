@@ -182,6 +182,12 @@ exapump_verify_runs() {
 EXAKIT_EXAPUMP_SHIM_IMAGE="${EXAKIT_EXAPUMP_SHIM_IMAGE:-docker.io/library/ubuntu:24.04}"
 exapump_install_glibc_shim() {
     _shim_runtime="$(detect_container_runtime)"
+    # Rootless podman remaps ownership inside the container: without
+    # keep-id the user's own files (profile at ~/.exapump, mode 600) appear
+    # root-owned and unreadable to the -u uid. Docker has no such remap and
+    # no such flag.
+    _shim_userns=""
+    [ "$_shim_runtime" = "podman" ] && _shim_userns="--userns=keep-id"
     _sys_glibc="$(ldd --version 2>/dev/null | head -1)"
     warn "The exapump release binary needs a newer glibc than this system provides (${_sys_glibc:-unknown glibc})."
     if [ "$_shim_runtime" = "none" ]; then
@@ -213,7 +219,7 @@ case "$PWD" in
     "$HOME"*|/tmp*) _exakit_wd="$PWD" ;;
     *)              _exakit_wd="$HOME" ;;
 esac
-exec @RUNTIME@ run --rm $_exakit_tty --network host \
+exec @RUNTIME@ run --rm $_exakit_tty --network host @USERNS@ \
     -u "$(id -u):$(id -g)" \
     -e HOME="$HOME" \
     -v "$HOME:$HOME" -v /tmp:/tmp \
@@ -225,6 +231,7 @@ EXAKIT_SHIM_EOF
     # that can contain / but never |.
     sed -i.exakit-bak \
         -e "s|@RUNTIME@|$_shim_runtime|" \
+        -e "s|@USERNS@|$_shim_userns|" \
         -e "s|@IMAGE@|$EXAKIT_EXAPUMP_SHIM_IMAGE|" \
         -e "s|@REAL@|$_shim_real|" \
         "$EXAKIT_EXAPUMP_BIN" && rm -f "$EXAKIT_EXAPUMP_BIN.exakit-bak"
