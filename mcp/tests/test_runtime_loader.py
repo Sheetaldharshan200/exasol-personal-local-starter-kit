@@ -115,6 +115,37 @@ class RuntimeLoaderEdgeCaseTests(unittest.TestCase):
         context = self.loader.load(self.runtime_root)
         self.assertEqual(context.server_definition.env["EXA_SSL_CERT_VALIDATION"], "no")
 
+    def test_load_passes_openssl_armcap_workaround_to_client_env(self) -> None:
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "openssl_armcap_workaround": True,
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    },
+                }
+            }
+        )
+        context = self.loader.load(self.runtime_root)
+        self.assertEqual(context.server_definition.env["OPENSSL_armcap"], "0")
+
+    def test_load_omits_openssl_armcap_when_workaround_not_recorded(self) -> None:
+        self._write_manifest(
+            components={
+                "mcp_server": {
+                    "connection": {
+                        "user": "mcp_readonly",
+                        "password_file": str(self.mcp_password_file),
+                        "validated": True,
+                    }
+                }
+            }
+        )
+        context = self.loader.load(self.runtime_root)
+        self.assertNotIn("OPENSSL_armcap", context.server_definition.env)
+
     def test_load_enables_read_only_mcp_query_tools(self) -> None:
         self._write_manifest(
             components={
